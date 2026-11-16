@@ -5,3 +5,13 @@
 ## Author: kvakvs
 ## DefaultState: enabled
 ## IconTexture: Interface\AddOns\OOOOguildcompanion\Icons\Logo64.png
+## SavedVariables: OOOOguildcompanionDB
+
+embeds.xml
+
+Core.lua
+
+Emoji\EmojiIndex.lua
+Emoji\Emoji.lua
+
+Options\OptionsWindow.lua

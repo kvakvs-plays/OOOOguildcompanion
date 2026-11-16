@@ -20,6 +20,11 @@
   imported by hand with `python scripts/import_discord_emoji.py [guild id ...]`, which replaces the PNG files
   of each imported guild; do not edit them. The script needs a bot token in `DISCORD_BOT_TOKEN` (environment
   or the git-ignored `.env`) and a bot that is a member of each guild. Never commit or print the token.
+- The game cannot list a folder, so the same script generates `Emoji\EmojiIndex.lua`, the list of emoji
+  names that the addon loads. Do not edit it; `python scripts/import_discord_emoji.py --index-only` rebuilds
+  it from the PNG files without a token.
+- Ace3 is embedded in `Ace3\` and loaded through `embeds.xml`, which lists only the libraries in use. Add a
+  line there before the first use of another Ace library.
 - The addon is written in Lua with LuaLS type annotations (`---@class`, `---@param`, `---@return`). Specify
   types wherever they can be known, and add a documentation comment to public or non-obvious functions.
 

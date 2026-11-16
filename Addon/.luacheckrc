@@ -24,7 +24,7 @@ globals = {
 -- Add a name here only after you know that it exists on Forever.
 stds.wow = { read_globals = {
   "bit", "C_AddOns", "C_ChatInfo", "C_EventUtils", "C_GuildInfo", "C_Item", "C_Map", "C_Spell", "C_Timer",
-  "CreateFrame", "DEFAULT_CHAT_FRAME", "Enum", "GameTooltip", "GetBuildInfo", "GetGuildInfo",
+  "CreateFrame", "DEFAULT_CHAT_FRAME", "Enum", "GameFontHighlight", "GameTooltip", "GetBuildInfo", "GetGuildInfo",
   "GetGuildRosterInfo", "GetLocale", "GetNumGuildMembers", "GetTime", "hooksecurefunc", "InCombatLockdown",
   "IsInGuild", "issecretvalue", "LE_EXPANSION_LEVEL_CURRENT", "LibStub", "PlaySound", "RAID_CLASS_COLORS",
   "SOUNDKIT", "strsplit", "strtrim", "tContains", "tinsert", "UIParent", "UnitClass", "UnitExists",
