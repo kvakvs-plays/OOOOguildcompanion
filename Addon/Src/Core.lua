@@ -17,6 +17,7 @@ local addonName, ns = ...
 ---@field addon OOOOAddon
 ---@field db OOOODatabase Set in OnInitialize; nil while the files are loading
 ---@field emoji OOOOEmojiModule
+---@field emojiChat OOOOEmojiChat
 ---@field emojiIndex table<string, string[]>
 ---@field optionsWindow OOOOOptionsWindow
 
@@ -34,6 +35,7 @@ local defaults = {
 ---@class OOOOAddon AceAddon-3.0 object with AceConsole-3.0 mixed in
 ---@field Print fun(self: OOOOAddon, ...: any)
 ---@field RegisterChatCommand fun(self: OOOOAddon, command: string, handler: string|function)
+---@field NewModule fun(self: OOOOAddon, name: string, ...: string): table
 local addon = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0")
 ns.addon = addon
 

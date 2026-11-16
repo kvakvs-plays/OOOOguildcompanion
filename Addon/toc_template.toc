@@ -17,5 +17,6 @@ Src\Core.lua
 
 Src\Emoji\EmojiIndex.lua
 Src\Emoji\Emoji.lua
+Src\Emoji\EmojiChat.lua
 
 Src\Options\OptionsWindow.lua
