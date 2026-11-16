@@ -37,9 +37,8 @@ ADDON_ROOT = REPO_ROOT / "Addon"  # The addon root in the repository; packaged a
 TOC_TEMPLATE = "toc_template.toc"
 
 # Relative to ADDON_ROOT
-COPY_DIRS = ["Ace3", "Emoji", "Icons", "Options"]
+COPY_DIRS = ["Ace3", "Icons", "Src"]
 COPY_FILES = [
-    "Core.lua",
     "embeds.xml",
 ]
 # In ADDON_ROOT but not a part of the installed addon

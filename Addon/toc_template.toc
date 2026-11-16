@@ -13,9 +13,9 @@
 
 embeds.xml
 
-Core.lua
+Src\Core.lua
 
-Emoji\EmojiIndex.lua
-Emoji\Emoji.lua
+Src\Emoji\EmojiIndex.lua
+Src\Emoji\Emoji.lua
 
-Options\OptionsWindow.lua
+Src\Options\OptionsWindow.lua

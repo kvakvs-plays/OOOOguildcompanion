@@ -4,9 +4,9 @@
 Usage (from anywhere):
     python scripts/import_discord_emoji.py                 # the guilds in DEFAULT_GUILD_IDS
     python scripts/import_discord_emoji.py 123 456         # these guilds instead
-    python scripts/import_discord_emoji.py --index-only    # only rebuild Addon/Emoji/EmojiIndex.lua
+    python scripts/import_discord_emoji.py --index-only    # only rebuild Addon/Src/Emoji/EmojiIndex.lua
 
-Every run also writes Addon/Emoji/EmojiIndex.lua, the list of emoji that the addon loads.
+Every run also writes Addon/Src/Emoji/EmojiIndex.lua, the list of emoji that the addon loads.
 
 Needs:
 - A Discord bot token in the DISCORD_BOT_TOKEN environment variable, or as a
@@ -36,7 +36,7 @@ DEFAULT_GUILD_IDS = [
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_ROOT = REPO_ROOT / "Addon" / "Icons" / "Emoji"
-INDEX_FILE = REPO_ROOT / "Addon" / "Emoji" / "EmojiIndex.lua"
+INDEX_FILE = REPO_ROOT / "Addon" / "Src" / "Emoji" / "EmojiIndex.lua"
 API = "https://discord.com/api/v10"
 CDN = "https://cdn.discordapp.com"
 # Discord rejects requests without a User-Agent of this form
