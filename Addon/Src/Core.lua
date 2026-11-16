@@ -52,6 +52,7 @@ function addon:OnInitialize()
   ns.db = LibStub("AceDB-3.0"):New("OOOOguildcompanionDB", defaults, true)
   migrate(ns.db)
 
+  ns.optionsWindow:Register()
   self:RegisterChatCommand("oooo", "OnSlashCommand")
 end
 

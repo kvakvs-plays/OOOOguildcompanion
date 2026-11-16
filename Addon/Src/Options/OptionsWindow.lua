@@ -1,94 +1,107 @@
 local addonName, ns = ...
 
-local AceGUI = LibStub("AceGUI-3.0")
+local AceConfig = LibStub("AceConfig-3.0")
+local AceConfigDialog = LibStub("AceConfigDialog-3.0")
 
 ---@class OOOOOptionsWindow
----@field frame table|nil AceGUI Frame widget while the window is open
+---@field options table|nil AceConfig options table, built on first use
 local optionsWindow = {}
 ns.optionsWindow = optionsWindow
 
+local WINDOW_TITLE = "OO OO Guild Companion"
 local EMOJI_SIZE = 32
-local TABS = {
-  { text = "Emoji", value = "emoji" },
-}
 
----One line of the Emoji tab: trigger word, image, checkbox.
----@param emoji OOOOEmoji
----@return table row AceGUI SimpleGroup widget
-local function createEmojiRow(emoji)
-  local row = AceGUI:Create("SimpleGroup")
-  row:SetFullWidth(true)
-  row:SetLayout("Flow")
-
-  local trigger = AceGUI:Create("Label")
-  trigger:SetFontObject(GameFontHighlight)
-  trigger:SetText(emoji.trigger)
-  trigger:SetWidth(220)
-  row:AddChild(trigger)
-
-  local image = AceGUI:Create("Label")
-  image:SetImage(emoji.texture)
-  image:SetImageSize(EMOJI_SIZE, EMOJI_SIZE)
-  image:SetWidth(EMOJI_SIZE + 24)
-  row:AddChild(image)
-
-  local enabled = AceGUI:Create("CheckBox")
-  enabled:SetLabel("Enabled")
-  enabled:SetValue(ns.emoji:IsEnabled(emoji.name))
-  enabled:SetWidth(120)
-  enabled:SetCallback("OnValueChanged", function(_widget, _event, value)
-    ns.emoji:SetEnabled(emoji.name, value)
-  end)
-  row:AddChild(enabled)
-
-  return row
+---AceConfig `get` of an emoji checkbox; `info.arg` is the emoji name.
+---@param info table AceConfig info table
+---@return boolean
+local function getEmojiEnabled(info)
+  return ns.emoji:IsEnabled(info.arg)
 end
 
----@param container table AceGUI TabGroup widget
-local function drawEmojiTab(container)
-  local scroll = AceGUI:Create("ScrollFrame")
-  scroll:SetLayout("List")
-  container:AddChild(scroll)
+---AceConfig `set` of an emoji checkbox; `info.arg` is the emoji name.
+---@param info table AceConfig info table
+---@param value boolean
+local function setEmojiEnabled(info, value)
+  ns.emoji:SetEnabled(info.arg, value)
+end
 
-  local hint = AceGUI:Create("Label")
-  hint:SetFullWidth(true)
-  hint:SetText("Untick an emoji to turn it off for you. This does not change what other guild members see.\n ")
-  scroll:AddChild(hint)
+---The Emoji tab: one line per emoji with the image, the trigger word, and a checkbox.
+---@return table group AceConfig group
+local function buildEmojiTab()
+  local args = {
+    hint = {
+      type = "description",
+      order = 0,
+      name = "Untick an emoji to turn it off for you. This does not change what other guild members see.\n ",
+    },
+  }
 
-  for _, emoji in ipairs(ns.emoji:GetAll()) do
-    scroll:AddChild(createEmojiRow(emoji))
+  for index, emoji in ipairs(ns.emoji:GetAll()) do
+    -- A toggle draws its image at a fixed 16 pixels, so the image goes into a description beside it.
+    -- The two relative widths add up to less than 1, which keeps one emoji per line at any window width.
+    args["image_" .. emoji.name] = {
+      type = "description",
+      order = index * 2,
+      name = emoji.trigger,
+      fontSize = "medium",
+      image = emoji.texture,
+      imageWidth = EMOJI_SIZE,
+      imageHeight = EMOJI_SIZE,
+      width = "relative",
+      relWidth = 0.6,
+    }
+    args["enabled_" .. emoji.name] = {
+      type = "toggle",
+      order = index * 2 + 1,
+      name = "Enabled",
+      desc = "Show " .. emoji.trigger .. " as an image.",
+      arg = emoji.name,
+      width = "relative",
+      relWidth = 0.35,
+    }
+  end
+
+  return {
+    type = "group",
+    order = 1,
+    name = "Emoji",
+    get = getEmojiEnabled,
+    set = setEmojiEnabled,
+    args = args,
+  }
+end
+
+---Options table callback for AceConfig. The table is built on the first call, when all files are loaded.
+---@return table options AceConfig options table
+local function getOptions()
+  if not optionsWindow.options then
+    optionsWindow.options = {
+      type = "group",
+      name = WINDOW_TITLE .. " " .. (C_AddOns.GetAddOnMetadata(addonName, "Version") or ""),
+      childGroups = "tab",
+      args = {
+        emoji = buildEmojiTab(),
+      },
+    }
+  end
+  return optionsWindow.options
+end
+
+---Registers the options table with AceConfig and adds it to the game's Options > AddOns list.
+---Call once, from OnInitialize.
+function optionsWindow:Register()
+  AceConfig:RegisterOptionsTable(addonName, getOptions)
+  AceConfigDialog:SetDefaultSize(addonName, 520, 560)
+
+  -- AddToBlizOptions needs the Mainline Settings API. Its presence on Forever is expected but was not
+  -- checked on the release client, so probe it; /oooo opt works either way.
+  local settings = _G.Settings
+  if type(settings) == "table" and settings.RegisterCanvasLayoutCategory and settings.RegisterAddOnCategory then
+    AceConfigDialog:AddToBlizOptions(addonName, WINDOW_TITLE)
   end
 end
 
-local drawTab = {
-  emoji = drawEmojiTab,
-}
-
----Shows the settings window; does nothing when it is already open.
+---Shows the settings window. When it is already open, its controls are refreshed.
 function optionsWindow:Open()
-  if self.frame then
-    return
-  end
-
-  local frame = AceGUI:Create("Frame")
-  frame:SetTitle("OO OO Guild Companion")
-  frame:SetStatusText(addonName .. " " .. (C_AddOns.GetAddOnMetadata(addonName, "Version") or ""))
-  frame:SetWidth(520)
-  frame:SetHeight(560)
-  frame:SetLayout("Fill")
-  frame:SetCallback("OnClose", function(widget)
-    AceGUI:Release(widget)
-    self.frame = nil
-  end)
-  self.frame = frame
-
-  local tabs = AceGUI:Create("TabGroup")
-  tabs:SetLayout("Fill")
-  tabs:SetTabs(TABS)
-  tabs:SetCallback("OnGroupSelected", function(container, _event, group)
-    container:ReleaseChildren()
-    drawTab[group](container)
-  end)
-  frame:AddChild(tabs)
-  tabs:SelectTab(TABS[1].value)
+  AceConfigDialog:Open(addonName)
 end
