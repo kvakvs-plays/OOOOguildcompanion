@@ -1,0 +1,2 @@
+# Holds DISCORD_BOT_TOKEN for scripts/import_discord_emoji.py
+.env

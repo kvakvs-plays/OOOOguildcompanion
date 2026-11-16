@@ -9,11 +9,17 @@
 - The guild name is exactly `OO OO`: four capital letters O with one space in the middle, shown in the game as
   `<OO OO>`. The addon folder name has no space.
 - The addon folder and the TOC file must both be named `OOOOguildcompanion`.
+- The `Addon` folder is the addon root: it holds the TOC and is installed as `OOOOguildcompanion`. Paths
+  below are relative to it unless they start with `scripts`.
 - The addon logo is a dark digital clock with glowing white 00:00. The icons are `Icons\Logo32.png`,
   `Logo64.png`, `Logo128.png`, and `Logo256.png`. Use `Logo64.png` for the TOC `## IconTexture` line and a
   minimap button, and the larger ones for window headers.
 - Do not edit the icons by hand. `Art\clock.png` is the source; `pwsh Art\make-icons.ps1` rebuilds all sizes
   with ImageMagick. The `Art` folder is not part of the installed addon.
+- `Icons\Emoji\<guild id>\<name>.png` holds the custom emoji of Discord guilds as 64x64 textures. They are
+  imported by hand with `python scripts/import_discord_emoji.py [guild id ...]`, which replaces the PNG files
+  of each imported guild; do not edit them. The script needs a bot token in `DISCORD_BOT_TOKEN` (environment
+  or the git-ignored `.env`) and a bot that is a member of each guild. Never commit or print the token.
 - The addon is written in Lua with LuaLS type annotations (`---@class`, `---@param`, `---@return`). Specify
   types wherever they can be known, and add a documentation comment to public or non-obvious functions.
 
