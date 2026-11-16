@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: OO OO Guild Companion
+## Notes: Companion addon for the guild OO OO (WoW: Forever, EU PvE)
+## Version: 0.1.0
+## Author: kvakvs
+## DefaultState: enabled
+## IconTexture: Interface\AddOns\OOOOguildcompanion\Icons\Logo64.png
