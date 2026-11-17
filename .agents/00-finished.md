@@ -26,3 +26,9 @@
   system line, names are `First Last` without a realm suffix, sends work in a
   dungeon in and out of combat. Closed with three checks deferred (raid group,
   raid instance, boss encounter); they are listed in the plan under stage 1.
+
+## Stage 2. Core logic with host tests
+
+- **2.1 `Base94`**: `Src/Sync/Base94.lua` with `encode`, `decode`, `isValid`,
+  `hash` (32 bits, no `bit` library, constants checked against Python), and
+  `compare`; `Tests/sync_base94.lua`. Host only by design.

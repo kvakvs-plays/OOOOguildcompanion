@@ -515,27 +515,6 @@ policy of 7.4, see step 6.1):
 
 ### Stage 2. Core logic with host tests
 
-- **2.1 `Base94`: numbers, strings, hash**
-  - Substeps
-    - `encode(number, width)` and `decode(text)`, big-endian, fixed width.
-    - `isValid(text)`: every byte in 33 to 126.
-    - `hash(text)`: the 32-bit hash of section 3. Keep every intermediate value
-      below 2^53, so that Lua 5.1 doubles and Lua 5.4 integers give the same
-      result.
-    - `compare(a, b)`: byte-wise comparison, for the case that probe 1.2 shows a
-      locale-dependent `<`.
-  - Checkpoint: `lua Tests/sync_base94.lua` passes.
-  - Host tests (`Tests/sync_base94.lua`)
-    - `decode(encode(n, w)) == n` for 0, 1, 93, 94, `94^5 - 1`, and 1000 random
-      values.
-    - For random `a < b`, `encode(a, 5) < encode(b, 5)` as strings.
-    - `encode` raises on a negative number and on one that is too large for the
-      width.
-    - Hash values of 5 fixed strings equal constants written in the test (they
-      guard against a silent change of the hash); the result is always an
-      integer in `[0, 2^32)`.
-    - `compare` agrees with `<` on 1000 random pairs.
-  - Done when: the file uses no WoW global and no `bit` library.
 - **2.2 `VersionId`: make, parse, validate**
   - Substeps
     - `newGenerator(origin, timeFn, randomFn)` returns `next(maxId)`; it holds
