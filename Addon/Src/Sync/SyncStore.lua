@@ -107,3 +107,215 @@ function store.rebuild(tbl)
   end
   tbl.maxId, tbl.fp = maxId, fp
 end
+
+--------------------------------------------------------------------------------
+-- Digest, delta, batches
+--------------------------------------------------------------------------------
+
+---@class OOOOSyncWireRecord A record on its way between two replicas
+---@field key string
+---@field id string Version id
+---@field payload any nil in a tombstone
+---@field tombstone boolean|nil true when the write deleted the record
+
+---Returns the clock as one string of ids, sorted. It tells a peer what this table has seen.
+---@param tbl OOOOSyncTable
+---@return string digest Length is a multiple of 11
+function store.digest(tbl)
+  local ids = {}
+  for _, id in pairs(tbl.clock) do
+    ids[#ids + 1] = id
+  end
+  table.sort(ids)
+  return table.concat(ids)
+end
+
+---Reads a received digest.
+---@param text any
+---@return table<string, string>|nil clock Origin -> id; nil when `text` is not a digest
+---@return string|nil reason Why the digest was rejected
+function store.parseDigest(text)
+  if type(text) ~= "string" or #text % versionId.LENGTH ~= 0 then
+    return nil, "length"
+  end
+  local clock = {}
+  for position = 1, #text, versionId.LENGTH do
+    local id = text:sub(position, position + versionId.LENGTH - 1)
+    if not versionId.isWellFormed(id) then
+      return nil, "id"
+    end
+    local origin = versionId.originOf(id)
+    if clock[origin] then
+      return nil, "repeated origin"
+    end
+    clock[origin] = id
+  end
+  return clock
+end
+
+---Selects the records that another replica lacks: those with an id above the other clock's value for the
+---record's origin. The list is sorted by id, ascending; a transfer must keep that order (see `applyBatch`).
+---@param tbl OOOOSyncTable
+---@param remoteClock table<string, string> Origin -> id, from `parseDigest`
+---@return OOOOSyncWireRecord[]
+function store.selectDelta(tbl, remoteClock)
+  local records = {}
+  for key, record in pairs(tbl.records) do
+    local seen = remoteClock[versionId.originOf(record.v)]
+    if not seen or record.v > seen then
+      records[#records + 1] = { key = key, id = record.v, payload = record.d, tombstone = record.x }
+    end
+  end
+  table.sort(records, function(a, b) return a.id < b.id end)
+  return records
+end
+
+---Estimates the size of a value on the wire without a serializer: close enough to cut batches and to
+---limit record sizes. Tables are counted to a depth of 8.
+---@param value any
+---@param depth integer?
+---@return integer bytes
+function store.estimateSize(value, depth)
+  local kind = type(value)
+  if kind == "string" then
+    return #value + 2
+  elseif kind == "number" then
+    return #tostring(value) + 2
+  elseif kind == "boolean" then
+    return 2
+  elseif kind ~= "table" or (depth or 0) >= 8 then
+    return 0
+  end
+  local bytes = 4
+  for key, item in pairs(value) do
+    bytes = bytes + store.estimateSize(key, (depth or 0) + 1) + store.estimateSize(item, (depth or 0) + 1)
+  end
+  return bytes
+end
+
+---Estimates the size of one record on the wire.
+---@param record OOOOSyncWireRecord
+---@return integer bytes
+function store.recordSize(record)
+  return #record.key + 2 + versionId.LENGTH + 2 + store.estimateSize(record.payload) + 2
+end
+
+---Cuts a list of records into batches of at most `maxBytes`, by `recordSize`, without changing the order.
+---A record that alone is larger than `maxBytes` gets a batch of its own.
+---@param records OOOOSyncWireRecord[]
+---@param maxBytes integer
+---@return OOOOSyncWireRecord[][] batches No batch is empty; no records give no batches
+function store.splitBatches(records, maxBytes)
+  local batches = {}
+  local batch, bytes = nil, 0
+  for _, record in ipairs(records) do
+    local size = store.recordSize(record)
+    if not batch or bytes + size > maxBytes then
+      batch, bytes = {}, 0
+      batches[#batches + 1] = batch
+    end
+    batch[#batch + 1] = record
+    bytes = bytes + size
+  end
+  return batches
+end
+
+---Applies a received batch in its order. A bad record is dropped together with all later records of the
+---same origin in the batch: the clock of an origin must not pass a write that was not taken. A record
+---whose id has no readable origin ends the batch, because it cannot be told which origin to stop.
+---
+---Why the order matters: records travel sorted by id and a batch is applied whole, so when the clock of
+---an origin reaches an id, every record with a smaller id that the sender had to give has been applied.
+---@param tbl OOOOSyncTable
+---@param records any[] Received records; every field is checked here or by `validateFn`
+---@param validateFn (fun(record: OOOOSyncWireRecord): boolean)? Further checks: id time, key, payload, size
+---@return string[] changed Keys whose stored record changed
+---@return integer dropped Number of records that were not applied
+function store.applyBatch(tbl, records, validateFn)
+  local changed, dropped = {}, 0
+  ---Origins that had a bad record in this batch
+  local blocked = {}
+  for index = 1, #records do
+    local record = records[index]
+    local id = type(record) == "table" and record.id
+    if not versionId.isWellFormed(id) then
+      dropped = dropped + (#records - index + 1)
+      break
+    end
+    local origin = versionId.originOf(id)
+    if blocked[origin] then
+      dropped = dropped + 1
+    elseif type(record.key) ~= "string" or (validateFn and not validateFn(record)) then
+      blocked[origin] = true
+      dropped = dropped + 1
+    elseif store.apply(tbl, record.key, id, record.payload, record.tombstone == true) then
+      changed[#changed + 1] = record.key
+    end
+  end
+  return changed, dropped
+end
+
+---Lists the clock entries that another replica will still lack after it has applied `records`: origins whose
+---last write here was replaced by a newer write of another origin, so no record carries their clock value.
+---Without these entries the two clocks, and with them the table versions, would never become equal.
+---@param tbl OOOOSyncTable
+---@param remoteClock table<string, string> Origin -> id, from `parseDigest`
+---@param records OOOOSyncWireRecord[] The delta from `selectDelta` for the same clock
+---@return table<string, string> rest Origin -> this table's clock value
+function store.clockRest(tbl, remoteClock, records)
+  local reached = {}
+  for _, record in ipairs(records) do
+    local origin = versionId.originOf(record.id)
+    if not reached[origin] or record.id > reached[origin] then
+      reached[origin] = record.id
+    end
+  end
+  local rest = {}
+  for origin, id in pairs(tbl.clock) do
+    local seen = remoteClock[origin]
+    if (not seen or id > seen) and (not reached[origin] or id > reached[origin]) then
+      rest[origin] = id
+    end
+  end
+  return rest
+end
+
+---Raises the clock to the values of another replica's clock, after a pull from that replica is complete.
+---Call it only when every batch of the pull was applied and no record was dropped: the table has then
+---seen everything that the other replica has seen. An entry whose id is not of its origin is skipped.
+---@param tbl OOOOSyncTable
+---@param clock table<any, any> Origin -> id, from `clockRest` on the other side; checked here
+---@return boolean changed true when a clock entry rose
+function store.mergeClock(tbl, clock)
+  local changed = false
+  for origin, id in pairs(clock) do
+    if versionId.isWellFormed(id) and versionId.originOf(id) == origin then
+      local seen = tbl.clock[origin]
+      if not seen or id > seen then
+        tbl.fp = (tbl.fp - (seen and base94.hash(seen) or 0) + base94.hash(id)) % TWO_32
+        tbl.clock[origin] = id
+        if id > tbl.maxId then
+          tbl.maxId = id
+        end
+        changed = true
+      end
+    end
+  end
+  return changed
+end
+
+---Lists the origins for which another replica is ahead of this table, each with this table's clock value
+---(`versionId.ZERO` when the origin is unknown here). The other replica then knows which records to push.
+---@param tbl OOOOSyncTable
+---@param remoteClock table<string, string> Origin -> id, from `parseDigest`
+---@return table<string, string> wants Origin -> this table's clock value
+function store.wants(tbl, remoteClock)
+  local wants = {}
+  for origin, id in pairs(remoteClock) do
+    local seen = tbl.clock[origin] or versionId.ZERO
+    if id > seen then
+      wants[origin] = seen
+    end
+  end
+  return wants
+end

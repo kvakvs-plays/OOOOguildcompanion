@@ -143,12 +143,26 @@ db.global.sync = {
   its id is greater.
 - The clock is updated for every received record, also for one that lost to a
   newer local record.
-- **Invariant**: for each origin `O`, the replica has seen every record that `O`
-  wrote up to `clock[O]`: it holds either that record or a newer one for the
-  same key.
+- **Invariant**: when the clock of a replica covers the latest write of a key
+  (`clock[origin] >= id` of that write), the replica holds that write. A replica
+  that lacks the latest write of a key therefore always shows a gap in its
+  clock, and a pull closes it.
 - To keep the invariant, records always travel **sorted by id, ascending**, and
   a batch is applied whole. A transfer that stops halfway then leaves a valid,
   shorter state.
+- A stronger rule does not hold and must not be assumed (found in step 2.4): "the
+  replica holds every write of `O` up to `clock[O]`, or a newer one for the same
+  key". A transfer that is cut can deliver a write of `O` with id 7 and not yet
+  the write with id 9 of another origin that replaced `O`'s write with id 5.
+  The key is then missing although `clock[O]` is past 5. The gap shows in the
+  clock of the other origin, which is what the invariant above states.
+- A write that was replaced by a write of another origin leaves no record, so
+  no record carries its clock value. The last batch of a pull therefore also
+  carries the **rest of the responder's clock**: the entries that the requester
+  still lacks after the records (`SyncStore.clockRest`). The requester takes
+  them (`SyncStore.mergeClock`) only when it applied every batch and dropped no
+  record. Without this the clocks of two replicas with equal data can stay
+  different, and they would pull from each other without end.
 - Why a clock and not one "newer than X" mark per table: a replica can hold a
   new record from origin A and still lack an older one from origin B. A single
   mark would skip B's record forever.
@@ -160,8 +174,10 @@ db.global.sync = {
 - `fp` is the sum, modulo 2^32, of `hash(id)` over all ids in the clock. It is
   updated in place when one clock entry changes (subtract the old hash, add the
   new one) and does not depend on order.
-- Equal fingerprints mean equal clocks, and by the invariant equal data.
-  Different fingerprints mean that at least one side lacks something.
+- Equal fingerprints mean equal clocks. When all replicas have the same clock,
+  they have the same data: each holds the latest write of every key.
+  Different fingerprints mean that at least one side lacks a record or a clock
+  entry, and a pull settles it.
 - `maxId` tells which side has the most recent write and is used to pick a
   source.
 - The fingerprint covers the clock, not the records, so local cleanup (4.4)
@@ -295,12 +311,15 @@ Rules for `writers = "owner"`:
 | `H` hello | GUILD | `{ table -> tableVersion }` | Sent once after login. Asks peers to answer. |
 | `S` summary | GUILD | `{ table -> tableVersion }` | Answer to hello, and notice after a merge. |
 | `Q` pull request | WHISPER | table, schema, nonce, digest | Digest is the clock as one string of 11-char ids. |
-| `D` delta | WHISPER | table, nonce, batch number, last flag, records, wants | Records the requester lacks, ascending. |
+| `D` delta | WHISPER | table, nonce, batch number, last flag, records, clock rest, wants | Records the requester lacks, ascending. |
 | `P` push | GUILD | table, schema, base, records | New records for everybody. |
 | `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal: busy, unknown table, or other schema. |
 
 - A record on the wire is `key, id, payload` (or `key, id` with a tombstone
   marker).
+- `clock rest`, in the last delta batch, is `origin -> id` for the clock entries
+  of the responder that no sent record carries (4.2). Each id is checked like a
+  record id, and it must be an id of its origin.
 - `wants`, in the last delta batch, lists the origins for which the requester is
   ahead, with the responder's clock value for each. The requester then pushes
   those records to the guild (7.3).
@@ -345,7 +364,9 @@ Rules for `writers = "owner"`:
    stall.
 4. The requester validates and applies each batch, then stores the new clock,
    `maxId`, and `fp`.
-5. After the last batch, the requester marks that fingerprint as merged. Peers
+5. After the last batch, when no record was dropped, the requester merges the
+   clock rest (4.2); its table version then equals the responder's unless one
+   of them changed meanwhile. The requester marks that fingerprint as merged. Peers
    with a merged fingerprint are skipped. If other peers still differ, the next
    one is taken, again by the greatest `maxId`.
 6. Failure handling: no batch for 60 seconds, or the peer goes offline in the
@@ -515,37 +536,7 @@ policy of 7.4, see step 6.1):
 
 ### Stage 2. Core logic with host tests
 
-- **2.4 `SyncStore`: digest, delta, batches**
-  - Substeps
-    - `digest(tbl)` gives the clock as one string of 11-character ids;
-      `parseDigest(text)` gives `origin -> id` and rejects a wrong length or a
-      repeated origin.
-    - `selectDelta(tbl, remoteClock)` returns the records that the other side
-      lacks, sorted by id, ascending.
-    - `splitBatches(records, maxBytes)` cuts the list without changing the
-      order.
-    - `applyBatch(tbl, records, validateFn)`: applies in order; one bad record
-      drops it and all later records of the same origin (section 8).
-    - `wants(tbl, remoteClock)`: the origins for which the other side is ahead,
-      with the local clock value.
-  - Checkpoint: `lua Tests/sync_delta.lua` passes.
-  - Host tests (`Tests/sync_delta.lua`)
-    - After `applyBatch(B, selectDelta(A, clock of B))` and the same in the
-      other direction, A and B have equal table versions and equal records.
-    - Batches from two peers applied in both orders give the same result.
-    - A transfer cut after batch `k`, for every `k`: the invariant of 4.2 holds
-      (checked against the full write history that the test keeps), and a second
-      pull completes the table.
-    - A bad record in the middle: earlier records of that origin are applied,
-      later ones are not, other origins are complete, and the clock of the bad
-      origin stops before the bad record.
-    - `splitBatches` keeps every batch under the limit and gives back the input
-      when the batches are joined.
-    - Three replicas, 500 rounds of random writes, deletes, and pulls from a
-      seeded source, then pulls until nothing changes: all three have equal
-      table versions and equal records. The test runs with 20 seeds.
-  - Done when: the convergence test passes with all seeds, and the seed is
-    printed on a failure.
+Finished; see `00-finished.md`.
 
 ### Stage 3. Storage and API
 
@@ -738,8 +729,8 @@ policy of 7.4, see step 6.1):
       about 2 KB, the next one when the progress callback reports the previous
       one sent.
     - Cut a large selection across frames with the timer.
-    - Put `wants` into the last batch. A delta with no records still sends one
-      last batch.
+    - Put `wants` and the clock rest (`SyncStore.clockRest`) into the last
+      batch. A delta with no records still sends one last batch.
     - Stop when the requester goes offline or the conditions turn false (the
       conditions are a stub that returns true until stage 6).
   - Checkpoint: on the host, a responder answers a hand-made `Q` with the
@@ -760,7 +751,9 @@ policy of 7.4, see step 6.1):
     - Apply each batch through `applyBatch` with the checks of section 8; ignore
       a `D` with a wrong nonce, from another sender, or with a batch number out
       of order.
-    - After the last batch: set `syncedAt`, mark the fingerprint as merged, send
+    - After the last batch: merge the clock rest when every batch was applied
+      and no record was dropped (`SyncStore.mergeClock`, each id validated),
+      set `syncedAt`, mark the fingerprint as merged, send
       `S`, and take the next peer when one still differs.
     - Timeout of 60 seconds without a batch, an offline peer, or `B`: return the
       table to the queue with another peer, or with the same one after its

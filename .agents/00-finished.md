@@ -40,3 +40,9 @@
   with `newTable`, `apply`, `tableVersion`, `parseTableVersion`, `rebuild`. An
   empty table has `maxId = versionId.ZERO` and `fp = 0`;
   `Tests/sync_store.lua`. Host only by design.
+- **2.4 `SyncStore`: digest, delta, batches**: `digest`, `parseDigest`,
+  `selectDelta`, `estimateSize`, `recordSize`, `splitBatches`, `applyBatch`,
+  `wants`, and beyond the plan `clockRest` and `mergeClock`;
+  `Tests/sync_delta.lua` (cut transfers, bad records, three replicas with 20
+  seeds). Two corrections of the design came out of the tests and are in plan
+  section 4.2: the weaker invariant, and the clock rest in the last batch.
