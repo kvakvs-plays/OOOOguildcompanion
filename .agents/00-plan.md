@@ -391,14 +391,13 @@ Per table, with defaults from the table definition and overrides in
 ### 7.5 Officer tables
 
 A table with `writers = "officer"` (for example `guildbank`) has stricter rules.
-"Officer" means the guild ranks 1 (guild master), 2, and 3. The list is a
-hardcoded constant in the addon (`ns.OFFICER_RANKS`), not a setting. The roster
-API counts ranks from 0, so the constant holds the rank indexes 0, 1, and 2.
-Checked on the release client (step 1.2): the guild master has index 0, and
-in `OO OO` the indexes 0, 1, and 2 are the ranks `O`, `Ministry of War`, and
-`Core`. The roster
-gives the rank of every sender. The rank belongs to the character that is logged
-in, not to the player.
+"Officer" means the rank indexes 0 and 1 of the roster API, which counts ranks
+from 0: in `OO OO` the ranks `O` (guild master) and `Ministry of War`. The rank
+`Core` (index 2) is not an officer rank. The list is a hardcoded constant in the
+addon (`ns.OFFICER_RANKS = { [0] = true, [1] = true }`), not a setting. Checked
+on the release client (step 1.2): the guild master has index 0. The roster gives
+the rank of every sender. The rank belongs to the character that is logged in,
+not to the player.
 
 | Who | Writes | Takes data from | Serves pulls | Pushes |
 | --- | --- | --- | --- | --- |
@@ -960,7 +959,7 @@ Finished; see `00-finished.md`.
     receiver share.
 - **7.2 Officer tables: writers, sources, pushes**
   - Substeps
-    - `ns.OFFICER_RANKS` with the indexes confirmed by probe 1.2, and
+    - `ns.OFFICER_RANKS` with the rank indexes 0 and 1 (7.5), and
       `GuildState:IsOfficer(name)` from the roster cache.
     - `Put` and `Delete` fail on a character that is not an officer.
     - A push of an officer table is applied only from an officer.
@@ -1066,7 +1065,8 @@ Finished; see `00-finished.md`.
   hidden guild addon channel.
 - The origin is one random constant per player, made at install.
 - Alt detection through the origin is a wanted feature.
-- Officers are guild ranks 1 (guild master), 2, and 3, hardcoded in the addon.
+- Officers are the rank indexes 0 (`O`, guild master) and 1
+  (`Ministry of War`), hardcoded in the addon. `Core` is not an officer rank.
 - `guildbank` is written by officers only; everyone reads it, and members may
   pass it on when no officer is online (7.5).
 - `profession_id`, `profession_skills`, `equipment`, and `attunement` are
