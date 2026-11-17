@@ -519,6 +519,15 @@ Finished; see `00-finished.md`.
   - Done when: the results are written under "Forever API Rules" in AGENTS.md,
     and the **PROBE** notes in sections 3 and 7.5 are replaced with the result.
 - **1.3 Message probes** (**CLIENT**, two accounts)
+  - Status: the code and the host tests are done. The probes use their own
+    prefix `OOOOprobe` and the raw `C_ChatInfo.SendAddonMessage`. Open: on the
+    second account run `/oooo sync probe listen`; on the first run
+    `echo guild`, `echo whisper <name>`, `burst`, `offline <name>`, and
+    `state` (in combat, in a dungeon, in a raid); then do the "Done when"
+    part. `burst` also sends one message every 0.5 s for 20 s after the 30,
+    because the raw API drops a throttled message and the refill rate would
+    otherwise stay unknown. With one account, `echo guild` and `state` still
+    show whether the own message comes back intact.
   - Substeps
     - `echo guild` and `echo whisper <name>`: send the 94-character payload
       through `C_ChatInfo.SendAddonMessage`; the other client sends it back; the

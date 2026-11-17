@@ -129,4 +129,44 @@ T.eq(probe.lookup("string.format"), string.format, "lookup follows a dotted path
 T.eq(probe.lookup("string.format.x"), nil, "lookup gives nil below a value that is not a table")
 T.eq(probe.lookup("nosuch.global"), nil, "lookup gives nil for a missing global")
 
+-- Burst report: messages per second from arrival times
+T.eq(probe.messagesPerSecond({ 0, 1, 2, 3 }), 1, "four arrivals one second apart give 1 message per second")
+T.eq(probe.messagesPerSecond({ 10.5, 10, 11 }), 2, "arrival times in any order: 3 arrivals in 1 s give 2 per second")
+T.eq(probe.messagesPerSecond({ 100, 100.25, 100.5, 100.75, 101 }), 4, "five arrivals in 1 s give 4 per second")
+T.eq(probe.messagesPerSecond({}), 0, "no arrival gives 0")
+T.eq(probe.messagesPerSecond({ 7 }), 0, "one arrival gives 0")
+T.eq(probe.messagesPerSecond({ 7, 7, 7 }), 0, "arrivals at one moment give 0")
+
+-- Burst messages
+for _, sequence in ipairs({ 1, 30, 31, 70 }) do
+  local message = probe.burstMessage(sequence)
+  T.eq(#message, 255, "a burst message has 255 bytes")
+  T.eq(message:sub(1, 1), "B", "a burst message starts with its type")
+  T.eq(probe.parseBurst(message:sub(2)), sequence, "a burst message gives back sequence " .. sequence)
+end
+local body = probe.burstMessage(5):sub(2)
+for name, bad in pairs({
+  ["sequence 0"] = "00" .. body:sub(3),
+  ["sequence 71"] = "71" .. body:sub(3),
+  ["no digits"] = "xx" .. body:sub(3),
+  ["a short body"] = body:sub(1, 100),
+  ["a long body"] = body .. "x",
+  ["other padding"] = body:sub(1, 253) .. "y",
+  ["an empty body"] = "",
+}) do
+  T.eq(probe.parseBurst(bad), nil, "parseBurst rejects " .. name)
+end
+
+-- Result codes
+T.eq(probe.summarizeCodes({ "0", "0", "3", "0", "3" }), "0 x3, 3 x2", "equal result codes are counted")
+T.eq(probe.summarizeCodes({}), "", "no result code gives an empty summary")
+
+-- Message probes without the client: a usage line or a missing API, never an error
+for _, command in ipairs({ "echo", "echo whisper", "echo guild", "echo whisper Name", "burst", "listen", "state",
+  "offline" }) do
+  ns.slash:Dispatch("sync probe " .. command)
+  local result = printed()
+  T.ok(result ~= "" and not result:find("Lua error", 1, true), "probe " .. command .. " reports without an error")
+end
+
 T.finish()

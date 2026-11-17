@@ -434,3 +434,420 @@ probe.Register("api", "api - which functions and events of the later stages exis
   report:Add("invalid events: " .. (#invalid > 0 and table.concat(invalid, ", ") or "none"))
   report:Add("RESULT: " .. #missing .. " functions missing, " .. #invalid .. " events invalid")
 end)
+
+--------------------------------------------------------------------------------
+-- Message probes (plan step 1.3)
+--------------------------------------------------------------------------------
+
+---Prefix of the probe messages. It is not the prefix of the sync protocol, so a probe never reaches the engine.
+local PREFIX = "OOOOprobe"
+---Longest addon message, in bytes
+local MESSAGE_BYTES = 255
+---Messages that the burst probe sends at once
+local BURST_COUNT = 30
+---Attempts of the burst probe after the burst, one per STEADY_INTERVAL seconds
+local STEADY_COUNT = 40
+local STEADY_INTERVAL = 0.5
+---A received burst is reported when no message has come for this many seconds
+local QUIET_SECONDS = 5
+---Shortest time between two echo replies, which limits what another member can make this client send
+local REPLY_INTERVAL = 1
+
+---Computes the message rate from arrival times: the intervals between the first and the last arrival.
+---@param times number[] Arrival times in seconds, in any order
+---@return number rate Messages per second; 0 for fewer than two arrivals or arrivals at one moment
+function probe.messagesPerSecond(times)
+  if #times < 2 then
+    return 0
+  end
+  local first, last = times[1], times[1]
+  for _, time in ipairs(times) do
+    first, last = math.min(first, time), math.max(last, time)
+  end
+  if last <= first then
+    return 0
+  end
+  return (#times - 1) / (last - first)
+end
+
+---Builds a burst message of the full length that carries its sequence number.
+---@param sequence integer 1 to 99
+---@return string message 255 bytes
+function probe.burstMessage(sequence)
+  return "B" .. string.format("%02d", sequence) .. string.rep("x", MESSAGE_BYTES - 3)
+end
+
+---Reads the sequence number of a received burst message; the text comes from another client, so it is checked.
+---@param body string The message without its first character
+---@return integer|nil sequence nil when the body is not a burst message of this addon
+function probe.parseBurst(body)
+  if #body ~= MESSAGE_BYTES - 1 then
+    return nil
+  end
+  local digits = body:match("^(%d%d)x+$")
+  local sequence = tonumber(digits)
+  if sequence and sequence >= 1 and sequence <= BURST_COUNT + STEADY_COUNT then
+    return sequence
+  end
+  return nil
+end
+
+---Counts equal result codes: { "0", "0", "3" } gives "0 x2, 3 x1", in the order of first appearance.
+---@param codes string[]
+---@return string
+function probe.summarizeCodes(codes)
+  local counts, order = {}, {}
+  for _, code in ipairs(codes) do
+    if not counts[code] then
+      counts[code] = 0
+      order[#order + 1] = code
+    end
+    counts[code] = counts[code] + 1
+  end
+  for index, code in ipairs(order) do
+    order[index] = code .. " x" .. counts[code]
+  end
+  return table.concat(order, ", ")
+end
+
+---Describes the result of `comparePayload` for a result line.
+---@param expected string
+---@param received string
+---@return string description
+---@return boolean intact
+local function describePayload(expected, received)
+  local position = probe.comparePayload(expected, received)
+  if not position then
+    return "intact (" .. #received .. " bytes)", true
+  end
+  return "DAMAGED at position " .. position .. " (expected byte " .. tostring(expected:byte(position)) .. ", got "
+    .. tostring(received:byte(position)) .. "; " .. #received .. " of " .. #expected .. " bytes)", false
+end
+
+---true when a result of C_ChatInfo.SendAddonMessage means that the message was accepted.
+---The form of the result on Forever is not known: older clients give true, newer ones an enum value.
+---@param result any
+---@return boolean
+local function isSuccess(result)
+  if isSecret(result) then
+    return false
+  end
+  local success = lookup("Enum.SendAddonMessageResult.Success")
+  return result == true or result == 0 or (success ~= nil and result == success)
+end
+
+---Sends one probe message.
+---@param message string
+---@param channel "GUILD"|"WHISPER"
+---@param target string? Character name, for WHISPER
+---@return string result The result of the send as text
+---@return boolean accepted
+local function sendMessage(message, channel, target)
+  local send = lookup("C_ChatInfo.SendAddonMessage")
+  if not send then
+    return "C_ChatInfo.SendAddonMessage is missing", false
+  end
+  local result = send(PREFIX, message, channel, target)
+  return text(result), isSuccess(result)
+end
+
+---Name of the logged-in character; nil when the client hides it.
+---@return string|nil
+local function playerName()
+  local name = UnitName("player")
+  if isSecret(name) or type(name) ~= "string" then
+    return nil
+  end
+  return name
+end
+
+---The echo probe that waits for replies
+---@type { report: OOOOProbeReport, payload: string, replies: integer, damaged: integer }|nil
+local pendingEcho
+---The state probe that waits for its own message
+---@type { report: OOOOProbeReport, delivered: boolean }|nil
+local pendingState
+---GetTime() of the last echo reply
+local lastReplyAt = 0
+---The burst that is arriving; one at a time
+---@type { key: string, channel: string, times: number[], sequences: integer[], generation: integer }|nil
+local incoming
+
+---Prints what arrived of a burst from another client.
+---@param record { key: string, channel: string, times: number[], sequences: integer[] }
+local function reportIncoming(record)
+  local report = newReport("received", true)
+  local atOnce, steadyTimes, offsets = 0, {}, {}
+  for index, sequence in ipairs(record.sequences) do
+    if sequence <= BURST_COUNT then
+      atOnce = atOnce + 1
+    else
+      steadyTimes[#steadyTimes + 1] = record.times[index]
+    end
+    offsets[#offsets + 1] = string.format("%02d@%.2f", sequence, record.times[index] - record.times[1])
+  end
+  report:Add("burst from " .. record.key .. " on " .. record.channel .. ": " .. #record.times .. " messages arrived; "
+    .. atOnce .. " of the " .. BURST_COUNT .. " sent at once, " .. #steadyTimes .. " of the " .. STEADY_COUNT
+    .. " sent after them")
+  report:Add(string.format("RESULT: arrival rate after the burst: %.2f messages per second",
+    probe.messagesPerSecond(steadyTimes)))
+  report:Store("arrivals (sequence@seconds): " .. table.concat(offsets, " "))
+end
+
+---Handlers of the probe messages by their first character.
+---Arguments: the rest of the message, the channel, the sender's name (nil when secret), and whether it is our own.
+---@type table<string, fun(body: string, channel: string, from: string|nil, own: boolean)>
+local messageHandlers = {}
+
+---Echo request: another client asks for the payload back.
+function messageHandlers.E(body, channel, from, own)
+  if own then
+    -- A GUILD message and a whisper to oneself come back to the sender: the server round trip without a second client
+    if pendingEcho then
+      pendingEcho.report:Add("own message came back on " .. channel .. ": "
+        .. describePayload(pendingEcho.payload, body))
+    end
+    return
+  end
+  local now = GetTime()
+  if now - lastReplyAt < REPLY_INTERVAL then
+    return
+  end
+  lastReplyAt = now
+  local report = newReport("received", true)
+  if channel == "WHISPER" and not from then
+    report:Add("echo request by whisper from a secret name; no reply is possible")
+    return
+  end
+  local result = sendMessage("R" .. body, channel, channel == "WHISPER" and from or nil)
+  report:Add("echo request from " .. (from or "<secret>") .. " on " .. channel .. "; reply sent, result: " .. result)
+end
+
+---Echo reply: the payload as another client received it.
+function messageHandlers.R(body, channel, from, own)
+  if own or not pendingEcho then
+    return
+  end
+  local description, intact = describePayload(pendingEcho.payload, body)
+  pendingEcho.replies = pendingEcho.replies + 1
+  if not intact then
+    pendingEcho.damaged = pendingEcho.damaged + 1
+  end
+  pendingEcho.report:Add("reply from " .. (from or "<secret>") .. " on " .. channel .. ": " .. description)
+end
+
+---Burst message: the arrival time is recorded, and the report follows when the messages stop.
+function messageHandlers.B(body, channel, from, own)
+  local sequence = probe.parseBurst(body)
+  if not sequence then
+    return
+  end
+  local key = (from or "<secret>") .. (own and " (this client)" or "")
+  if not incoming then
+    incoming = { key = key, channel = channel, times = {}, sequences = {}, generation = 0 }
+  elseif incoming.key ~= key or #incoming.times >= BURST_COUNT + STEADY_COUNT then
+    return
+  end
+  local record = incoming
+  record.times[#record.times + 1] = GetTime()
+  record.sequences[#record.sequences + 1] = sequence
+  record.generation = record.generation + 1
+  local generation = record.generation
+  C_Timer.After(QUIET_SECONDS, function()
+    if incoming == record and record.generation == generation then
+      incoming = nil
+      reportIncoming(record)
+    end
+  end)
+end
+
+---State message: shows that a message sent in some game state was delivered.
+function messageHandlers.S(_body, channel, from, own)
+  if own then
+    if pendingState then
+      pendingState.delivered = true
+      pendingState.report:Add("own message came back on " .. channel)
+    end
+    return
+  end
+  newReport("received", true):Add("state message from " .. (from or "<secret>") .. " on " .. channel)
+end
+
+---Handler of CHAT_MSG_ADDON. Every argument comes from another client or can be secret, so each is checked.
+---@param prefix any
+---@param message any
+---@param channel any
+---@param sender any
+local function onAddonMessage(prefix, message, channel, sender)
+  if isSecret(prefix) or prefix ~= PREFIX then
+    return
+  end
+  if isSecret(message) or type(message) ~= "string" or #message < 1 or #message > MESSAGE_BYTES then
+    return
+  end
+  if isSecret(channel) or (channel ~= "GUILD" and channel ~= "WHISPER") then
+    return
+  end
+  local handler = messageHandlers[message:sub(1, 1)]
+  if not handler then
+    return
+  end
+  -- A region has one realm per ruleset; a realm suffix is cut off if the client adds one
+  local from = (not isSecret(sender) and type(sender) == "string") and sender:match("^[^-]+") or nil
+  handler(message:sub(2), channel, from, from ~= nil and from == playerName())
+end
+
+---true once the prefix is registered and CHAT_MSG_ADDON is handled; it stays so until the next reload
+local listening = false
+
+---Starts to receive probe messages.
+---@param report OOOOProbeReport Gets a line about the registration
+---@return boolean ready
+local function startListening(report)
+  if listening then
+    return true
+  end
+  local register = lookup("C_ChatInfo.RegisterAddonMessagePrefix")
+  if not register then
+    report:Add("RESULT: C_ChatInfo.RegisterAddonMessagePrefix is missing")
+    return false
+  end
+  report:Add("RegisterAddonMessagePrefix(\"" .. PREFIX .. "\"): " .. text(register(PREFIX)))
+  if not listen("CHAT_MSG_ADDON", onAddonMessage) then
+    report:Add("RESULT: CHAT_MSG_ADDON is not a valid event")
+    return false
+  end
+  listening = true
+  return true
+end
+
+probe.Register("listen", "listen - answer the message probes of another client (run it on the second account)",
+  function(report)
+    if startListening(report) then
+      report:Add("RESULT: listening for probe messages until the next /reload; what arrives is printed")
+    end
+  end)
+
+probe.Register("echo", "echo guild | echo whisper <name> - send the 94-character payload and compare what comes back",
+  function(report, args)
+    local mode = (args[1] or ""):lower()
+    local channel, target
+    if mode == "guild" then
+      channel = "GUILD"
+    elseif mode == "whisper" and args[2] then
+      channel, target = "WHISPER", args[2]
+    else
+      report:Add("usage: echo guild | echo whisper <name>")
+      return
+    end
+    if not startListening(report) then
+      return
+    end
+    local pending = { report = report, payload = probe.buildPayload(), replies = 0, damaged = 0 }
+    pendingEcho = pending
+    local result = sendMessage("E" .. pending.payload, channel, target)
+    report:Add("sent on " .. channel .. (target and (" to " .. target) or "") .. ", result: " .. result
+      .. "; waiting 10 s for replies")
+    later(report, 10, function()
+      if pendingEcho == pending then
+        pendingEcho = nil
+      end
+      if pending.replies == 0 then
+        report:Add("RESULT: no reply from another client (is /oooo sync probe listen running there?)")
+      else
+        report:Add("RESULT: " .. pending.replies .. " replies, " .. pending.damaged .. " damaged")
+      end
+    end)
+  end)
+
+probe.Register("burst", "burst [name] - 30 messages of 255 bytes at once, then one every 0.5 s for 20 s; "
+  .. "to the guild, or by whisper to <name>",
+  function(report, args)
+    local channel, target = "GUILD", nil
+    if args[1] then
+      channel, target = "WHISPER", args[1]
+    end
+    if not startListening(report) then
+      return
+    end
+    local codes, accepted = {}, 0
+    for sequence = 1, BURST_COUNT do
+      local result, wasAccepted = sendMessage(probe.burstMessage(sequence), channel, target)
+      codes[#codes + 1] = result
+      accepted = accepted + (wasAccepted and 1 or 0)
+    end
+    report:Add(BURST_COUNT .. " messages of " .. MESSAGE_BYTES .. " bytes at once on " .. channel .. ": result codes "
+      .. probe.summarizeCodes(codes) .. "; accepted: " .. accepted)
+    report:Store("result codes in order: " .. table.concat(codes, " "))
+
+    -- The raw API drops a throttled message, so the rate after the burst is the rate of accepted attempts
+    local sequence, steadyCodes, acceptedTimes = BURST_COUNT, {}, {}
+    local function attempt()
+      sequence = sequence + 1
+      local result, wasAccepted = sendMessage(probe.burstMessage(sequence), channel, target)
+      steadyCodes[#steadyCodes + 1] = result
+      if wasAccepted then
+        acceptedTimes[#acceptedTimes + 1] = GetTime()
+      end
+      if sequence < BURST_COUNT + STEADY_COUNT then
+        later(report, STEADY_INTERVAL, attempt)
+        return
+      end
+      report:Add("then " .. STEADY_COUNT .. " attempts, one every " .. STEADY_INTERVAL .. " s: result codes "
+        .. probe.summarizeCodes(steadyCodes) .. "; accepted: " .. #acceptedTimes)
+      report:Store("result codes in order: " .. table.concat(steadyCodes, " "))
+      report:Add(string.format("RESULT: %d accepted at once, then %.2f accepted messages per second; "
+        .. "the receiving client prints what arrived %d s after the last message",
+        accepted, probe.messagesPerSecond(acceptedTimes), QUIET_SECONDS))
+    end
+    later(report, STEADY_INTERVAL, attempt)
+  end)
+
+probe.Register("offline", "offline <name> - whisper an offline guild member and watch for a system line",
+  function(report, args)
+    local target = args[1]
+    if not target then
+      report:Add("usage: offline <name>")
+      return
+    end
+    local systemLines = {}
+    if not listen("CHAT_MSG_SYSTEM", function(message) systemLines[#systemLines + 1] = text(message) end) then
+      report:Add("CHAT_MSG_SYSTEM is not a valid event")
+    end
+    local result = sendMessage("S", "WHISPER", target)
+    report:Add("whisper to " .. target .. ", result: " .. result .. "; watching the system messages for 5 s")
+    later(report, 5, function()
+      unlisten("CHAT_MSG_SYSTEM")
+      for _, line in ipairs(systemLines) do
+        report:Add("system line: " .. line)
+      end
+      report:Add(#systemLines == 0 and "RESULT: no system line appeared"
+        or "RESULT: " .. #systemLines .. " system lines appeared; see above whether one names the player")
+    end)
+  end)
+
+probe.Register("state", "state - one message to the guild and its result; run it in combat, in a dungeon, in a raid",
+  function(report)
+    local inCombatLockdown, isInInstance, isInRaid =
+      lookup("InCombatLockdown"), lookup("IsInInstance"), lookup("IsInRaid")
+    local inInstance, instanceType
+    if isInInstance then
+      inInstance, instanceType = isInInstance()
+    end
+    report:Add("in combat: " .. text(inCombatLockdown and inCombatLockdown()) .. ", in an instance: "
+      .. text(inInstance) .. " (" .. text(instanceType) .. "), in a raid group: " .. text(isInRaid and isInRaid()))
+    if not startListening(report) then
+      return
+    end
+    local pending = { report = report, delivered = false }
+    pendingState = pending
+    local result = sendMessage("S", "GUILD")
+    report:Add("sent on GUILD, result: " .. result .. "; waiting 5 s for the message to come back")
+    later(report, 5, function()
+      if pendingState == pending then
+        pendingState = nil
+      end
+      report:Add(pending.delivered and "RESULT: the message was delivered in this state"
+        or "RESULT: the message did not come back within 5 s")
+    end)
+  end)
