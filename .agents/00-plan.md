@@ -496,24 +496,6 @@ Finished; see `00-finished.md`.
 
 ### Stage 1. Probes
 
-- **1.1 Slash command dispatch and the probe module**
-  - Substeps
-    - Replace the `if` in `addon:OnSlashCommand` with a handler table keyed by
-      the first word, so `/oooo sync <subcommand>` reaches the sync code.
-    - Add `Src\Sync\SyncProbe.lua` with `/oooo sync probe <name>` and a `list`
-      subcommand. Each probe prints its result and also stores it in
-      `db.global.probeResults[name]` with the client build number, so the
-      results can be copied from the saved variables file.
-    - Keep the functions that only compute (build the 94-character payload,
-      compare a received payload, format a result line) free of WoW globals.
-  - Checkpoint: `/oooo sync probe list` prints the probe names in the client.
-  - Host tests (`Tests/sync_probe.lua`)
-    - The payload holds each byte 33 to 126 exactly once.
-    - The comparison reports the first position at which a damaged payload
-      differs.
-    - The dispatcher calls the right handler and prints the usage text for an
-      unknown word.
-  - Done when: an unknown subcommand cannot raise a Lua error.
 - **1.2 Local probes** (**CLIENT**)
   - Substeps
     - `strings`: `"!" < "A"`, `"Z" < "a"`, `"a" < "~"`, and a sort of all 94

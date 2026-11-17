@@ -8,6 +8,7 @@ local addonName, ns = ...
 
 ---@class OOOOGlobalSettings
 ---@field schemaVersion integer|nil Version of the saved variables layout, for migrations
+---@field probeResults table<string, OOOOProbeResult>|nil Probe name -> last result, written by SyncProbe.lua
 
 ---@class OOOODatabase AceDB-3.0 database object
 ---@field profile OOOOProfile
@@ -22,6 +23,11 @@ local addonName, ns = ...
 ---@field emojiAliases table<string, string[]>
 ---@field emojiOptions table<string, OOOOEmojiOptions>
 ---@field optionsWindow OOOOOptionsWindow
+---@field print fun(text: string) Prints one line for the user
+---@field newDispatcher fun(prefix: string): OOOODispatcher
+---@field slash OOOODispatcher Commands after `/oooo`
+---@field syncSlash OOOODispatcher Commands after `/oooo sync`
+---@field syncProbe OOOOSyncProbe
 
 ---Version of the saved variables layout. Raise it together with a migration step in `migrate`.
 local SCHEMA_VERSION = 1
@@ -40,6 +46,14 @@ local defaults = {
 ---@field NewModule fun(self: OOOOAddon, name: string, ...: string): table
 local addon = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0")
 ns.addon = addon
+
+function ns.print(text)
+  addon:Print(text)
+end
+
+ns.slash:Register("opt", "opt - open the settings window", function()
+  ns.optionsWindow:Open()
+end)
 
 ---Brings saved variables of an older addon version to the current layout.
 ---@param db OOOODatabase
@@ -60,13 +74,8 @@ function addon:OnInitialize()
   self:RegisterChatCommand("oooo", "OnSlashCommand")
 end
 
----Handles `/oooo <command>`.
+---Handles `/oooo <command>`: the first word selects a handler in `ns.slash` (Slash.lua).
 ---@param input string Text after the slash command
 function addon:OnSlashCommand(input)
-  local command = strtrim(input or ""):lower()
-  if command == "opt" then
-    ns.optionsWindow:Open()
-  else
-    self:Print("Usage: /oooo opt - open the settings window")
-  end
+  ns.slash:Dispatch(input)
 end
