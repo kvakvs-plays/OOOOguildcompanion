@@ -11,8 +11,8 @@ ignore = {
 }
 
 exclude_files = {
-  "Libs/**",
-  "Ace3/**",
+  "Addon/Libs/**",
+  "Addon/Ace3/**",
 }
 
 -- Written by the addon: saved variables, slash commands, binding labels. Add them here as they appear.
@@ -31,4 +31,5 @@ stds.wow = { read_globals = {
   "UnitFullName", "UnitGUID", "UnitLevel", "UnitName", "wipe",
 } }
 
-files["Tests/**"] = { read_globals = { "setfenv", "loadfile" } }
+-- Host tests run on the development host (Lua 5.4) and never in the game
+files["Tests/**"] = { std = "lua54" }

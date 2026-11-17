@@ -492,29 +492,7 @@ How to read this section:
 
 ### Stage 0. Groundwork
 
-- **0.1 Lint and host test harness**
-  - Substeps
-    - Add `.luacheckrc` at the repository root: Lua 5.1 standard, a `stds.wow`
-      list with the WoW globals that the current code uses, `Addon/Ace3`
-      excluded, line length 120. AGENTS.md refers to this file, but it does not
-      exist yet.
-    - Add `Tests/harness.lua`:
-      - `load(path, ns)` runs an addon file as the game does:
-        `loadfile(path)("OOOOguildcompanion", ns)`.
-      - `eq`, `ok`, and `raises` assertions that print the test name and exit
-        with code 1 on the first failure.
-      - A seeded random source, so that a failing random test can be repeated
-        from its printed seed.
-    - Add `Tests/run_all.lua`, which runs every `Tests/sync_*.lua` and prints
-      one summary line.
-    - Create `.agents/project-map.md` with the current directories and files.
-  - Checkpoint: `lua Tests/run_all.lua` prints "0 tests" and exits with 0;
-    luacheck runs on the existing code.
-  - Host tests
-    - `Tests/sync_harness.lua`: `load` passes the namespace to a file; a failing
-      assertion gives exit code 1.
-  - Done when: luacheck reports 0 warnings on the existing code without any
-    change to its behaviour.
+Finished; see `00-finished.md`.
 
 ### Stage 1. Probes
 

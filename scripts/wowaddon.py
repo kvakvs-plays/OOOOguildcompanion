@@ -42,7 +42,7 @@ COPY_FILES = [
     "embeds.xml",
 ]
 # In ADDON_ROOT but not a part of the installed addon
-NOT_PACKAGED = ["Art", ".luacheckrc", TOC_TEMPLATE]
+NOT_PACKAGED = ["Art", TOC_TEMPLATE]
 
 # Client TOC suffixes: https://warcraft.wiki.gg/wiki/TOC_format
 # Filenames use AddonName<SUFFIX>.toc. This addon ships one unsuffixed TOC, which Forever loads.

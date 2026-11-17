@@ -225,9 +225,9 @@ may be fixed there. Test a claim on the release client before relying on it.
   lua "$env:APPDATA\luarocks\bin\luacheck" . --codes
   ```
 
-- Run tests, when they exist, with `lua Tests/<name>.lua` from the repository
-  root. Tests run on host Lua 5.4 without the game, so they cover only logic
-  that does not call the WoW API.
+- Run all host tests with `lua Tests/run_all.lua`, or one with
+  `lua Tests/<name>.lua`, from the repository root. Tests run on host Lua 5.4
+  without the game, so they cover only logic that does not call the WoW API.
 - luacheck and host tests do not prove that the addon works in the game. Say
   which parts were checked only on the host and need a test in the client.
 
