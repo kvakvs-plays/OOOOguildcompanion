@@ -497,6 +497,10 @@ Finished; see `00-finished.md`.
 ### Stage 1. Probes
 
 - **1.2 Local probes** (**CLIENT**)
+  - Status: the code and the host tests are done. Open: run
+    `/oooo sync probe strings`, `time`, `ranks`, and `api` on the release
+    client, then do the "Done when" part. The results are also in the saved
+    variables under `probeResults`.
   - Substeps
     - `strings`: `"!" < "A"`, `"Z" < "a"`, `"a" < "~"`, and a sort of all 94
       characters compared with the byte order.

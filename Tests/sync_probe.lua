@@ -96,4 +96,37 @@ T.eq(stored.build, "?", "the result records an unknown build on the host")
 T.eq(#stored.lines, 3, "the result keeps every line")
 T.eq(stored.lines[2], "stored only", "the result keeps a line that was not printed")
 
+-- Sort check of the strings probe
+local byteOrder = {}
+for byte = 33, 126 do
+  byteOrder[#byteOrder + 1] = string.char(byte)
+end
+T.eq(probe.orderCheck(byteOrder), "equal", "the byte order gives equal")
+local random = T.newRandom()
+local shuffled = { table.unpack(byteOrder) }
+for index = #shuffled, 2, -1 do
+  local other = random(1, index - 1)
+  shuffled[index], shuffled[other] = shuffled[other], shuffled[index]
+end
+T.eq(probe.orderCheck(shuffled), "differs", "a shuffled list gives differs")
+T.eq(probe.orderCheck({ "a", "a" }), "differs", "a repeated entry gives differs")
+T.eq(probe.orderCheck({ "a", "ab", "b" }), "equal", "a prefix sorts before the longer string")
+T.eq(probe.orderCheck({ "ab", "a" }), "differs", "a longer string before its prefix gives differs")
+T.eq(probe.orderCheck({}), "equal", "an empty list gives equal")
+
+-- Probes that need no client API run on the host; the others must report, not raise
+ns.slash:Dispatch("sync probe strings")
+local strings = printed()
+T.ok(strings:find("against the byte order: equal", 1, true), "the strings probe sorts into the byte order on the host")
+T.ok(strings:find("RESULT: plain < can compare version ids", 1, true), "the strings probe gives a result")
+ns.slash:Dispatch("sync probe time")
+T.ok(printed():find("RESULT: GetServerTime is missing", 1, true), "the time probe reports a missing API")
+ns.slash:Dispatch("sync probe api")
+local api = printed()
+T.ok(api:find("missing: GetServerTime, ", 1, true), "the api probe lists a missing function")
+T.ok(not api:find("Lua error", 1, true), "the api probe does not raise without the client")
+T.eq(probe.lookup("string.format"), string.format, "lookup follows a dotted path")
+T.eq(probe.lookup("string.format.x"), nil, "lookup gives nil below a value that is not a table")
+T.eq(probe.lookup("nosuch.global"), nil, "lookup gives nil for a missing global")
+
 T.finish()
