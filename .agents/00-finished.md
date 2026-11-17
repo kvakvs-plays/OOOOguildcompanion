@@ -55,3 +55,9 @@
   stored table; an unknown stored table stays. `writers` also accepts
   `"anyone"`, for the debug table. `Tests/sync_tables.lua`. Host only; `Core.lua`
   calls `Initialize` after the migration, which the client check of 3.1 covers.
+- **3.3 `Put`, `Get`, `Delete`, `Iterate`, callbacks**: in
+  `Src/Sync/SyncTables.lua`. `Put` returns true (written), false (equal
+  payload), or nil and a reason; it stores a copy of the payload. Keys are 1 to
+  64 bytes. `Count`, `dirtySince[name]`, and the CallbackHandler event
+  `OnRecordChanged(tableName, key, payload, isRemote)`. `Tests/sync_api.lua`.
+  Host only by design.

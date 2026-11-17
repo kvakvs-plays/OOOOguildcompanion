@@ -94,7 +94,7 @@ end
 do
   local sync = newSync()
   sync:RegisterTable(definition())
-  T.eq({ sync:GetTable("equipment") }, { nil, "not ready" }, "a table cannot be used before Initialize")
+  T.eq({ sync:GetTable("equipment") }, { nil, nil, "not ready" }, "a table cannot be used before Initialize")
   T.eq(sync:GetOrigin(), nil, "there is no origin before Initialize")
   local data = newData()
   sync:Initialize(data, function() return START end, random)
@@ -103,7 +103,7 @@ do
   local tbl, stored = sync:GetTable("equipment")
   T.ok(tbl == data.tables.equipment, "GetTable returns the stored table")
   T.eq(stored.name, "equipment", "GetTable returns the definition")
-  T.eq({ sync:GetTable("nosuch") }, { nil, "unknown table" }, "GetTable names an unknown table")
+  T.eq({ sync:GetTable("nosuch") }, { nil, nil, "unknown table" }, "GetTable names an unknown table")
   T.eq(sync:GetOrigin(), "aB3$", "GetOrigin returns the stored origin")
 
   -- A table that is registered after Initialize gets its storage at once

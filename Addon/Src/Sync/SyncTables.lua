@@ -176,14 +176,206 @@ end
 ---Returns the stored table and the definition of a registered table.
 ---@param tableName any
 ---@return OOOOSyncTable|nil tbl nil when the table cannot be used
----@return OOOOSyncTableDefinition|string definitionOrReason The definition, or why there is no table
+---@return OOOOSyncTableDefinition|nil definition
+---@return string|nil reason Why there is no table: "unknown table" or "not ready"
 function sync:GetTable(tableName)
   local definition = self.definitions[tableName]
   if not definition then
-    return nil, "unknown table"
+    return nil, nil, "unknown table"
   end
   if not self.data then
-    return nil, "not ready"
+    return nil, nil, "not ready"
   end
   return self.data.tables[tableName], definition
+end
+
+--------------------------------------------------------------------------------
+-- API for feature modules
+--------------------------------------------------------------------------------
+
+---Longest key of a record, in bytes
+sync.MAX_KEY_LENGTH = 64
+---Deepest nesting of tables in a payload
+local MAX_PAYLOAD_DEPTH = 8
+
+---Table name -> server time of the first local change that has not been pushed yet (plan section 7.3)
+---@type table<string, integer>
+sync.dirtySince = {}
+
+---Tells whether a value can be a record key.
+---@param key any
+---@return boolean
+local function isKey(key)
+  return type(key) == "string" and #key >= 1 and #key <= sync.MAX_KEY_LENGTH
+end
+
+---Tells whether a value can travel in a message and be stored: strings, booleans, finite numbers, and
+---tables of these with string or number keys.
+---@param value any
+---@param depth integer?
+---@return boolean
+local function isPlainData(value, depth)
+  local kind = type(value)
+  if kind == "string" or kind == "boolean" then
+    return true
+  elseif kind == "number" then
+    -- NaN is not equal to itself; the infinities do not survive a serializer
+    return value == value and value ~= math.huge and value ~= -math.huge
+  elseif kind ~= "table" or (depth or 0) >= MAX_PAYLOAD_DEPTH then
+    return false
+  end
+  for key, item in pairs(value) do
+    local keyKind = type(key)
+    if (keyKind ~= "string" and keyKind ~= "number") or not isPlainData(key)
+      or not isPlainData(item, (depth or 0) + 1) then
+      return false
+    end
+  end
+  return true
+end
+
+---Compares two payloads by content.
+---@param a any
+---@param b any
+---@return boolean
+local function isEqual(a, b)
+  if a == b then
+    return true
+  end
+  if type(a) ~= "table" or type(b) ~= "table" then
+    return false
+  end
+  for key, item in pairs(a) do
+    if not isEqual(item, b[key]) then
+      return false
+    end
+  end
+  for key in pairs(b) do
+    if a[key] == nil then
+      return false
+    end
+  end
+  return true
+end
+
+---Copies a payload, so that a later change of the caller's table cannot change the stored record.
+---@param value any
+---@return any
+local function copy(value)
+  if type(value) ~= "table" then
+    return value
+  end
+  local result = {}
+  for key, item in pairs(value) do
+    result[key] = copy(item)
+  end
+  return result
+end
+
+---Marks a table as having local changes that are not pushed yet.
+---@param tableName string
+local function markDirty(tableName)
+  sync.dirtySince[tableName] = sync.dirtySince[tableName] or sync.timeFn()
+end
+
+---Writes a record with a new version id, which is greater than every id that the table has seen.
+---Nothing is written when the payload equals the stored one, so a repeated scan sends nothing.
+---@param tableName string
+---@param key string 1 to 64 bytes
+---@param payload any Strings, booleans, numbers, and tables of these; it must pass the table's `validate`
+---@return boolean|nil written true: written; false: equal to the stored payload; nil: refused
+---@return string|nil reason Why the write was refused
+function sync:Put(tableName, key, payload)
+  local tbl, definition, reason = self:GetTable(tableName)
+  if not tbl or not definition then
+    return nil, reason
+  end
+  if not isKey(key) then
+    return nil, "bad key"
+  end
+  if payload == nil or not isPlainData(payload) or not definition.validate(key, payload) then
+    return nil, "bad payload"
+  end
+  local record = tbl.records[key]
+  if record and not record.x and isEqual(record.d, payload) then
+    return false
+  end
+  local stored = copy(payload)
+  store.apply(tbl, key, self.nextId(tbl.maxId), stored)
+  markDirty(tableName)
+  self.callbacks:Fire("OnRecordChanged", tableName, key, stored, false)
+  return true
+end
+
+---Deletes a record by writing a tombstone with a new version id. A key that is absent or already
+---deleted is left alone.
+---@param tableName string
+---@param key string
+---@return boolean|nil deleted true: deleted; false: there was no record; nil: refused
+---@return string|nil reason Why the delete was refused
+function sync:Delete(tableName, key)
+  local tbl, definition, reason = self:GetTable(tableName)
+  if not tbl or not definition then
+    return nil, reason
+  end
+  if not isKey(key) then
+    return nil, "bad key"
+  end
+  local record = tbl.records[key]
+  if not record or record.x then
+    return false
+  end
+  store.apply(tbl, key, self.nextId(tbl.maxId), nil, true)
+  markDirty(tableName)
+  self.callbacks:Fire("OnRecordChanged", tableName, key, nil, false)
+  return true
+end
+
+---Returns the payload of a record. The table that is returned is the stored one: do not change it.
+---@param tableName string
+---@param key string
+---@return any payload nil when there is no record, when it was deleted, or when the table cannot be used
+function sync:Get(tableName, key)
+  local tbl = self:GetTable(tableName)
+  local record = tbl and tbl.records[key]
+  if record and not record.x then
+    return record.d
+  end
+  return nil
+end
+
+---Iterates over the records of a table that are not deleted: `for key, payload in ns.sync:Iterate(name) do`.
+---The payloads are the stored tables: do not change them, and do not write to the table inside the loop.
+---@param tableName string
+---@return fun(): string|nil, any iterator Gives nothing when the table cannot be used
+function sync:Iterate(tableName)
+  local tbl = self:GetTable(tableName)
+  local records = tbl and tbl.records or {}
+  local key, record
+  return function()
+    repeat
+      key, record = next(records, key)
+    until not key or not record.x
+    if key then
+      return key, record.d
+    end
+    return nil
+  end
+end
+
+---Counts the records of a table.
+---@param tableName string
+---@return integer live Records that are not deleted
+---@return integer deleted Tombstones
+function sync:Count(tableName)
+  local tbl = self:GetTable(tableName)
+  local live, deleted = 0, 0
+  for _, record in pairs(tbl and tbl.records or {}) do
+    if record.x then
+      deleted = deleted + 1
+    else
+      live = live + 1
+    end
+  end
+  return live, deleted
 end
