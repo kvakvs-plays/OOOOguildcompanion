@@ -1,4 +1,4 @@
 rem COPY this to release.bat and edit the path where the release ZIP is stored
 rem
 
-python scripts\wowaddon.py --dst="../_Releases" zip
+python scripts\release_tool.py --dst="../_Releases" zip

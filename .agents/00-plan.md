@@ -465,7 +465,7 @@ Also: add the files to `toc_template.toc`, add the two Ace libraries to
 `embeds.xml`, and add new API globals (`GetServerTime`, `IsResting`,
 `C_GuildInfo`, ...) to `.luacheckrc` after each is confirmed in the client.
 `Src` is already in `COPY_DIRS`; `Tests` and `.agents` are outside `Addon`, so
-`wowaddon.py` needs no change.
+`release_tool.py` needs no change.
 
 The host-testable files take the time, the random source, and the origin as
 parameters and do not touch WoW globals.

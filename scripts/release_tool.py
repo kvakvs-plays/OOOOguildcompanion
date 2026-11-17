@@ -3,8 +3,8 @@
 # OO OO Guild Companion Release and Install tool
 #
 # Usage (from anywhere; a relative --dst is relative to the current directory):
-#     python scripts/wowaddon.py --dst="<game>/_forever_/Interface/AddOns" install
-#     python scripts/wowaddon.py --dst="../_Releases" zip
+#     python scripts/release_tool.py --dst="<game>/_forever_/Interface/AddOns" install
+#     python scripts/release_tool.py --dst="../_Releases" zip
 #
 # Both commands first write Addon/OOOOguildcompanion.toc from Addon/toc_template.toc.
 #

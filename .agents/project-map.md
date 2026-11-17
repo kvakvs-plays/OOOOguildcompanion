@@ -19,7 +19,7 @@ moved, or removed.
 
 | Path | Contents |
 | --- | --- |
-| `wowaddon.py` | `install` and `zip` commands; writes the TOC from the template; holds `VERSION`, `COPY_DIRS`, `COPY_FILES`, `NOT_PACKAGED`. |
+| `release_tool.py` | `install` and `zip` commands; writes the TOC from the template; holds `VERSION`, `COPY_DIRS`, `COPY_FILES`, `NOT_PACKAGED`. |
 | `import_discord_emoji.py` | Imports Discord emoji into `Addon/Icons/Emoji` and generates `Src/Emoji/EmojiIndex.lua`. |
 
 ## `Addon/` (the addon root, installed as `OOOOguildcompanion`)

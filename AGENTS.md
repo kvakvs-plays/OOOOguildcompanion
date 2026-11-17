@@ -47,7 +47,7 @@ message.
 
 ## Install And Release
 
-- `python scripts/wowaddon.py --dst=<AddOns folder> install` copies the addon
+- `python scripts/release_tool.py --dst=<AddOns folder> install` copies the addon
   into a client, and `--dst=<folder> zip` writes
   `OOOOguildcompanion-<version>.zip`. `install.bat` and `release.bat` are local,
   git-ignored copies of `install.bat.txt` and `release.bat.txt` with the paths
@@ -55,7 +55,7 @@ message.
 - The script packages only what `COPY_DIRS` and `COPY_FILES` name, and stops
   when the `Addon` folder has an entry that no list names. Add every new
   top-level file or folder of `Addon` to one of the lists.
-- The release version is `VERSION` in `scripts/wowaddon.py`, in the form
+- The release version is `VERSION` in `scripts/release_tool.py`, in the form
   `<year>.<month>.<build>`: start each month with build 0 and add 1 with every
   release.
 - `OOOOguildcompanion.toc` is generated and git-ignored. Edit `toc_template.toc`
