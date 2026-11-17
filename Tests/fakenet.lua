@@ -9,11 +9,14 @@
 ---@field minDelay number? Shortest travel time of a message in seconds; default 0.05
 ---@field maxDelay number? Longest travel time; default 0.2
 ---@field loss number? Chance from 0 to 1 that a receiver does not get a message; default 0
+---@field sendRate number? Bytes per second that a member can send; default: no limit
 ---@field start number? Clock value at the start; default 1795000000
 
 ---@class FakenetTimer
 ---@field time number Clock value at which it fires
 ---@field cancelled boolean
+---@field sequence integer Order of creation; decides between timers of the same moment
+---@field fn fun()
 ---@field Cancel fun(self: FakenetTimer)
 
 ---@class FakenetLogEntry One sent message
@@ -28,14 +31,23 @@
 ---@field net Fakenet
 ---@field receive (fun(text: string, distribution: string, sender: string))|nil Set by the test
 ---@field onRosterChanged (fun())|nil Set by the test; called when another member's roster entry changes
+---@field busyUntil number|nil Clock value at which the last queued text has left
 
 ---@class Fakenet
 ---@field clock number
 ---@field minDelay number
 ---@field maxDelay number
 ---@field loss number
+---@field sendRate number|nil Bytes per second that a member can send; nil: no limit
+---@field dropIf (fun(entry: FakenetLogEntry, to: string): boolean)|nil Set by the test: true loses the message
 ---@field log FakenetLogEntry[] Every message that an endpoint sent, also the lost ones
 ---@field guild table The roster as every member sees it, with the query functions of `ns.guildState`
+---@field random fun(m: integer?, n: integer?): number
+---@field timers FakenetTimer[] Timers that have not fired
+---@field sequence integer Number of timers made
+---@field members table<string, { online: boolean, rankIndex: integer }> The roster
+---@field endpoints table<string, FakenetEndpoint> Character name -> connection
+---@field arrivals table<string, number> Sender and receiver -> clock value of the last scheduled arrival
 local Fakenet = {}
 Fakenet.__index = Fakenet
 
@@ -52,12 +64,14 @@ function Fakenet.new(options)
     minDelay = options.minDelay or 0.05,
     maxDelay = options.maxDelay or 0.2,
     loss = options.loss or 0,
+    sendRate = options.sendRate,
     clock = options.start or 1795000000,
     timers = {},
     sequence = 0,
     members = {},
     endpoints = {},
     log = {},
+    arrivals = {},
   }, Fakenet)
   local members = net.members
   net.guild = {
@@ -174,11 +188,15 @@ end
 ---@param entry FakenetLogEntry
 ---@param to string
 function Fakenet:Deliver(entry, to)
-  if self.loss > 0 and self.random() < self.loss then
+  if (self.loss > 0 and self.random() < self.loss) or (self.dropIf and self.dropIf(entry, to)) then
     return
   end
-  local delay = self.minDelay + self.random() * (self.maxDelay - self.minDelay)
-  self:After(delay, function()
+  -- Like the game, the messages of one sender reach one receiver in the order in which they were sent
+  local pair = entry.from .. "\0" .. to
+  local arrival = math.max(self.clock + self.minDelay + self.random() * (self.maxDelay - self.minDelay),
+    self.arrivals[pair] or 0)
+  self.arrivals[pair] = arrival
+  self:After(arrival - self.clock, function()
     local member, endpoint = self.members[to], self.endpoints[to]
     if member and member.online and endpoint.receive then
       endpoint.receive(entry.text, entry.distribution, entry.from)
@@ -208,6 +226,9 @@ end
 
 ---Sends a text, like the game does: a GUILD message reaches every online member, the sender too; a WHISPER
 ---reaches its target when it is online. The arguments are those of `sendRaw` in SyncComm.lua.
+---The text leaves through the send queue of the member: after the texts sent before it, and after the time
+---that its bytes take at `net.sendRate`. `onProgress` is called when it has left. A member that is offline
+---by then sends nothing.
 ---@param text string
 ---@param distribution string "GUILD" or "WHISPER"
 ---@param target string|nil
@@ -218,30 +239,36 @@ function Endpoint:Send(text, distribution, target, _priority, onProgress)
   if not self:IsOnline() then
     return
   end
-  local entry = { time = net.clock, from = self.name, distribution = distribution, target = target, text = text }
-  net.log[#net.log + 1] = entry
-  if distribution == "GUILD" then
-    -- Sorted, so that one seed gives one run
-    local names = {}
-    for name, member in pairs(net.members) do
-      if member.online then
-        names[#names + 1] = name
-      end
-    end
-    table.sort(names)
-    for _, name in ipairs(names) do
-      net:Deliver(entry, name)
-    end
-  elseif distribution == "WHISPER" then
-    if target and net.members[target] and net.members[target].online then
-      net:Deliver(entry, target)
-    end
-  else
+  if distribution ~= "GUILD" and distribution ~= "WHISPER" then
     error("unknown distribution: " .. tostring(distribution))
   end
-  if onProgress then
-    onProgress(#text, #text)
-  end
+  local entry = { time = net.clock, from = self.name, distribution = distribution, target = target, text = text }
+  net.log[#net.log + 1] = entry
+  local departure = math.max(net.clock, self.busyUntil or net.clock) + (net.sendRate and #text / net.sendRate or 0)
+  self.busyUntil = departure
+  net:After(departure - net.clock, function()
+    if not self:IsOnline() then
+      return
+    end
+    if distribution == "GUILD" then
+      -- Sorted, so that one seed gives one run
+      local names = {}
+      for name, member in pairs(net.members) do
+        if member.online then
+          names[#names + 1] = name
+        end
+      end
+      table.sort(names)
+      for _, name in ipairs(names) do
+        net:Deliver(entry, name)
+      end
+    elseif target and net.members[target] and net.members[target].online then
+      net:Deliver(entry, target)
+    end
+    if onProgress then
+      onProgress(#text, #text)
+    end
+  end)
 end
 
 ---Like `net:After`, but the timer does not fire while this member is offline or gone: a client that has

@@ -2,7 +2,8 @@ local addonName, ns = ...
 
 -- The session of the shared database: what a replica does while the character is online. This stage holds
 -- discovery (.agents/00-plan.md, section 7.1): the hello after login, the answers to the hellos of others,
--- and the list of peers. The pull and the push come with stages 5 and 6.
+-- and the list of peers. The pull is in SyncPull.lua, which adds its methods and message handlers to the
+-- session of this file. The push comes with stage 6.
 --
 -- `session.new` builds a session from parts that are passed in, so the host tests run many of them over a
 -- fake network (Tests/sync_discovery.lua). `session.Start` builds the one of the game. Nothing at file scope
@@ -35,6 +36,7 @@ local addonName, ns = ...
 ---@field discovered boolean true once the answers to the hello were collected
 ---@field answerTimer OOOOSyncTimer|nil Runs until the summary is sent
 ---@field answerTables table<string, boolean>|nil Set of table names that the pending summary will carry
+---@field serving OOOOSyncServing|nil The pull that this replica answers (SyncPull.lua)
 local Session = {}
 Session.__index = Session
 
@@ -42,6 +44,9 @@ Session.__index = Session
 ---@field current OOOOSyncSession|nil The session of the game; nil until `Start`
 local session = {}
 ns.syncSession = session
+
+---The class of a session; SyncPull.lua adds the methods of the pull to it
+session.Session = Session
 
 local store = ns.syncStore
 
@@ -130,6 +135,7 @@ function Session:Stop()
   self.helloTimer, self.collectTimer, self.answerTimer, self.answerTables = nil, nil, nil, nil
   self.helloSent, self.discovered = false, false
   self.peers = {}
+  self:StopPull()
 end
 
 ---Sends the hello with the versions of all tables and starts collecting the answers.
@@ -212,9 +218,10 @@ function Session:SendAnswer()
   end
 end
 
----Message type -> handler. `fields` were checked by SyncProtocol.lua.
+---Message type -> handler. `fields` were checked by SyncProtocol.lua. SyncPull.lua adds the pull types.
 ---@type table<string, fun(self: OOOOSyncSession, sender: string, fields: any)>
 local handlers = {}
+session.handlers = handlers
 
 ---Hello: the sender asks who has other versions. The answer waits a random time and lists the tables that
 ---differ, without those that another peer announces meanwhile with the version of this replica.
@@ -270,6 +277,7 @@ function Session:OnRosterChanged()
       self.peers[name] = nil
     end
   end
+  self:OnPullRosterChanged()
 end
 
 ---Returns the peers in the order in which they arrived.
@@ -319,6 +327,9 @@ function Session:StatusLines()
     local differing = self:DifferingTables(peer)
     lines[#lines + 1] = "  " .. peer.name .. ": last message " .. math.floor(now - peer.lastSeen) .. " s ago, "
       .. (#differing > 0 and ("differs in " .. table.concat(differing, ", ")) or "no known difference")
+  end
+  for _, line in ipairs(self:PullStatusLines()) do
+    lines[#lines + 1] = line
   end
   return lines
 end

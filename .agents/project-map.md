@@ -55,7 +55,8 @@ moved, or removed.
 | `Sync/SyncCommands.lua` | `ns.syncCommands`: the table `debug` and `/oooo sync put|get|del|status`; `statusLines` (tables, discovery, peers), `escape`. Host-loadable. |
 | `Sync/SyncProtocol.lua` | `ns.syncProtocol`: `new(serializer)` gives `encode` and `decode` of the messages (`H`, `S`, `Q`, `D`, `B`) with the checks of every field; `packRecords`, `VERSION`, `CHANNELS`, `NEWER`, the limits, the refusal reasons. Host-testable, no WoW API. |
 | `Sync/SyncComm.lua` | `ns.syncComm`: `new(parts)` gives a transport (`Send`, `Receive` with the sender checks, `SetActive`, `onMessage`, `drops`); `Start()` builds the transport of the game on AceComm-3.0 with the prefix `OOOO` (`ns.syncComm.transport`). Host-loadable. |
-| `Sync/SyncSession.lua` | `ns.syncSession`: `new(parts)` gives a session: the hello 20 to 40 s after the guild check, the answer to a hello after 1 to 8 s with its suppression, the peer list, `StatusLines`; `Start()` builds the session of the game (`ns.syncSession.current`). Pull and push come with plan stages 5 and 6. Host-loadable. |
+| `Sync/SyncSession.lua` | `ns.syncSession`: `new(parts)` gives a session: the hello 20 to 40 s after the guild check, the answer to a hello after 1 to 8 s with its suppression, the peer list, `StatusLines`; `Start()` builds the session of the game (`ns.syncSession.current`); `Session` and `handlers` are open for `SyncPull.lua`. The push comes with plan stage 6. Host-loadable. |
+| `Sync/SyncPull.lua` | `ns.syncPull`: the pull, added to the session class of `SyncSession.lua`. Responder: the handler of `Q`, `Refuse`, `SendBatch`, the constants `BATCH_BYTES`, `RETRY_BUSY`, `RETRY_REFUSED`, `SERVE_TIMEOUT`. Host-loadable. |
 | `Sync/SyncProbe.lua` | `ns.syncProbe`: `/oooo sync probe <name>`, the probe registry, reports stored in `db.global.probeResults`, and the computing helpers of the probes. Host-loadable. |
 
 ## `Tests/` (host only, Lua 5.4, not packaged)
@@ -65,7 +66,7 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | Path | Contents |
 | --- | --- |
 | `harness.lua` | `load(path, ns)` runs an addon file as the game does; `eq`, `ok`, `raises` exit with code 1 on the first failure; `newRandom(seed)`; `loadLibraries()` (LibStub and CallbackHandler-1.0 on the host); `loadAll(paths, ns)`; `luaCommand(script)`; `finish()`. |
-| `fakenet.lua` | In-memory guild network for the session tests: fake clock and timers (`After`, `Advance`), endpoints (`Join`, `Send`, `receive`, `onRosterChanged`), delay, loss, `SetOnline`, `Leave`, the roster view `net.guild`, the message `log`. |
+| `fakenet.lua` | In-memory guild network for the session tests: fake clock and timers (`After`, `Advance`), endpoints (`Join`, `Send`, `receive`, `onRosterChanged`), delay, loss, `dropIf`, a send queue with `sendRate`, in-order arrival, `SetOnline`, `Leave`, the roster view `net.guild`, the message `log`. |
 | `run_all.lua` | Runs every `Tests/sync_*.lua` in its own process and prints one summary line. |
 | `sync_harness.lua` | Tests of the harness itself. |
 | `sync_guildstate.lua` | Tests of `Guild/GuildState.lua`, with stubbed guild and roster functions. |
@@ -75,6 +76,7 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `sync_base94.lua` | Tests of `Sync/Base94.lua`. |
 | `sync_migrate.lua` | Tests of `Database.lua`: migration and origin. |
 | `sync_protocol.lua` | Tests of `Sync/SyncProtocol.lua`, with the stub serializer and with AceSerializer-3.0. |
+| `sync_pull.lua` | Tests of `Sync/SyncPull.lua`, with replicas and hand-made messages on the fake network. |
 | `sync_probe.lua` | Tests of `Slash.lua` and of the computing parts of `Sync/SyncProbe.lua`. |
 | `sync_discovery.lua` | Tests of discovery in `Sync/SyncSession.lua`, with replicas on the fake network. |
 | `sync_delta.lua` | Tests of `Sync/SyncStore.lua`: digest, delta, batches, cut transfers, convergence of three replicas. |

@@ -568,26 +568,7 @@ Finished; see `00-finished.md`.
 
 ### Stage 5. Pull
 
-- **5.2 Responder**
-  - Substeps
-    - On `Q`: answer `B` for an unknown table, another schema, or a pull that is
-      already being served; otherwise select the delta and send `D` batches of
-      about 2 KB, the next one when the progress callback reports the previous
-      one sent.
-    - Cut a large selection across frames with the timer.
-    - Put `wants` and the clock rest (`SyncStore.clockRest`) into the last
-      batch. A delta with no records still sends one last batch.
-    - Stop when the requester goes offline or the conditions turn false (the
-      conditions are a stub that returns true until stage 6).
-  - Checkpoint: on the host, a responder answers a hand-made `Q` with the
-    expected batches.
-  - Host tests (`Tests/sync_pull.lua`)
-    - The batches are in ascending id order, each under the size limit, and the
-      last one has the flag.
-    - A second `Q` during a transfer gets `B` with a retry time.
-    - Another schema gets `B`, and no record is sent.
-    - The requester goes offline: the responder is free for the next request.
-  - Done when: a responder never serves two pulls at once.
+- 5.1 and 5.2 are finished; see `00-finished.md`.
 - **5.3 Requester and queue** (**CLIENT**, two accounts)
   - Substeps
     - Source choice: among the peers whose fingerprint differs and is not yet

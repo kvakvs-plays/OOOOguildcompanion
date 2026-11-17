@@ -131,3 +131,15 @@
   Limits: 2000 origins, 500 records per batch, key of 64 bytes, retry of 3600
   s. One malformed record refuses the whole message. Tests in
   `Tests/sync_protocol.lua`. Host only by design.
+- **5.2 Responder**: `Src/Sync/SyncPull.lua` adds the pull to the session
+  class of `SyncSession.lua` (`session.Session`, `session.handlers`). On `Q`:
+  `B` for an unknown table (`unknown`, retry 3600 s), another schema
+  (`schema`, 3600 s), or a pull that is being served (`busy`, 30 s); else `D`
+  batches of 2000 bytes, the next one when the progress callback reports the
+  previous one sent, through a timer of 0 s. The selection is one pass; the
+  packing is done batch by batch, each in its own frame. The last batch
+  carries the clock rest and the wants; an empty delta is one last batch.
+  Beyond the plan: a new `Q` of the same peer replaces its running pull, and a
+  pull without a step for 120 s is given up. `Tests/fakenet.lua` got a send
+  rate, in-order arrival per sender and receiver, and `dropIf`.
+  `Tests/sync_pull.lua`. Host only by design.

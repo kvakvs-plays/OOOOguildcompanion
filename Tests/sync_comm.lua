@@ -57,9 +57,10 @@ do
   T.eq({ a.transport:Send("H", nil, "NORMAL", function(sent, total)
     progress[#progress + 1] = sent .. "/" .. total
   end, VERSIONS) }, { true }, "a send in the guild is queued")
-  T.eq(#progress, 1, "the progress callback is called")
   T.eq(#b.got, 0, "nothing arrives before the clock moves")
   net:Advance(1)
+  T.eq(progress, { #net.log[1].text .. "/" .. #net.log[1].text },
+    "the progress callback is called when the text has left")
   T.eq(#b.got, 1, "the other replica gets the message")
   T.eq(b.got[1].sender, "Nota Scam", "with the sender")
   T.eq(b.got[1].type, "H", "with the type")
@@ -188,6 +189,43 @@ do
     "a whisper to an offline member is refused")
   T.eq({ a.transport:Send("Z", nil, "BULK", nil) }, { false, "unknown type" }, "an unknown type is refused")
   T.eq(net:Count(), 1, "the refused sends did not reach the network")
+end
+
+-- The send queue of a member: texts leave in order, at the send rate
+do
+  local net = Fakenet.new({ random = random, sendRate = 100, minDelay = 0, maxDelay = 0 })
+  local a, b = net:Join("Nota Scam"), net:Join("Other One")
+  local arrived, left = {}, {}
+  b.receive = function(text)
+    arrived[#arrived + 1] = #text .. "@" .. (net:Now() - 1795000000)
+  end
+  local function note(sent)
+    left[#left + 1] = sent .. "@" .. (net:Now() - 1795000000)
+  end
+  a:Send(string.rep("x", 200), "WHISPER", "Other One", "BULK", note)
+  a:Send(string.rep("y", 100), "WHISPER", "Other One", "BULK", note)
+  net:Advance(1.9)
+  T.eq(arrived, {}, "a text of 200 bytes has not left after 1.9 seconds at 100 bytes per second")
+  net:Advance(0.2)
+  T.eq(arrived, { "200@2.0" }, "it arrives after 2 seconds")
+  net:Advance(10)
+  T.eq(arrived, { "200@2.0", "100@3.0" }, "the second text leaves after the first")
+  T.eq(left, { "200@2.0", "100@3.0" }, "the progress callback follows the queue")
+  a:Send(string.rep("z", 100), "WHISPER", "Other One", "BULK", note)
+  net:SetOnline("Nota Scam", false)
+  net:Advance(10)
+  T.eq(#arrived, 2, "a text in the queue of a member that goes offline is not sent")
+  T.eq(#left, 2, "and its progress callback is not called")
+
+  -- A drop rule of the test
+  net:SetOnline("Nota Scam", true)
+  net.dropIf = function(entry, to)
+    return to == "Other One" and entry.text:sub(1, 1) == "q"
+  end
+  a:Send("q lost", "WHISPER", "Other One")
+  a:Send("r kept", "WHISPER", "Other One")
+  net:Advance(10)
+  T.eq(#arrived, 3, "the drop rule loses the messages that it names")
 end
 
 -- The fake timer
