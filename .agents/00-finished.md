@@ -77,6 +77,16 @@
 
 ## Stage 4. Transport and discovery
 
+- **4.1 Guild state module**: `Src/Guild/GuildState.lua` (`ns.guildState`)
+  with `GUILD_NAME`, the state (`unknown`, `in`, `outside`), the roster cache
+  `name -> { online, rankIndex }`, `normalizeName`, the callbacks
+  `OnGuildStateChanged(inGuild, state)` and `OnRosterChanged`, and beyond the
+  plan `NoteOnline(name)` (a message proves that its sender is online; asks
+  for a fresh roster at most once in 15 s). `Core.lua` starts it on
+  `PLAYER_LOGIN`; `EmojiChat.lua` and `SyncCharacter.lua` follow the callback.
+  `Tests/sync_guildstate.lua`. The client check of 4.4 showed the state `in`
+  and the roster cache at work. The emoji checkpoint was not run: closed on
+  2026-11-18 by decision of the user, the emoji being another feature.
 - **4.2 Protocol: envelope, `H`, `S`**: `Src/Sync/SyncProtocol.lua` with
   `protocol.new(serializer)`, which gives `encode(type, ...)` and
   `decode(text)` (the type and the checked fields in a new table, or nil and a

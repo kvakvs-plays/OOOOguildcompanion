@@ -4,8 +4,7 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: stages 0 to 3 are finished (`00-finished.md`), and of stage 4 all but
-the client check of step 4.1. The probes of stage 1
+Status: stages 0 to 4 are finished (`00-finished.md`). The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -565,38 +564,7 @@ Finished; see `00-finished.md`.
 
 ### Stage 4. Transport and discovery
 
-- **4.1 Guild state module**
-  - Status: the code and the host tests are done, in
-    `Src\Guild\GuildState.lua` (`ns.guildState`). The client check of 4.4
-    (2026-11-18) showed that the state reaches `in` and that the roster cache
-    accepts a guild member as a sender. Open: the checkpoint below, the emoji
-    in guild chat and their absence on a character outside the guild.
-  - The state has three values, `unknown`, `in`, and `outside`. The callback is
-    `OnGuildStateChanged(inGuild, state)`; `inGuild` is true only for `in`.
-    `Core.lua` starts the module on `PLAYER_LOGIN` (`addon:OnEnable`).
-  - Beyond the substeps: `NoteOnline(name)` marks a member online on the
-    evidence of a message from that member and requests a fresh roster, at
-    most once in 15 seconds. The cache changes only with a roster update,
-    which can come after the first message of a member who has just logged in.
-  - Substeps
-    - `Src\Guild\GuildState.lua`: owns `GUILD_NAME`, the guild check, and the
-      roster cache `name -> { online, rankIndex }`, filled on
-      `GUILD_ROSTER_UPDATE` after one `C_GuildInfo.GuildRoster()` request.
-    - Callbacks `OnGuildStateChanged(inGuild)` and `OnRosterChanged()`.
-    - `EmojiChat.lua` uses the module and loses its own check, and with it
-      the temporary call of `ns.syncCharacter.WriteOwn` from step 3.4, which
-      moves to `OnGuildStateChanged`.
-    - `normalizeName(sender)` strips a realm suffix. Guard names with
-      `issecretvalue`.
-  - Checkpoint (**CLIENT**): the emoji still appear in the guild and stay off
-    for a character outside it.
-  - Host tests (`Tests/sync_guildstate.lua`, with stubbed roster functions)
-    - The cache follows a roster in which a member goes offline, leaves, and
-      joins.
-    - `normalizeName("Name-Realm")` gives `"Name"`.
-    - The state is "unknown", not "outside", while the guild name is nil.
-  - Done when: one place in the code holds the guild name.
-- 4.2, 4.3, and 4.4 are finished; see `00-finished.md`.
+Finished; see `00-finished.md`.
 
 ### Stage 5. Pull
 
