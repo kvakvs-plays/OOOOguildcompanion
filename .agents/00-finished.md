@@ -19,3 +19,10 @@
   passed: `<` follows the byte order, `GetServerTime()` is a plain number, the
   guild master has rank index 0, no function missing and no event invalid.
   Results are in AGENTS.md ("Forever API Rules") and plan sections 3 and 7.5.
+- **1.3 Message probes**: probes `listen`, `echo`, `burst`, `offline`,
+  `state`, `names`, with the prefix `OOOOprobe`. Run on the release client on
+  2026-11-17 with two accounts (Realm 5 and Realm 7): payload intact on GUILD
+  and WHISPER, burst of 10 then 1 message per second, offline whisper prints a
+  system line, names are `First Last` without a realm suffix, sends work in a
+  dungeon in and out of combat. Closed with three checks deferred (raid group,
+  raid instance, boss encounter); they are listed in the plan under stage 1.

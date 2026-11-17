@@ -4,9 +4,9 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: design only. Nothing here is implemented. Items marked **PROBE** are
-unverified on the Forever release client and must be tested there before code
-depends on them.
+Status: stages 0 and 1 are finished (`00-finished.md`). The probes of stage 1
+ran on the release client; their results are in AGENTS.md under "Forever API
+Rules" and in the sections below.
 
 - Implementing this plan - commit after each task. Commit title shall be
   "[plan] <task title>".
@@ -505,38 +505,13 @@ Finished; see `00-finished.md`.
 
 ### Stage 1. Probes
 
-- **1.3 Message probes** (**CLIENT**, two accounts)
-  - Status: `echo guild`, `echo whisper`, `burst`, and `offline` ran on the
-    release client with two accounts on 2026-11-17; the results are in
-    AGENTS.md and in section 6. Open:
-    - `/oooo sync probe state` in a raid group, in a raid instance (the
-      raids unlock on December 9, 2026), and during a boss encounter. In
-      combat inside a dungeon it returned 0 and the message was delivered.
-      Out of combat it returned 0 and the message was
-      delivered, in a rest area and inside a dungeon; `echo guild` and
-      `echo whisper` from inside the dungeon came back intact.
-    - Done: `names`. The sender of an addon message and the roster name are
-      `First Last` with a space and no realm suffix; `UnitName("player")`
-      returns the two names as two values. Sections 5 and 6 have the result.
-    - The offline whisper prints "No player named '<name>' is currently
-      playing.", so the `CHAT_MSG_SYSTEM` filter of step 5.3 is needed.
-  - Substeps
-    - `echo guild` and `echo whisper <name>`: send the 94-character payload
-      through `C_ChatInfo.SendAddonMessage`; the other client sends it back; the
-      first client compares.
-    - `burst`: send 30 messages of 255 bytes at once and print the result code
-      of each send and the arrival time of each on the other client.
-    - `offline <name>`: whisper an offline guild member and report whether a
-      system line appears.
-    - `state`: one send and its result code, to be run in combat, in a dungeon,
-      and in a raid.
-  - Checkpoint: both clients print matching results for `echo`.
-  - Host tests: the burst report computes messages per second from a list of
-    arrival times.
-  - Done when: AGENTS.md records the round trip result, the measured rate, the
-    offline whisper behaviour, and the three states; the **PROBE** in section 6
-    is resolved; a result that contradicts sections 3 to 7 is written into the
-    affected section before stage 3 starts.
+Finished; see `00-finished.md`. Deferred checks, to run with
+`/oooo sync probe state` when the chance comes (they affect only the `noraid`
+policy of 7.4, see step 6.1):
+
+- in a raid group;
+- in a raid instance (the raids unlock on December 9, 2026);
+- during a boss encounter.
 
 ### Stage 2. Core logic with host tests
 
@@ -882,6 +857,9 @@ Finished; see `00-finished.md`.
     - Effective policy: the table definition, then the override from
       `db.profile.sync.tables[name]`, each field checked for type and range.
     - Hello, pull, and the responder now ask the conditions.
+    - Run the deferred checks of stage 1 (raid group, raid instance, boss
+      encounter) if they are still open, and make a failing state a hard limit
+      for every table.
   - Checkpoint: `/oooo sync status` shows for each table whether it may send
     now.
   - Host tests (`Tests/sync_policy.lua`)
