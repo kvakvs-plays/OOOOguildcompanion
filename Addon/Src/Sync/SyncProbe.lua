@@ -710,7 +710,7 @@ local function onAddonMessage(prefix, message, channel, sender)
   if not handler then
     return
   end
-  -- No realm suffix was seen on Forever; one is cut off in case the client adds it for another home server
+  -- Forever gives no realm suffix, also for another home server; one is cut off in case that changes
   local from = (not isSecret(sender) and type(sender) == "string") and sender:match("^[^-]+") or nil
   handler(message:sub(2), channel, from, from ~= nil and from == playerName(), sender)
 end

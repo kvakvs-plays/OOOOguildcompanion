@@ -82,10 +82,10 @@ message.
   the player cannot select a server. All servers of a region are joined into
   one mega-realm with layers that keep PvE, PvP, and RP players apart; players
   of different rulesets can meet but mostly do not. Hardcore comes later.
-- Names appeared without a realm suffix in the tests so far, which had two
-  characters of the same guild. Whether a character from another home server
-  gets a suffix is not tested: do not build features on realm names, and
-  accept a name with or without a suffix.
+- Names have no realm suffix, also between characters of different home
+  servers: tested with two guild members on Realm 5 and Realm 7, in the
+  roster and as the sender of addon messages. Do not build features on realm
+  names.
 - Forever has systems that Classic Era lacks: dual talent specialization (from
   level 40), the Legacy system in place of achievements, camping, reagent bags,
   account-wide Collections, and first and last names for characters.
