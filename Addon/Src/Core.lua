@@ -22,6 +22,7 @@ local addonName, ns = ...
 ---@class OOOONamespace
 ---@field addon OOOOAddon
 ---@field db OOOODatabase Set in OnInitialize; nil while the files are loading
+---@field guildState OOOOGuildState
 ---@field emoji OOOOEmojiModule
 ---@field emojiChat OOOOEmojiChat
 ---@field emojiIndex table<string, string[]>
@@ -120,6 +121,11 @@ function addon:OnInitialize()
   ns.optionsWindow:Register()
   self:RegisterChatCommand("oooo", "OnSlashCommand")
   self:SetOptAliasEnabled(ns.db.profile.general.optAlias)
+end
+
+---Called by AceAddon on PLAYER_LOGIN. By now every file has registered its guild callbacks.
+function addon:OnEnable()
+  ns.guildState:Start()
 end
 
 ---Handles `/oooo <command>`: the first word selects a handler in `ns.slash` (Slash.lua).

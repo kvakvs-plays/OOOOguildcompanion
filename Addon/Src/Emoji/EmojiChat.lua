@@ -8,17 +8,14 @@ local addonName, ns = ...
 ---Shows emoji in guild, party, and raid chat: a word which is exactly an emoji name or one of its aliases
 ---is replaced by the texture of that emoji. The letter case matters only for the emoji which
 ---EmojiOptions.lua marks as case sensitive.
----@class OOOOEmojiChat AceAddon-3.0 module with AceEvent-3.0 mixed in
----@field RegisterEvent fun(self: OOOOEmojiChat, event: string, handler: string|function)
+---@class OOOOEmojiChat AceAddon-3.0 module
 ---@field filtersInstalled boolean true while the chat filters are registered
 ---@field escapes table<string, string>|nil Emoji name -> texture escape sequence; built on first use
 ---@field words table<string, string> Name or one-word alias in lower case -> emoji name; built together with `escapes`
 ---@field exactWords table<string, string> Name or one-word alias of a case sensitive emoji -> emoji name
 ---@field phrases table<string, OOOOEmojiPhrase[]> First word of an alias in lower case -> aliases, longest first
-local emojiChat = ns.addon:NewModule("EmojiChat", "AceEvent-3.0")
+local emojiChat = ns.addon:NewModule("EmojiChat")
 ns.emojiChat = emojiChat
-
-local GUILD_NAME = "OO OO"
 
 ---Side of the emoji square in chat, in pixels
 local CHAT_EMOJI_SIZE = 32
@@ -264,34 +261,7 @@ function emojiChat:SetFiltersInstalled(wanted)
   self.filtersInstalled = wanted
 end
 
----Turns the emoji on when the character is in the guild and off when it is not.
-function emojiChat:UpdateGuildState()
-  local guildName = IsInGuild() and GetGuildInfo("player")
-  if guildName and issecretvalue(guildName) then
-    return
-  end
-  -- The name is nil for some seconds after login; the filters then wait for the next guild event
-  local inGuild = guildName == GUILD_NAME
-  self:SetFiltersInstalled(inGuild)
-  -- Until the guild state module exists (plan step 4.1), this check also starts the shared database:
-  -- the character writes its own record once per session, and only inside the guild
-  if inGuild then
-    ns.syncCharacter.WriteOwn()
-  end
-end
-
----AceEvent handler of PLAYER_GUILD_UPDATE.
----@param _event string
----@param unit string|nil
-function emojiChat:OnPlayerGuildUpdate(_event, unit)
-  if unit == nil or unit == "player" then
-    self:UpdateGuildState()
-  end
-end
-
----Called by AceAddon on PLAYER_LOGIN.
-function emojiChat:OnEnable()
-  self:RegisterEvent("PLAYER_GUILD_UPDATE", "OnPlayerGuildUpdate")
-  self:RegisterEvent("GUILD_ROSTER_UPDATE", "UpdateGuildState")
-  self:UpdateGuildState()
-end
+-- The emoji are on while the character is in the guild, and off outside it and while the guild is unknown
+ns.guildState.RegisterCallback(emojiChat, "OnGuildStateChanged", function(_event, inGuild)
+  emojiChat:SetFiltersInstalled(inGuild)
+end)

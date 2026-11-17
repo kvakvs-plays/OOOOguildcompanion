@@ -206,3 +206,9 @@ function character.WriteOwn()
   writtenThisSession = written ~= nil
   return written, reason
 end
+
+ns.guildState.RegisterCallback(character, "OnGuildStateChanged", function(_event, inGuild)
+  if inGuild then
+    character.WriteOwn()
+  end
+end)

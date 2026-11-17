@@ -19,6 +19,7 @@ Src\Sync\VersionId.lua
 Src\Sync\SyncStore.lua
 Src\Database.lua
 Src\Core.lua
+Src\Guild\GuildState.lua
 
 Src\Emoji\EmojiIndex.lua
 Src\Emoji\EmojiAliases.lua

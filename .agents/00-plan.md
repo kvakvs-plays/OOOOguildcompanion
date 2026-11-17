@@ -515,6 +515,8 @@ Also: add the files to `toc_template.toc`, add the two Ace libraries to
 `Src` is already in `COPY_DIRS`; `Tests` and `.agents` are outside `Addon`, so
 `release_tool.py` needs no change.
 
+
+
 The host-testable files take the time, the random source, and the origin as
 parameters and do not touch WoW globals.
 
@@ -563,6 +565,16 @@ Finished; see `00-finished.md`.
 ### Stage 4. Transport and discovery
 
 - **4.1 Guild state module**
+  - Status: the code and the host tests are done, in
+    `Src\Guild\GuildState.lua` (`ns.guildState`). Open: the client checkpoint
+    below.
+  - The state has three values, `unknown`, `in`, and `outside`. The callback is
+    `OnGuildStateChanged(inGuild, state)`; `inGuild` is true only for `in`.
+    `Core.lua` starts the module on `PLAYER_LOGIN` (`addon:OnEnable`).
+  - Beyond the substeps: `NoteOnline(name)` marks a member online on the
+    evidence of a message from that member and requests a fresh roster, at
+    most once in 15 seconds. The cache changes only with a roster update,
+    which can come after the first message of a member who has just logged in.
   - Substeps
     - `Src\Guild\GuildState.lua`: owns `GUILD_NAME`, the guild check, and the
       roster cache `name -> { online, rankIndex }`, filled on

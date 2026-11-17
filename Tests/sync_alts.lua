@@ -3,9 +3,9 @@
 local T = dofile("Tests/harness.lua")
 
 T.loadLibraries()
-local ns = T.loadAll({ "Addon/Src/Slash.lua", "Addon/Src/Sync/Base94.lua", "Addon/Src/Sync/VersionId.lua",
-  "Addon/Src/Sync/SyncStore.lua", "Addon/Src/Sync/SyncTables.lua", "Addon/Src/Sync/SyncCharacter.lua",
-  "Addon/Src/Sync/SyncCommands.lua" })
+local ns = T.loadAll({ "Addon/Src/Slash.lua", "Addon/Src/Guild/GuildState.lua", "Addon/Src/Sync/Base94.lua",
+  "Addon/Src/Sync/VersionId.lua", "Addon/Src/Sync/SyncStore.lua", "Addon/Src/Sync/SyncTables.lua",
+  "Addon/Src/Sync/SyncCharacter.lua", "Addon/Src/Sync/SyncCommands.lua" })
 local sync, store, versionId = ns.sync, ns.syncStore, ns.versionId
 local character, commands = ns.syncCharacter, ns.syncCommands
 local random = T.newRandom()
