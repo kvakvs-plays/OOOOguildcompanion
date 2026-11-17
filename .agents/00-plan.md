@@ -4,7 +4,7 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: stages 0 and 1 are finished (`00-finished.md`). The probes of stage 1
+Status: stages 0 to 3 are finished (`00-finished.md`). The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -558,60 +558,7 @@ Finished; see `00-finished.md`.
 
 ### Stage 3. Storage and API
 
-- **3.1 Saved variables schema 2 and the origin**
-  - Status: the code and the host tests are done. The layout version and
-    `migrate(db, randomFn)` are in `Src\Database.lua`, not in `Core.lua`,
-    because `Core.lua` cannot load on the host. Open: the client check below
-    (after a `/reload`: `schemaVersion = 2`, an origin of 4 characters, and
-    the emoji settings as before).
-  - Substeps
-    - `SCHEMA_VERSION = 2`; `migrate` gets a table of steps keyed by version and
-      creates `db.global.sync = { tables = {} }` without touching other data.
-    - Create `sync.origin` on the first run when it is missing; never replace
-      an existing one.
-    - Move `migrate` to a function that takes the database as a parameter, so
-      that a host test can call it with a plain table.
-    - Add the LuaLS classes for the sync structures to `Core.lua`.
-  - Checkpoint: after a `/reload` the saved variables file holds
-    `schemaVersion = 2` and an origin of 4 characters.
-  - Host tests (`Tests/sync_migrate.lua`)
-    - A version 1 database with emoji settings: the settings are unchanged, the
-      sync structure exists.
-    - A second run changes nothing, and the origin stays the same.
-    - A database with a greater schema version than the addon knows is left
-      alone.
-  - Done when: an existing install keeps its emoji settings (**CLIENT**).
-- **3.4 The `character` and `debug` tables and the slash commands**
-  - Status: the code and the host tests are done, in
-    `Src\Sync\SyncCharacter.lua` and `Src\Sync\SyncCommands.lua`. Open: the
-    client checkpoint below.
-  - The payload of `character` has a third field, `origins`: the sorted list
-    of origins that have written the character. A record keeps only the id of
-    its last writer, so without the list two installs of one player could not
-    be joined (5.1).
-  - The record is written when the guild check passes, not at login: a
-    character outside `OO OO` writes nothing. Until step 4.1 the call sits in
-    `EmojiChat:UpdateGuildState`.
-  - `debug` has `writers = "anyone"`, a third value next to `owner` and
-    `officer`, because free keys cannot be checked by the owner rule (7.1).
-  - Substeps
-    - Register `character` (payload: class, level) and write the record of the
-      current character at login when the payload has changed.
-    - `ns.sync:GetAlts(name)`: characters whose records share an origin, joined
-      across origins that share a character (5.1).
-    - Register `debug` with free keys and a string payload of limited length.
-    - `/oooo sync put <key> <text>`, `get <key>`, `del <key>`, and `status`
-      (origin, and for each table the record count and table version). Escape
-      `|` before printing.
-  - Checkpoint (**CLIENT**): `/oooo sync status` shows `character` with 1
-    record; `put` and `get` survive a `/reload`.
-  - Host tests (`Tests/sync_alts.lua`)
-    - Two characters of one origin are alts; a third of another origin is not.
-    - Origins X and Y both wrote character A: the characters of X and Y are one
-      group.
-    - A tombstoned character is not listed.
-    - The status formatter doubles every `|`.
-  - Done when: the client checkpoint is recorded.
+Finished; see `00-finished.md`.
 
 ### Stage 4. Transport and discovery
 

@@ -49,6 +49,12 @@
 
 ## Stage 3. Storage and API
 
+- **3.1 Saved variables schema 2 and the origin**: `Src/Database.lua` with
+  `SCHEMA_VERSION = 2` and `migrate(db, randomFn)` (not in `Core.lua`, which
+  cannot load on the host); `Tests/sync_migrate.lua`. Client check on
+  2026-11-18 (account of Nota Scam): the saved file holds `schemaVersion = 2`
+  and the origin `p:i<`, and the older data (probe results, profile) is kept.
+  The profile had only default emoji settings.
 - **3.2 Table registry**: `Src/Sync/SyncTables.lua` with `ns.sync:RegisterTable`
   (raises on a bad definition), `Initialize(data, timeFn, randomFn)`,
   `GetTable`, `GetOrigin`. A schema change or a broken structure empties the
@@ -61,3 +67,10 @@
   64 bytes. `Count`, `dirtySince[name]`, and the CallbackHandler event
   `OnRecordChanged(tableName, key, payload, isRemote)`. `Tests/sync_api.lua`.
   Host only by design.
+- **3.4 The `character` and `debug` tables and the slash commands**:
+  `Src/Sync/SyncCharacter.lua` (payload `class`, `level`, `origins`; `GetAlts`;
+  the record is written when the guild check passes, from
+  `EmojiChat:UpdateGuildState` until step 4.1) and `Src/Sync/SyncCommands.lua`
+  (`/oooo sync put|get|del|status`); `Tests/sync_alts.lua`. Client check on
+  2026-11-18: `put`, `/reload`, `get` printed the text; the saved file holds
+  `character` with the one record `Nota Scam` (SHAMAN, level 1).
