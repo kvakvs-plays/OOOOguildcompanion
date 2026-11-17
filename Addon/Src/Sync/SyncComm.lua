@@ -153,7 +153,7 @@ end
 
 ---Builds the transport of the game on AceComm-3.0 and AceSerializer-3.0 and ties it to the guild state:
 ---the prefix is registered when the character is in the guild, and the handler is removed outside it.
----Core.lua calls it on PLAYER_LOGIN, before the guild state starts.
+---SyncSession.lua calls it on PLAYER_LOGIN, before the guild state starts.
 ---@return OOOOSyncTransport
 function comm.Start()
   if comm.transport then

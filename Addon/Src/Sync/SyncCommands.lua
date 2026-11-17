@@ -33,7 +33,8 @@ function commands.escape(text)
   return (text:gsub("|", "||"))
 end
 
----Builds the lines of `/oooo sync status`: the origin, and for each table its records and table version.
+---Builds the lines of `/oooo sync status`: the origin, for each table its records and table version, and
+---the state of discovery with the peers.
 ---@return string[] lines Ready for chat: every `|` is doubled
 function commands.statusLines()
   local sync = ns.sync
@@ -48,10 +49,17 @@ function commands.statusLines()
     lines[#lines + 1] = commands.escape(name .. ": " .. live .. " records, " .. deleted .. " deleted, version "
       .. (tbl and ns.syncStore.tableVersion(tbl) or "?"))
   end
+  -- The session exists only in the game, after login
+  local current = ns.syncSession and ns.syncSession.current
+  if current then
+    for _, line in ipairs(current:StatusLines()) do
+      lines[#lines + 1] = commands.escape(line)
+    end
+  end
   return lines
 end
 
-ns.syncSlash:Register("status", "status - origin, and the record count and version of each table", function()
+ns.syncSlash:Register("status", "status - origin, the record count and version of each table, and the peers", function()
   for _, line in ipairs(commands.statusLines()) do
     ns.print(line)
   end

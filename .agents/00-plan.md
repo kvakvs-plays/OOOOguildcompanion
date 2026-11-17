@@ -594,6 +594,22 @@ Finished; see `00-finished.md`.
     - The state is "unknown", not "outside", while the guild name is nil.
   - Done when: one place in the code holds the guild name.
 - **4.4 Discovery** (**CLIENT**, two accounts)
+  - Status: the code and the host tests are done, in
+    `Src\Sync\SyncSession.lua` (`ns.syncSession`), with
+    `Tests/sync_discovery.lua` and `Tests/fixtures/replica.lua`. Open: the
+    client checkpoint below. It is also the first run of `SyncComm.Start`,
+    AceComm, and AceSerializer in the client, and the client check of 4.1.
+  - To check in the client:
+    - No Lua error at login. AceComm calls the global `Ambiguate` on every
+      addon message; its presence on Forever is not verified.
+    - Both accounts differ in `character` (each has its own record), so the
+      one that logs in second gets a summary: each sees the other in
+      `/oooo sync status` with "differs in character".
+    - No chat frame shows a message.
+  - A hello or a summary of any peer with the version of this replica
+    suppresses the pending answer for that table, not only a summary.
+  - A replica whose hello got no answer knows no peer: with equal tables
+    nobody answers. The older replica still lists the new one, from its hello.
   - Substeps
     - `Src\Sync\SyncSession.lua`: on "in guild", start a timer of 20 to 40
       seconds and send `H`.

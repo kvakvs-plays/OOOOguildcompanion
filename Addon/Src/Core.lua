@@ -43,6 +43,7 @@ local addonName, ns = ...
 ---@field syncCommands OOOOSyncCommands
 ---@field syncProtocol OOOOSyncProtocol
 ---@field syncComm OOOOSyncComm
+---@field syncSession OOOOSyncSessionModule
 ---@field dbIsNewer boolean|nil true when the saved variables are from a newer addon version and were left alone
 
 local defaults = {
@@ -129,7 +130,7 @@ end
 function addon:OnEnable()
   -- Without a usable database nothing is sent or taken
   if not ns.dbIsNewer then
-    ns.syncComm.Start()
+    ns.syncSession.Start()
   end
   ns.guildState:Start()
 end
