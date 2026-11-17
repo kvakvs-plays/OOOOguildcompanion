@@ -38,7 +38,8 @@ moved, or removed.
 | Path | Contents |
 | --- | --- |
 | `Slash.lua` | `ns.newDispatcher`: command dispatch by first word; `ns.slash` (`/oooo`) and `ns.syncSlash` (`/oooo sync`); `ns.print`. No WoW API. Loads before `Core.lua`. |
-| `Core.lua` | AceAddon object, AceDB setup, `SCHEMA_VERSION` and `migrate`, registration of `/oooo` and of the `/opt` alias (`addon:SetOptAliasEnabled`), LuaLS classes of the saved variables. |
+| `Database.lua` | `ns.database`: `SCHEMA_VERSION`, the migration steps, `migrate(db, randomFn)`, creation of the sync origin. Host-testable, no WoW API. Loads after `Sync/VersionId.lua`. |
+| `Core.lua` | AceAddon object, AceDB setup and the call of `ns.database.migrate`, registration of `/oooo` and of the `/opt` alias (`addon:SetOptAliasEnabled`), LuaLS classes of the saved variables. |
 | `Emoji/EmojiIndex.lua` | Generated list of emoji names per Discord guild (`ns.emojiIndex`). |
 | `Emoji/EmojiAliases.lua` | Hand-edited aliases per emoji (`ns.emojiAliases`). |
 | `Emoji/EmojiOptions.lua` | Hand-edited per-emoji options such as `caseSensitive`. |
@@ -60,6 +61,7 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `run_all.lua` | Runs every `Tests/sync_*.lua` in its own process and prints one summary line. |
 | `sync_harness.lua` | Tests of the harness itself. |
 | `sync_base94.lua` | Tests of `Sync/Base94.lua`. |
+| `sync_migrate.lua` | Tests of `Database.lua`: migration and origin. |
 | `sync_probe.lua` | Tests of `Slash.lua` and of the computing parts of `Sync/SyncProbe.lua`. |
 | `sync_delta.lua` | Tests of `Sync/SyncStore.lua`: digest, delta, batches, cut transfers, convergence of three replicas. |
 | `sync_store.lua` | Tests of `Sync/SyncStore.lua`: merge, clock, fingerprint, table version. |
