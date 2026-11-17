@@ -187,10 +187,10 @@ may be fixed there. Test a claim on the release client before relying on it.
     the sender of `CHAT_MSG_ADDON`, and `GetUnitName("player")` give
     `'Nota Scam'`. The sender had no realm suffix. To find the own character
     in the roster or in a message, join the two values with a space.
-  - Out of combat, outside an instance, and without a raid group, a `GUILD`
-    addon message returns 0 and is delivered.
-  - Not yet checked: addon messages in combat, in a dungeon, and in a raid
-    (plan step 1.3).
+  - Out of combat, a `GUILD` addon message returns 0 and is delivered, both
+    outside an instance and inside a dungeon (instance type `party`).
+  - Not yet checked: addon messages in combat (in the world and in a boss
+    fight) and in a raid (plan step 1.3).
 - If you are not sure that an API exists on Forever, say so and write a
   capability probe. Do not invent `C_` functions. The Blizzard UI source at
   `F:\Projects\WowAddons\BlizzardInterfaceCode\` is for Classic, not Forever, so
