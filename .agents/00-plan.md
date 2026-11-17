@@ -131,6 +131,8 @@ db.global.sync = {
 
 - Keys are flat strings. A nested section such as `profession_skills[name][id]`
   uses a joined key (`"Name:id"`); the table definition owns the join and split.
+  A character name has a space (`Nota Scam`), so a key is never split on
+  whitespace.
 - Prefer coarse records. One record per character and profession with a list of
   recipe ids costs far less than one record per recipe, because every record
   pays 11 bytes of id plus its key.
@@ -273,8 +275,12 @@ Rules for `writers = "owner"`:
 - All sends use AceComm priority `BULK`, except hello and summary, which use
   `NORMAL`.
 - Sender checks: a whisper from a name that is not in the guild roster cache is
-  ignored. On Forever a region has one realm per ruleset, so sender names need
-  no realm handling; strip a realm suffix if present.
+  ignored. On Forever a region has one realm per ruleset, and a sender
+  name arrives without a realm suffix (step 1.3). A character name is the
+  first and the last name joined by a space (`Nota Scam`), in the roster and
+  as a sender. `UnitName("player")` returns the two names as two values;
+  join them with a space to get the own name. Never split a name on
+  whitespace.
 - Speed, measured on the release client (step 1.3): a burst of 10 messages of
   255 bytes, then about one message per second (1.02). The raw API returns 3
   for a throttled message and drops it; ChatThrottleLib must do the queueing. A full copy of 150 KB then
@@ -502,12 +508,11 @@ Finished; see `00-finished.md`.
   - Status: `echo guild`, `echo whisper`, `burst`, and `offline` ran on the
     release client with two accounts on 2026-11-17; the results are in
     AGENTS.md and in section 6. Open:
-    - `/oooo sync probe state` in combat, in a dungeon, and in a raid. The
-      first run returned 3 because the burst probe was still sending; run it
-      alone.
-    - `/oooo sync probe names`: the client did not recognize its own guild
-      message, so the sender name differs from `UnitName("player")`. Sections
-      5 and 6 and the sender check of step 4.3 need the form that matches.
+    - `/oooo sync probe state` in combat, in a dungeon, and in a raid. Out
+      of combat in a rest area it returned 0 and the message was delivered.
+    - Done: `names`. The sender of an addon message and the roster name are
+      `First Last` with a space and no realm suffix; `UnitName("player")`
+      returns the two names as two values. Sections 5 and 6 have the result.
     - The offline whisper prints "No player named '<name>' is currently
       playing.", so the `CHAT_MSG_SYSTEM` filter of step 5.3 is needed.
   - Substeps

@@ -551,14 +551,19 @@ local function sendMessage(message, channel, target)
   return text(result), isSuccess(result)
 end
 
----Name of the logged-in character; nil when the client hides it.
+---Name of the logged-in character in the form of the roster and of a message sender; nil when it is hidden.
+---On Forever `UnitName("player")` returns the first and the last name as two values ('Nota', 'Scam'), and
+---the roster and CHAT_MSG_ADDON give them joined by a space.
 ---@return string|nil
 local function playerName()
-  local name = UnitName("player")
-  if isSecret(name) or type(name) ~= "string" then
+  local first, last = UnitName("player")
+  if isSecret(first) or isSecret(last) or type(first) ~= "string" then
     return nil
   end
-  return name
+  if type(last) == "string" and last ~= "" then
+    return first .. " " .. last
+  end
+  return first
 end
 
 ---The echo probe that waits for replies

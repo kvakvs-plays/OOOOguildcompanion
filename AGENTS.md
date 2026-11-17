@@ -174,10 +174,14 @@ may be fixed there. Test a claim on the release client before relying on it.
   - An addon whisper to an offline member returns 0 and prints the system
     line `No player named '<name>' is currently playing.` in the chat frame.
     The `CHAT_MSG_SYSTEM` text was not secret.
-  - The sender name of `CHAT_MSG_ADDON` did not equal `UnitName("player")`
-    for the own character, so a client did not recognize its own guild
-    message. Do not rely on that comparison until `/oooo sync probe names`
-    shows which form matches.
+  - Character names: `UnitName("player")`, `UnitFullName("player")`, and
+    `UnitNameUnmodified("player")` return the first and the last name as two
+    values (`'Nota', 'Scam'`); the second value is not a realm. The roster,
+    the sender of `CHAT_MSG_ADDON`, and `GetUnitName("player")` give
+    `'Nota Scam'`. The sender had no realm suffix. To find the own character
+    in the roster or in a message, join the two values with a space.
+  - Out of combat, outside an instance, and without a raid group, a `GUILD`
+    addon message returns 0 and is delivered.
   - Not yet checked: addon messages in combat, in a dungeon, and in a raid
     (plan step 1.3).
 - If you are not sure that an API exists on Forever, say so and write a
