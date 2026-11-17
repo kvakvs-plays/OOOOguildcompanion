@@ -275,8 +275,10 @@ Rules for `writers = "owner"`:
 - All sends use AceComm priority `BULK`, except hello and summary, which use
   `NORMAL`.
 - Sender checks: a whisper from a name that is not in the guild roster cache is
-  ignored. On Forever a region has one realm per ruleset, and a sender
-  name arrives without a realm suffix (step 1.3). A character name is the
+  ignored. On Forever the servers of a region are joined into one
+  mega-realm, and a sender name arrived without a realm suffix (step 1.3,
+  two characters of one guild). Whether a member from another home server
+  gets a suffix is not tested, so accept both forms. A character name is the
   first and the last name joined by a space (`Nota Scam`), in the roster and
   as a sender. `UnitName("player")` returns the two names as two values;
   join them with a space to get the own name. Never split a name on

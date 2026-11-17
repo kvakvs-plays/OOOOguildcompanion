@@ -77,10 +77,15 @@ message.
 - A party has up to 5 players. A raid has up to 8 parties, 40 players. The
   launch raids are Barrow Deeps (10), Hyjal Summit (20), and Onyxia's Lair (40);
   they unlock on December 9, 2026.
-- Each region has one mega-realm per ruleset: Normal (PvE), PvP, RP, RP-PvP, and
-  later Hardcore. The realm has a long internal name that the game does
-  not normally show, and the player cannot select a realm. Names therefore
-  appear without a realm suffix; do not build features on realm names.
+- A player belongs to one of several servers with a long internal name, such
+  as `CAMWOW EU4 Realm 7 PvE`. The game does not normally show that name, and
+  the player cannot select a server. All servers of a region are joined into
+  one mega-realm with layers that keep PvE, PvP, and RP players apart; players
+  of different rulesets can meet but mostly do not. Hardcore comes later.
+- Names appeared without a realm suffix in the tests so far, which had two
+  characters of the same guild. Whether a character from another home server
+  gets a suffix is not tested: do not build features on realm names, and
+  accept a name with or without a suffix.
 - Forever has systems that Classic Era lacks: dual talent specialization (from
   level 40), the Legacy system in place of achievements, camping, reagent bags,
   account-wide Collections, and first and last names for characters.
