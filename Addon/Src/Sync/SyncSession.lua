@@ -19,12 +19,14 @@ local addonName, ns = ...
 ---@field now fun(): number Server time in seconds
 ---@field after fun(seconds: number, fn: fun()): OOOOSyncTimer Calls `fn` once, later
 ---@field random fun(): number Like math.random(): from 0 up to, not including, 1
+---@field playerName fun(): string|nil Name of the logged-in character, as the roster shows it
 
 ---@class OOOOSyncPeer An online guild member whose addon has announced itself
 ---@field name string Character name
 ---@field versions table<string, string> Table name -> the table version that the peer announced last
 ---@field lastSeen number Server time of the last message
 ---@field order integer Arrival order: 1 for the first peer of this session
+---@field retryAt table<string, number>|nil Table name -> server time before which the peer is not asked for it
 
 ---@class OOOOSyncSession
 ---@field parts OOOOSyncSessionParts
@@ -37,6 +39,10 @@ local addonName, ns = ...
 ---@field answerTimer OOOOSyncTimer|nil Runs until the summary is sent
 ---@field answerTables table<string, boolean>|nil Set of table names that the pending summary will carry
 ---@field serving OOOOSyncServing|nil The pull that this replica answers (SyncPull.lua)
+---@field pull OOOOSyncActivePull|nil The pull that this replica runs (SyncPull.lua)
+---@field merged table<string, table<string, boolean>> Table name -> set of table versions whose data this
+---replica holds already, from complete pulls of this session
+---@field retryTimer OOOOSyncTimer|nil Runs until a peer that has to wait can be asked again
 local Session = {}
 Session.__index = Session
 
@@ -56,8 +62,10 @@ session.HELLO_DELAY_MIN, session.HELLO_DELAY_MAX = 20, 40
 ---Seconds between a hello of another member and the answer: a random value in this range. A peer that
 ---hears the same answer from another peer in that time stays silent.
 session.ANSWER_DELAY_MIN, session.ANSWER_DELAY_MAX = 1, 8
----Seconds for which the answers to the own hello are collected
+---Seconds for which the answers to the own hello are collected, from the moment at which it has left
 session.COLLECT_SECONDS = 10
+---Seconds after which the collecting starts also when the send queue has not reported the hello as sent
+session.HELLO_SEND_LIMIT = 60
 
 ---Makes a session. It does nothing until `OnGuildStateChanged(true)`.
 ---@param parts OOOOSyncSessionParts
@@ -69,6 +77,7 @@ function session.new(parts)
     peerCount = 0,
     helloSent = false,
     discovered = false,
+    merged = {},
   }, Session)
   parts.transport.onMessage = function(sender, messageType, fields)
     self:OnMessage(sender, messageType, fields)
@@ -143,20 +152,32 @@ function Session:SendHello()
   if self.helloSent or not self:MaySend() then
     return
   end
-  if not self.parts.transport:Send("H", nil, "NORMAL", nil, self:LocalVersions()) then
+  local function done()
+    self.collectTimer = nil
+    self:OnDiscoveryDone()
+  end
+  -- The answers are collected from the moment at which the hello has left the send queue: after a login the
+  -- queue can hold it back for some seconds. The first timer covers a queue that never reports.
+  local timer = self.parts.after(session.HELLO_SEND_LIMIT + session.COLLECT_SECONDS, done)
+  self.collectTimer = timer
+  local queued = self.parts.transport:Send("H", nil, "NORMAL", function(sent, total)
+    if sent >= total and self.collectTimer == timer then
+      timer:Cancel()
+      self.collectTimer = self.parts.after(session.COLLECT_SECONDS, done)
+    end
+  end, self:LocalVersions())
+  if not queued then
+    timer:Cancel()
+    self.collectTimer = nil
     return
   end
   self.helloSent = true
-  self.collectTimer = self.parts.after(session.COLLECT_SECONDS, function()
-    self.collectTimer = nil
-    self:OnDiscoveryDone()
-  end)
 end
 
 ---Called when the answers to the own hello have been collected. The peers that differ are then known.
 function Session:OnDiscoveryDone()
   self.discovered = true
-  -- Stage 5 fills the pull queue here, from `self.peers`
+  self:PumpPulls()
 end
 
 ---Adds the sender to the peer list, or renews its entry.
@@ -348,6 +369,7 @@ function session.Start()
     now = GetServerTime,
     after = C_Timer.NewTimer,
     random = math.random,
+    playerName = ns.syncCharacter.playerName,
   })
   session.current = current
   ns.guildState.RegisterCallback(session, "OnGuildStateChanged", function(_event, inGuild)

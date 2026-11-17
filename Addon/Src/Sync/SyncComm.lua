@@ -40,6 +40,20 @@ local guildState = ns.guildState
 
 ---The one addon message prefix of the shared database
 comm.PREFIX = "OOOO"
+---Seconds after a whisper for which the "no player named" line of its target is hidden
+comm.OFFLINE_NOTICE_SECONDS = 10
+---The line that the client prints after a whisper to an offline name, when the client has no global for it
+local OFFLINE_NOTICE_FORMAT = "No player named '%s' is currently playing."
+
+---Reads the name out of the system line that the client prints after a whisper to an offline player.
+---@param message string The system line
+---@param format string The format of the line with one `%s`, as in `ERR_CHAT_PLAYER_NOT_FOUND_S`
+---@return string|nil name nil when the line is another one
+function comm.offlineNoticeName(message, format)
+  -- Every magic character of the format is escaped; the escaped `%s` then becomes the capture
+  local pattern = "^" .. format:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0"):gsub("%%%%s", "(.+)") .. "$"
+  return message:match(pattern)
+end
 
 ---Makes a transport.
 ---@param parts OOOOSyncCommParts
@@ -162,6 +176,8 @@ function comm.Start()
   local aceComm = LibStub("AceComm-3.0")
   ---Owner of the AceComm registration
   local receiver = aceComm:Embed({})
+  ---Target of an addon whisper -> clock time (`GetTime`) at which the last part of a whisper left
+  local whisperedAt = {}
   local transport
   transport = comm.new({
     codec = protocol.new(LibStub("AceSerializer-3.0")),
@@ -169,11 +185,18 @@ function comm.Start()
     playerName = ns.syncCharacter.playerName,
     notify = ns.print,
     sendRaw = function(text, distribution, target, priority, onProgress)
+      if distribution == "WHISPER" then
+        whisperedAt[target] = GetTime()
+      end
       -- AceComm cuts a long text into parts of 255 bytes, and ChatThrottleLib queues them
-      receiver:SendCommMessage(comm.PREFIX, text, distribution, target, priority,
-        onProgress and function(_argument, sent, total)
+      receiver:SendCommMessage(comm.PREFIX, text, distribution, target, priority, function(_argument, sent, total)
+        if distribution == "WHISPER" then
+          whisperedAt[target] = GetTime()
+        end
+        if onProgress then
           onProgress(sent, total)
-        end or nil)
+        end
+      end)
     end,
     setListening = function(listening)
       if listening then
@@ -187,6 +210,24 @@ function comm.Start()
     end,
   })
   comm.transport = transport
+
+  -- An addon whisper to a member who has just gone offline prints a system line (AGENTS.md). The transport
+  -- whispers only to members that the roster shows online, but the roster can be behind.
+  local format = type(_G.ERR_CHAT_PLAYER_NOT_FOUND_S) == "string" and _G.ERR_CHAT_PLAYER_NOT_FOUND_S
+    or OFFLINE_NOTICE_FORMAT
+  -- The filter functions moved into ChatFrameUtil in the Mainline UI; the old global is the fallback
+  local addFilter = (_G.ChatFrameUtil and _G.ChatFrameUtil.AddMessageEventFilter) or _G.ChatFrame_AddMessageEventFilter
+  if addFilter then
+    addFilter("CHAT_MSG_SYSTEM", function(_chatFrame, _event, message)
+      if issecretvalue(message) or type(message) ~= "string" then
+        return false
+      end
+      local name = comm.offlineNoticeName(message, format)
+      local at = name and whisperedAt[name]
+      -- true hides the line
+      return at ~= nil and GetTime() - at <= comm.OFFLINE_NOTICE_SECONDS
+    end)
+  end
   guildState.RegisterCallback(comm, "OnGuildStateChanged", function(_event, inGuild)
     transport:SetActive(inGuild)
   end)

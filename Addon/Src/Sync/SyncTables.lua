@@ -331,6 +331,47 @@ function sync:Delete(tableName, key)
   return true
 end
 
+---Merges records that another replica sent into a table, in their order, and fires "OnRecordChanged" for
+---every record that changed. Each record is checked: the time of its id, and its payload against the table
+---definition. A bad record is dropped with the later records of its origin (`syncStore.applyBatch`).
+---@param tableName string
+---@param records OOOOSyncWireRecord[] From `syncProtocol`: keys and ids have the right form
+---@param checkFn (fun(record: OOOOSyncWireRecord, definition: OOOOSyncTableDefinition): boolean|"seen")? A
+---further check of the caller, after the checks above; "seen" raises the clock without storing the record
+---@return string[] changed Keys whose stored record changed
+---@return integer dropped Number of records that were not applied
+function sync:ApplyRemote(tableName, records, checkFn)
+  local tbl, definition = self:GetTable(tableName)
+  if not tbl or not definition then
+    return {}, #records
+  end
+  local now = self.timeFn()
+  local changed, dropped = store.applyBatch(tbl, records, function(record)
+    if not versionId.isValid(record.id, now) then
+      return false
+    end
+    if not record.tombstone then
+      if record.payload == nil or not isPlainData(record.payload) then
+        return false
+      end
+      -- The payload is untrusted: a `validate` that raises on it counts as a refusal
+      local called, valid = pcall(definition.validate, record.key, record.payload)
+      if not called or not valid then
+        return false
+      end
+    end
+    if checkFn then
+      return checkFn(record, definition)
+    end
+    return true
+  end)
+  for _, key in ipairs(changed) do
+    local record = tbl.records[key]
+    self.callbacks:Fire("OnRecordChanged", tableName, key, (not record.x) and record.d or nil, true)
+  end
+  return changed, dropped
+end
+
 ---Returns the payload of a record. The table that is returned is the stored one: do not change it.
 ---@param tableName string
 ---@param key string

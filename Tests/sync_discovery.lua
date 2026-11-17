@@ -21,14 +21,44 @@ local function setup(names, randomFn)
   return net, table.unpack(replicas)
 end
 
+---Returns the hellos and summaries of the log: the messages of discovery. The pulls that follow a discovery
+---are tested in sync_pull.lua.
+---@param net Fakenet
+---@return FakenetLogEntry[]
+local function discoveryLog(net)
+  local entries = {}
+  for _, entry in ipairs(net.log) do
+    local messageType = Replica.codec.decode(entry.text)
+    if messageType == "H" or messageType == "S" then
+      entries[#entries + 1] = entry
+    end
+  end
+  return entries
+end
+
+---Counts the hellos and summaries in the log.
+---@param net Fakenet
+---@return integer
+local function count(net)
+  return #discoveryLog(net)
+end
+
+---Returns the last hello or summary in the log.
+---@param net Fakenet
+---@return FakenetLogEntry
+local function last(net)
+  local entries = discoveryLog(net)
+  return entries[#entries]
+end
+
 ---Moves the clock in small steps until the log has `count` messages; fails after `limit` seconds.
 ---@param net Fakenet
----@param count integer
+---@param wanted integer
 ---@param limit number
-local function advanceUntilCount(net, count, limit)
+local function advanceUntilCount(net, wanted, limit)
   local waited = 0
-  while net:Count() < count do
-    T.ok(waited < limit, "message " .. count .. " is sent within " .. limit .. " seconds")
+  while count(net) < wanted do
+    T.ok(waited < limit, "message " .. wanted .. " is sent within " .. limit .. " seconds")
     net:Advance(0.1)
     waited = waited + 0.1
   end
@@ -55,12 +85,12 @@ do
   T.eq(a.session.discovered, false, "the answers are still collected")
   T.eq(a.session:StatusLines()[1], "discovery: collecting answers", "the status says collecting")
   net:Advance(100)
-  T.eq(net:Count(), 1, "the hello is sent once")
+  T.eq(count(net), 1, "the hello is sent once")
   T.eq(a.session.discovered, true, "discovery ends 10 seconds after the hello")
   T.eq(a.session:StatusLines(), { "discovery: done", "peers: 0" }, "the status of a replica without peers")
   a.session:OnGuildStateChanged(true)
   net:Advance(100)
-  T.eq(net:Count(), 1, "a repeated guild state does not send a second hello")
+  T.eq(count(net), 1, "a repeated guild state does not send a second hello")
 end
 
 -- Two replicas with equal tables: one hello, no summary
@@ -94,12 +124,12 @@ do
   b.sync:Put("debug", "key", "text")
   b:Login()
   advanceUntilCount(net, 2, 41)
-  local hello = net.log[#net.log]
+  local hello = last(net)
   T.eq(Replica.codec.decode(hello.text), "H", "the new replica sends its hello")
   T.eq(hello.from, "Other One", "from its own name")
   net:Advance(100)
   T.eq(Replica.count(net, "S"), 1, "the other replica answers with one summary")
-  local summary = net.log[#net.log]
+  local summary = last(net)
   local _, versions = Replica.codec.decode(summary.text)
   T.eq(summary.from, "Nota Scam", "the summary comes from the replica that differs")
   T.eq(versions, { debug = a:Version("debug") }, "it lists only the table that differs, with the own version")
@@ -111,9 +141,9 @@ do
   T.eq(b.session:StatusLines()[3]:match(", (.+)$"), "differs in debug", "the status names the table")
   T.eq(a.session.peers["Other One"].versions, { character = b:Version("character"), debug = b:Version("debug") },
     "a hello gives all versions of the sender")
-  T.eq(net:Count(function(entry)
-    return entry.distribution ~= "GUILD"
-  end), 0, "discovery uses the guild channel only")
+  for _, entry in ipairs(discoveryLog(net)) do
+    T.eq(entry.distribution, "GUILD", "a hello and a summary travel on the guild channel")
+  end
 
   -- /oooo sync status shows the session of the game
   b.ns.syncSession.current = b.session
@@ -186,22 +216,22 @@ do
   local b, c = net:Join("Other One"), net:Join("Third One")
   a:Login()
   net:Advance(100)
-  T.eq(net:Count(), 1, "one hello so far")
+  T.eq(count(net), 1, "one hello so far")
   sendAs(b, "H", { debug = OTHER })
   net:Advance(0.5)
   sendAs(c, "H", { character = OTHER, future = OTHER })
   net:Advance(20)
   T.eq(Replica.count(net, "S", "Nota Scam"), 1, "one summary answers two hellos")
-  local _, versions = Replica.codec.decode(net.log[#net.log].text)
+  local _, versions = Replica.codec.decode(last(net).text)
   T.eq(versions, { debug = a:Version("debug"), character = a:Version("character") },
     "it lists the tables of both hellos and not the table that this replica does not have")
   T.eq(a:PeerNames(), { "Other One", "Third One" }, "the peers are listed in arrival order")
 
   -- A hello that lists none of the tables of this replica gets no answer
-  local before = net:Count()
+  local before = count(net)
   sendAs(b, "H", { future = OTHER })
   net:Advance(20)
-  T.eq(net:Count() - before, 1, "a table that the sender does not list is not answered")
+  T.eq(count(net) - before, 1, "a table that the sender does not list is not answered")
 end
 
 -- An answer is suppressed by a summary of another peer with the same version, and only for that table
@@ -216,34 +246,34 @@ do
   -- Another peer in the state of this replica answers first, for one of the two tables
   sendAs(c, "S", { debug = a:Version("debug") })
   net:Advance(20)
-  local _, versions = Replica.codec.decode(net.log[#net.log].text)
-  T.eq(net.log[#net.log].from, "Nota Scam", "the replica still answers")
+  local _, versions = Replica.codec.decode(last(net).text)
+  T.eq(last(net).from, "Nota Scam", "the replica still answers")
   T.eq(versions, { character = a:Version("character") }, "without the table that the other peer announced")
 
   -- The same with both tables announced: no answer at all
-  local before = net:Count()
+  local before = count(net)
   sendAs(b, "H", { debug = OTHER, character = OTHER })
   net:Advance(0.5)
   sendAs(c, "S", { debug = a:Version("debug"), character = a:Version("character") })
   net:Advance(20)
-  T.eq(net:Count() - before, 2, "no summary when a peer has announced every table")
+  T.eq(count(net) - before, 2, "no summary when a peer has announced every table")
   T.eq(a.session.answerTimer, nil, "and no answer is pending")
 
   -- A hello of a third member with the version of this replica suppresses too
-  before = net:Count()
+  before = count(net)
   sendAs(b, "H", { debug = OTHER, character = a:Version("character") })
   net:Advance(0.5)
   sendAs(c, "H", { debug = a:Version("debug"), character = a:Version("character") })
   net:Advance(20)
-  T.eq(net:Count() - before, 2, "a hello with the version of this replica stops the answer as well")
+  T.eq(count(net) - before, 2, "a hello with the version of this replica stops the answer as well")
 
   -- A summary with another version does not suppress
-  before = net:Count()
+  before = count(net)
   sendAs(b, "H", { debug = OTHER, character = a:Version("character") })
   net:Advance(0.5)
   sendAs(c, "S", { debug = "!!!!!YYYY!!!!!!!" })
   net:Advance(20)
-  T.eq(net:Count() - before, 3, "a summary with another version does not stop the answer")
+  T.eq(count(net) - before, 3, "a summary with another version does not stop the answer")
   T.eq(a.session.peers["Third One"].versions.debug, "!!!!!YYYY!!!!!!!", "a summary updates the versions of its sender")
   T.eq(a.session.peers["Third One"].versions.character, a:Version("character"),
     "and keeps the versions that it does not list")
@@ -261,9 +291,9 @@ do
   a.transport:SetActive(false)
   T.eq(a:PeerNames(), {}, "outside the guild the peers are forgotten")
   T.eq(a.session:StatusLines()[1], "discovery: not started (not in the guild)", "and discovery is not started")
-  local before = net:Count()
+  local before = count(net)
   net:Advance(100)
-  T.eq(net:Count(), before, "a replica outside the guild sends nothing")
+  T.eq(count(net), before, "a replica outside the guild sends nothing")
 
   -- A hello that is pending when the character leaves is not sent
   local c = Replica.new(net, "Third One", { random = random })

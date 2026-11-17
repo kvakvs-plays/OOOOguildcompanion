@@ -366,8 +366,9 @@ Rules for `writers = "owner"`:
    a table from its answer when another peer has already announced the same
    table version in that time. A hundred peers in the same state give one
    answer.
-5. The new member collects answers for 10 seconds. The roster alone cannot tell
-   who has the addon; the answers can.
+5. The new member collects answers for 10 seconds, counted from the moment at
+   which its hello has left the send queue (at most 60 seconds after it was
+   queued). The roster alone cannot tell who has the addon; the answers can.
 
 ### 7.2 Pull
 
@@ -478,7 +479,12 @@ not to the player.
   schema matches, every id is valid (section 3), key is a string within a length
   limit, payload passes the table's `validate`, record size is within
   `maxRecordBytes`, batch count and digest length are within limits.
-- For `keyKind = "character"`, the key must be a name in the guild roster.
+- For `keyKind = "character"`, the key must start with a name in the guild
+  roster. A received record that fails this is not stored, but its id still
+  raises the clock (`applyBatch` verdict `"seen"`), and it does not count as
+  dropped: this is what the local roster cleanup of 4.4 does to a stored
+  record. Dropping it would block the later records of its origin for as long
+  as any replica still holds the record of a member who left.
 - One bad record drops that record and all later records of the same origin in
   the batch (to keep the invariant), not the whole session.
 - Accepted risk for owner tables: a member with a modified addon can write wrong
@@ -570,6 +576,33 @@ Finished; see `00-finished.md`.
 
 - 5.1 and 5.2 are finished; see `00-finished.md`.
 - **5.3 Requester and queue** (**CLIENT**, two accounts)
+  - Status: the code and the host tests are done, in `Src\Sync\SyncPull.lua`
+    (`pull.chooseSource`, `Session:PumpPulls`, the handlers of `D` and `B`),
+    `SyncTables.lua` (`sync:ApplyRemote`), and `SyncComm.lua` (the
+    `CHAT_MSG_SYSTEM` filter). Open: the client checkpoint below.
+  - To check in the client, with two accounts:
+    - On the account that logs in second, `/oooo sync status` shows the
+      `debug` version of the other account about a minute after login (hello
+      after 20 to 40 s, 10 s of collecting, then the pull).
+    - `character` holds the records of both characters on that account. Its
+      version still differs from the other account, which lacks the new
+      record until the push of stage 6 exists, unless both logged in within
+      the same minute and pulled from each other.
+    - No Lua error, and no "No player named" line when one account logs out
+      during a pull. This is the first use of `WHISPER` through AceComm.
+  - The queue is implicit: `PumpPulls` takes the first table, in the order of
+    registration, for which a peer can be asked; the others wait until the
+    pull has ended.
+  - The version that counts as merged is the version of the responder, worked
+    out from the own clock after the pull and the `wants` of the last batch
+    (`pull.responderVersion`), not the version that the peer announced before.
+  - Waits: 300 s for a peer after a timeout, 1800 s after a pull with a
+    dropped record, the retry time of a `B` (at least 5 s). A timer starts the
+    next pull when the earliest wait is over.
+  - No pull starts before the roster cache holds the own character.
+  - Known gap, for step 6.3: a replica learns of a peer only from a hello or a
+    summary. When its only known source goes offline during a pull, it keeps
+    the part that it has until another peer announces a version.
   - Substeps
     - Source choice: among the peers whose fingerprint differs and is not yet
       merged, the greatest `maxId`; a tie goes to the first that answered. Write

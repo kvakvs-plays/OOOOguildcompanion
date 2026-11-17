@@ -83,6 +83,9 @@ return function(T)
         return self.endpoint:After(seconds, fn)
       end,
       random = options.random,
+      playerName = function()
+        return name
+      end,
     })
     self.endpoint.receive = function(text, distribution, sender)
       self.transport:Receive(text, distribution, sender)

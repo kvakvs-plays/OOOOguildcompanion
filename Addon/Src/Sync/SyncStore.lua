@@ -40,6 +40,24 @@ function store.newTable(schema)
   return { schema = schema, clock = {}, maxId = versionId.ZERO, fp = 0, records = {} }
 end
 
+---Raises the clock of an id's origin to the id, when the id is greater, and keeps `fp` and `maxId` in step.
+---@param tbl OOOOSyncTable
+---@param id string A well-formed version id
+---@return boolean changed true when the clock entry rose
+local function see(tbl, id)
+  local origin = versionId.originOf(id)
+  local seen = tbl.clock[origin]
+  if seen and id <= seen then
+    return false
+  end
+  tbl.fp = (tbl.fp - (seen and base94.hash(seen) or 0) + base94.hash(id)) % TWO_32
+  tbl.clock[origin] = id
+  if id > tbl.maxId then
+    tbl.maxId = id
+  end
+  return true
+end
+
 ---Merges one record into a table. Last writer wins per key: the record is stored when its id is greater
 ---than the stored one. The clock of the record's origin rises also when the record loses, because the
 ---table has then seen that write. `fp` and `maxId` follow the clock in place.
@@ -50,15 +68,7 @@ end
 ---@param isTombstone boolean? true when the write deleted the record
 ---@return boolean changed true when the stored record changed
 function store.apply(tbl, key, id, payload, isTombstone)
-  local origin = versionId.originOf(id)
-  local seen = tbl.clock[origin]
-  if not seen or id > seen then
-    tbl.fp = (tbl.fp - (seen and base94.hash(seen) or 0) + base94.hash(id)) % TWO_32
-    tbl.clock[origin] = id
-    if id > tbl.maxId then
-      tbl.maxId = id
-    end
-  end
+  see(tbl, id)
   local record = tbl.records[key]
   if record and record.v >= id then
     return false
@@ -94,18 +104,35 @@ function store.parseTableVersion(text)
   return text:sub(1, versionId.LENGTH), fp
 end
 
----Computes `maxId` and `fp` again from the clock: after the saved variables load, and in tests.
----The normal path never needs it, because `apply` keeps both current.
----@param tbl OOOOSyncTable
-function store.rebuild(tbl)
+---Computes the greatest id and the fingerprint of a clock.
+---@param clock table<string, string> Origin -> id
+---@return string maxId `versionId.ZERO` for an empty clock
+---@return integer fp
+local function summarize(clock)
   local maxId, fp = versionId.ZERO, 0
-  for _, id in pairs(tbl.clock) do
+  for _, id in pairs(clock) do
     fp = (fp + base94.hash(id)) % TWO_32
     if id > maxId then
       maxId = id
     end
   end
-  tbl.maxId, tbl.fp = maxId, fp
+  return maxId, fp
+end
+
+---Computes `maxId` and `fp` again from the clock: after the saved variables load, and in tests.
+---The normal path never needs it, because `apply` keeps both current.
+---@param tbl OOOOSyncTable
+function store.rebuild(tbl)
+  tbl.maxId, tbl.fp = summarize(tbl.clock)
+end
+
+---Returns the table version that a table with the given clock has. A requester uses it to work out the
+---version of the replica that it has pulled from.
+---@param clock table<string, string> Origin -> id
+---@return string
+function store.versionOfClock(clock)
+  local maxId, fp = summarize(clock)
+  return maxId .. base94.encode(fp, FP_WIDTH)
 end
 
 --------------------------------------------------------------------------------
@@ -226,9 +253,13 @@ end
 ---
 ---Why the order matters: records travel sorted by id and a batch is applied whole, so when the clock of
 ---an origin reaches an id, every record with a smaller id that the sender had to give has been applied.
+---
+---`validateFn` can also answer "seen": the record is good but this replica does not keep it (a character
+---that is no longer in the guild). The clock then rises as if the record had been applied and then removed
+---by the local cleanup, and the record does not count as dropped.
 ---@param tbl OOOOSyncTable
 ---@param records any[] Received records; every field is checked here or by `validateFn`
----@param validateFn (fun(record: OOOOSyncWireRecord): boolean)? Further checks: id time, key, payload, size
+---@param validateFn (fun(record: OOOOSyncWireRecord): boolean|"seen")? Further checks: id time, key, payload
 ---@return string[] changed Keys whose stored record changed
 ---@return integer dropped Number of records that were not applied
 function store.applyBatch(tbl, records, validateFn)
@@ -245,11 +276,16 @@ function store.applyBatch(tbl, records, validateFn)
     local origin = versionId.originOf(id)
     if blocked[origin] then
       dropped = dropped + 1
-    elseif type(record.key) ~= "string" or (validateFn and not validateFn(record)) then
-      blocked[origin] = true
-      dropped = dropped + 1
-    elseif store.apply(tbl, record.key, id, record.payload, record.tombstone == true) then
-      changed[#changed + 1] = record.key
+    else
+      local verdict = type(record.key) == "string" and (not validateFn or validateFn(record))
+      if not verdict then
+        blocked[origin] = true
+        dropped = dropped + 1
+      elseif verdict == "seen" then
+        see(tbl, id)
+      elseif store.apply(tbl, record.key, id, record.payload, record.tombstone == true) then
+        changed[#changed + 1] = record.key
+      end
     end
   end
   return changed, dropped
@@ -289,16 +325,8 @@ end
 function store.mergeClock(tbl, clock)
   local changed = false
   for origin, id in pairs(clock) do
-    if versionId.isWellFormed(id) and versionId.originOf(id) == origin then
-      local seen = tbl.clock[origin]
-      if not seen or id > seen then
-        tbl.fp = (tbl.fp - (seen and base94.hash(seen) or 0) + base94.hash(id)) % TWO_32
-        tbl.clock[origin] = id
-        if id > tbl.maxId then
-          tbl.maxId = id
-        end
-        changed = true
-      end
+    if versionId.isWellFormed(id) and versionId.originOf(id) == origin and see(tbl, id) then
+      changed = true
     end
   end
   return changed
