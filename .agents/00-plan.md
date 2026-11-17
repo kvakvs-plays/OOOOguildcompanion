@@ -167,6 +167,17 @@ db.global.sync = {
   them (`SyncStore.mergeClock`) only when it applied every batch and dropped no
   record. Without this the clocks of two replicas with equal data can stay
   different, and they would pull from each other without end.
+- Assumption on concurrent writes: only officers compete for a key, in officer
+  tables. In an owner table a key is written by its owner alone, so two
+  players never write the same key. Last writer wins is therefore only ever
+  decided between officers, where losing one of two edits made in the same
+  seconds is acceptable.
+  - A key of an owner table can still have writes of two origins: one player
+    with two installs. These are not concurrent, because one account is
+    logged in once.
+  - The clock rest above is needed in both cases: an officer who replaces
+    another officer's record, and a second install that replaces the first
+    one's record.
 - Why a clock and not one "newer than X" mark per table: a replica can hold a
   new record from origin A and still lack an older one from origin B. A single
   mark would skip B's record forever.
