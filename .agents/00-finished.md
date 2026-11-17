@@ -96,3 +96,15 @@
   roster member. `Tests/fakenet.lua` (clock, timers, delay, loss, offline
   members, the roster view) and `Tests/sync_comm.lua`. AGENTS.md allows
   `WHISPER`. Host only; `comm.Start` is checked in the client with step 4.4.
+- **4.4 Discovery**: `Src/Sync/SyncSession.lua` with `session.new(parts)`
+  (hello 20 to 40 s after the guild check, answer after 1 to 8 s with
+  suppression by any hello or summary that carries the own version, answers
+  collected for 10 s, peer list, `StatusLines`) and `session.Start()`;
+  `/oooo sync status` prints discovery and the peers;
+  `Tests/sync_discovery.lua`, `Tests/fixtures/replica.lua`. A replica whose
+  hello got no answer knows no peer. Client check on 2026-11-18 with two
+  accounts (Nota Scam, origin `p:i<`, and Nota Tall, origin `>/qs`): each
+  listed the other in `/oooo sync status` with "differs in character, debug".
+  This was also the first run of AceComm and AceSerializer in the client:
+  `H` and `S` arrive on `GUILD`, so the global `Ambiguate` that AceComm
+  calls exists on Forever.

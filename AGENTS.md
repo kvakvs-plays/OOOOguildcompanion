@@ -193,6 +193,12 @@ may be fixed there. Test a claim on the release client before relying on it.
     and the replies come back unchanged.
   - In combat inside a dungeon, a `GUILD` addon message returns 0 and is
     delivered. Whether that fight was a boss encounter was not recorded.
+  - AceComm-3.0 (with ChatThrottleLib) and AceSerializer-3.0 work
+    (November 18, 2026): serialized messages on `GUILD` arrived between two
+    accounts through `RegisterComm` and `SendCommMessage`. AceComm calls
+    the global `Ambiguate` on every addon message, so that global exists.
+    Multipart messages (over 255 bytes) and `WHISPER` through AceComm are
+    not yet checked.
   - Not yet checked: addon messages in a raid group and in a raid instance
     (the raids unlock on December 9, 2026), and during a boss encounter.
 - If you are not sure that an API exists on Forever, say so and write a

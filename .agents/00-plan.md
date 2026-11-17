@@ -4,7 +4,8 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: stages 0 to 3 are finished (`00-finished.md`). The probes of stage 1
+Status: stages 0 to 3 are finished (`00-finished.md`), and of stage 4 all but
+the client check of step 4.1. The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -566,8 +567,10 @@ Finished; see `00-finished.md`.
 
 - **4.1 Guild state module**
   - Status: the code and the host tests are done, in
-    `Src\Guild\GuildState.lua` (`ns.guildState`). Open: the client checkpoint
-    below.
+    `Src\Guild\GuildState.lua` (`ns.guildState`). The client check of 4.4
+    (2026-11-18) showed that the state reaches `in` and that the roster cache
+    accepts a guild member as a sender. Open: the checkpoint below, the emoji
+    in guild chat and their absence on a character outside the guild.
   - The state has three values, `unknown`, `in`, and `outside`. The callback is
     `OnGuildStateChanged(inGuild, state)`; `inGuild` is true only for `in`.
     `Core.lua` starts the module on `PLAYER_LOGIN` (`addon:OnEnable`).
@@ -593,46 +596,7 @@ Finished; see `00-finished.md`.
     - `normalizeName("Name-Realm")` gives `"Name"`.
     - The state is "unknown", not "outside", while the guild name is nil.
   - Done when: one place in the code holds the guild name.
-- **4.4 Discovery** (**CLIENT**, two accounts)
-  - Status: the code and the host tests are done, in
-    `Src\Sync\SyncSession.lua` (`ns.syncSession`), with
-    `Tests/sync_discovery.lua` and `Tests/fixtures/replica.lua`. Open: the
-    client checkpoint below. It is also the first run of `SyncComm.Start`,
-    AceComm, and AceSerializer in the client, and the client check of 4.1.
-  - To check in the client:
-    - No Lua error at login. AceComm calls the global `Ambiguate` on every
-      addon message; its presence on Forever is not verified.
-    - Both accounts differ in `character` (each has its own record), so the
-      one that logs in second gets a summary: each sees the other in
-      `/oooo sync status` with "differs in character".
-    - No chat frame shows a message.
-  - A hello or a summary of any peer with the version of this replica
-    suppresses the pending answer for that table, not only a summary.
-  - A replica whose hello got no answer knows no peer: with equal tables
-    nobody answers. The older replica still lists the new one, from its hello.
-  - Substeps
-    - `Src\Sync\SyncSession.lua`: on "in guild", start a timer of 20 to 40
-      seconds and send `H`.
-    - On `H`: after 1 to 8 seconds send `S` with the tables whose version
-      differs, without those that another peer announced in that time with the
-      same version.
-    - Peer list: name, table versions, time of the last message, arrival order.
-      A peer leaves the list when the roster shows it offline.
-    - Collect answers for 10 seconds, then hand the result to the pull queue
-      (empty in this stage).
-    - `/oooo sync status` lists the peers.
-  - Checkpoint (**CLIENT**): each of two accounts sees the other in
-    `/oooo sync status` within a minute after login; no chat frame shows a
-    message.
-  - Host tests (`Tests/sync_discovery.lua`, fake network)
-    - Two replicas with equal tables: one `H`, no `S`.
-    - 50 replicas in one state and one new replica with another state: the
-      number of `S` messages is small (at most 5 with the test's delays).
-    - A peer that goes offline leaves the list.
-    - No `H` is sent before the guild state is known.
-  - Done when: the client checkpoint is recorded, and the result required in
-    section 1 holds: the engine starts at login, and empty tables are compared
-    and not transferred.
+- 4.2, 4.3, and 4.4 are finished; see `00-finished.md`.
 
 ### Stage 5. Pull
 
