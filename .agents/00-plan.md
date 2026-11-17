@@ -301,8 +301,8 @@ Rules for `writers = "owner"`:
     playing". Whisper only to peers that the roster shows online, and hide that
     system line for a target for a few seconds after a send with a
     `CHAT_MSG_SYSTEM` message filter. Guard the filter with `issecretvalue`.
-  - AGENTS.md says that addon messages use the `GUILD` channel only. Change that
-    line in stage 4 to allow `WHISPER` for transfers between two members.
+  - AGENTS.md allows `WHISPER` for transfers between two members (changed in
+    step 4.3).
 - `SendCommMessage` also takes a progress callback (bytes sent, bytes total).
   Use it to send the next batch only when the previous one has left the queue,
   and for the status line in the options.
@@ -593,28 +593,6 @@ Finished; see `00-finished.md`.
     - `normalizeName("Name-Realm")` gives `"Name"`.
     - The state is "unknown", not "outside", while the guild name is nil.
   - Done when: one place in the code holds the guild name.
-- **4.3 Comm wiring and sender checks**
-  - Substeps
-    - `Src\Sync\SyncComm.lua`: register the prefix `OOOO` when the guild state
-      becomes "in guild"; unregister the handler when it becomes "outside".
-    - Drop a message from the player's own name, from a name that is not in the
-      roster cache, and a `GUILD` type that arrives by `WHISPER` or the reverse.
-    - `send(type, distribution, target, priority, ...)` with the progress
-      callback.
-    - Change the channel rule in AGENTS.md to allow `WHISPER` between two
-      members.
-    - Put a transport interface between `SyncComm` and the session code
-      (`send`, `onMessage`), and add `Tests/fakenet.lua`: an in-memory network
-      with a fake clock, a fake timer, message delay, message loss, and peers
-      that go offline. All later session tests use it.
-  - Checkpoint: two host replicas exchange one message through the fake
-    network.
-  - Host tests (`Tests/sync_comm.lua`)
-    - The sender filter drops the three cases above and passes a roster member.
-    - The fake timer fires callbacks in time order, and a cancelled one does not
-      fire.
-    - A lost message does not reach the handler; a delayed one arrives later.
-  - Done when: the session code can run on the host without AceComm.
 - **4.4 Discovery** (**CLIENT**, two accounts)
   - Substeps
     - `Src\Sync\SyncSession.lua`: on "in guild", start a timer of 20 to 40

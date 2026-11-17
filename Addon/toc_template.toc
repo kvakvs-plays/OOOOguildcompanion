@@ -34,3 +34,4 @@ Src\Sync\SyncCharacter.lua
 Src\Sync\SyncCommands.lua
 Src\Sync\SyncProbe.lua
 Src\Sync\SyncProtocol.lua
+Src\Sync\SyncComm.lua

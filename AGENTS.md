@@ -211,8 +211,10 @@ may be fixed there. Test a claim on the release client before relying on it.
 - Roster data arrives asynchronously. Request it with
   `C_GuildInfo.GuildRoster()` and read it on `GUILD_ROSTER_UPDATE`. Do not
   request it on a timer; the server throttles the request.
-- Addon-to-addon communication uses the `"GUILD"` addon channel and one
-  registered prefix. A message from another guild member is untrusted input:
+- Addon-to-addon communication uses one registered prefix (`OOOO`) on two
+  addon channels: `"GUILD"` for what every member needs, and `"WHISPER"` for a
+  transfer between two members. Whisper only to a member that the roster shows
+  online: a whisper to an offline name prints a system line. A message from another guild member is untrusted input:
   validate the type and range of every field, and never run received text as
   code. Verify on the live client whether addon messages are restricted in
   instances and in combat before a feature depends on them.

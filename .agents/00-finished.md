@@ -85,3 +85,14 @@
   `embeds.xml`. `Tests/sync_protocol.lua` runs with a stub serializer
   (`Tests/fixtures/stub_serializer.lua`) and with the real AceSerializer,
   which loads on the host. Host only by design.
+- **4.3 Comm wiring and sender checks**: `Src/Sync/SyncComm.lua` with
+  `comm.new(parts)`, which gives a transport (`Send(type, target, priority,
+  onProgress, ...)`, `Receive(text, distribution, sender)`, `SetActive`,
+  `onMessage(sender, type, fields)`, `drops`), and `comm.Start()`, which builds
+  the one of the game on AceComm with the prefix `OOOO` and follows the guild
+  state. The channel comes from the type (`protocol.CHANNELS`), so `Send` takes
+  no distribution. Dropped: the own name, a name outside the roster cache, a
+  type on the wrong channel, secret values; a whisper goes only to an online
+  roster member. `Tests/fakenet.lua` (clock, timers, delay, loss, offline
+  members, the roster view) and `Tests/sync_comm.lua`. AGENTS.md allows
+  `WHISPER`. Host only; `comm.Start` is checked in the client with step 4.4.
