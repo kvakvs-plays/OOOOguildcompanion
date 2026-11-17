@@ -735,7 +735,7 @@ probe.Register("echo", "echo guild | echo whisper <name> - send the 94-character
     if mode == "guild" then
       channel = "GUILD"
     elseif mode == "whisper" and args[2] then
-      channel, target = "WHISPER", args[2]
+      channel, target = "WHISPER", table.concat(args, " ", 2)
     else
       report:Add("usage: echo guild | echo whisper <name>")
       return
@@ -765,7 +765,7 @@ probe.Register("burst", "burst [name] - 30 messages of 255 bytes at once, then o
   function(report, args)
     local channel, target = "GUILD", nil
     if args[1] then
-      channel, target = "WHISPER", args[1]
+      channel, target = "WHISPER", table.concat(args, " ")
     end
     if not startListening(report) then
       return
@@ -805,7 +805,8 @@ probe.Register("burst", "burst [name] - 30 messages of 255 bytes at once, then o
 
 probe.Register("offline", "offline <name> - whisper an offline guild member and watch for a system line",
   function(report, args)
-    local target = args[1]
+    -- A character has a first and a last name, so the name is all the words
+    local target = args[1] and table.concat(args, " ")
     if not target then
       report:Add("usage: offline <name>")
       return

@@ -12,5 +12,10 @@
 - **1.1 Slash command dispatch and the probe module**: `Src\Slash.lua`
   (dispatcher by first word, `ns.slash`, `ns.syncSlash`) and
   `Src\Sync\SyncProbe.lua` (`/oooo sync probe <name>`, `list`, results in
-  `db.global.probeResults`); `Tests/sync_probe.lua`. Host only: the checkpoint
-  `/oooo sync probe list` in the client is still to be run.
+  `db.global.probeResults`); `Tests/sync_probe.lua`. The checkpoint
+  `/oooo sync probe list` was run in the client with step 1.2.
+- **1.2 Local probes**: probes `strings`, `time`, `ranks`, `api`. Run on the
+  release client on 2026-11-17, which also covers the checkpoint of 1.1. All
+  passed: `<` follows the byte order, `GetServerTime()` is a plain number, the
+  guild master has rank index 0, no function missing and no event invalid.
+  Results are in AGENTS.md ("Forever API Rules") and plan sections 3 and 7.5.

@@ -142,6 +142,28 @@ may be fixed there. Test a claim on the release client before relying on it.
   (`C_Bank.CanUseBank(Enum.BankType.Account)` is false).
 - **Group buffs** (Prayers, Gift of the Wild, Arcane Brilliance, Battle Shout)
   cover the whole raid, and all blessings last 60 minutes.
+- **Checked on the release client** (1.60.1, November 17, 2026, with
+  `/oooo sync probe`):
+  - `<` on strings follows the byte order for the characters 33 to 126, and
+    `table.sort` gives the byte order. Version ids can be compared with `<`.
+  - `GetServerTime()` and `time()` return plain numbers, not secret values.
+    The local clock was 2 seconds ahead of the server.
+  - Guild ranks: `GetGuildRosterInfo` gives the rank index from 0. Index 0 is
+    the guild master (one member). Indexes can have gaps: `OO OO` uses 0 to 5
+    and 9. Roster names, rank names, and rank indexes were not secret.
+  - A roster name has a space in it: the first and the last name
+    (`Nota Scam`). Do not split a character name on whitespace.
+  - These exist: `GetServerTime`, `IsResting`, `IsInRaid`, `IsInInstance`,
+    `InCombatLockdown`, `C_ChatInfo.SendAddonMessage`,
+    `C_ChatInfo.RegisterAddonMessagePrefix`, `C_Timer.After`,
+    `C_Timer.NewTimer`, `C_GuildInfo.GuildRoster`,
+    `ChatFrame_AddMessageEventFilter`, `Enum.SendAddonMessageResult`.
+  - These events are valid: `PLAYER_REGEN_DISABLED`, `PLAYER_REGEN_ENABLED`,
+    `PLAYER_UPDATE_RESTING`, `GROUP_ROSTER_UPDATE`, `PLAYER_ENTERING_WORLD`,
+    `PLAYER_GUILD_UPDATE`, `GUILD_ROSTER_UPDATE`, `CHAT_MSG_ADDON`,
+    `CHAT_MSG_SYSTEM`.
+  - Not yet checked: whether addon messages arrive, their rate limit, and
+    their behaviour in combat and in instances (plan step 1.3).
 - If you are not sure that an API exists on Forever, say so and write a
   capability probe. Do not invent `C_` functions. The Blizzard UI source at
   `F:\Projects\WowAddons\BlizzardInterfaceCode\` is for Classic, not Forever, so

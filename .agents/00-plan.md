@@ -98,9 +98,9 @@ TTTTT OOOO RR
   dropped.
 - Known costs of base 94: AceSerializer escapes `^` and `~` (2 bytes each on the
   wire), and `|` must be escaped as `||` before an id is printed to chat.
-- **PROBE**: Lua compares strings with `strcoll`. Check in the client that
-  `"!" < "A"`, `"Z" < "a"`, and `"a" < "~"` hold. If they do not, compare ids
-  with a byte-wise helper everywhere.
+- Checked on the release client (step 1.2): `"!" < "A"`, `"Z" < "a"`, and
+  `"a" < "~"` hold, and a sort of the 94 characters gives the byte order. Ids
+  are compared with plain `<`. `GetServerTime()` returns a plain number.
 
 ## 4. Data model
 
@@ -393,8 +393,10 @@ Per table, with defaults from the table definition and overrides in
 A table with `writers = "officer"` (for example `guildbank`) has stricter rules.
 "Officer" means the guild ranks 1 (guild master), 2, and 3. The list is a
 hardcoded constant in the addon (`ns.OFFICER_RANKS`), not a setting. The roster
-API counts ranks from 0, so the constant holds the rank indexes 0, 1, and 2
-(**PROBE**: confirm that the guild master has index 0 on Forever). The roster
+API counts ranks from 0, so the constant holds the rank indexes 0, 1, and 2.
+Checked on the release client (step 1.2): the guild master has index 0, and
+in `OO OO` the indexes 0, 1, and 2 are the ranks `O`, `Ministry of War`, and
+`Core`. The roster
 gives the rank of every sender. The rank belongs to the character that is logged
 in, not to the player.
 
@@ -496,28 +498,6 @@ Finished; see `00-finished.md`.
 
 ### Stage 1. Probes
 
-- **1.2 Local probes** (**CLIENT**)
-  - Status: the code and the host tests are done. Open: run
-    `/oooo sync probe strings`, `time`, `ranks`, and `api` on the release
-    client, then do the "Done when" part. The results are also in the saved
-    variables under `probeResults`.
-  - Substeps
-    - `strings`: `"!" < "A"`, `"Z" < "a"`, `"a" < "~"`, and a sort of all 94
-      characters compared with the byte order.
-    - `time`: `GetServerTime()` next to `time()`, and whether the value is a
-      secret value.
-    - `ranks`: after `C_GuildInfo.GuildRoster()` and `GUILD_ROSTER_UPDATE`,
-      print the name, rank index, and rank name of each member; state whether
-      the guild master has index 0.
-    - `api`: for each API that later stages need (`IsResting`, `IsInRaid`,
-      `IsInInstance`, `C_ChatInfo.SendAddonMessage`,
-      `C_ChatInfo.RegisterAddonMessagePrefix`, `C_Timer.After`, and the events
-      of 7.4 through `C_EventUtils.IsEventValid`), print whether it exists.
-  - Checkpoint: the four probes print a result on the release client.
-  - Host tests: the sort check gives "equal" for the byte order and "differs"
-    for a shuffled list.
-  - Done when: the results are written under "Forever API Rules" in AGENTS.md,
-    and the **PROBE** notes in sections 3 and 7.5 are replaced with the result.
 - **1.3 Message probes** (**CLIENT**, two accounts)
   - Status: the code and the host tests are done. The probes use their own
     prefix `OOOOprobe` and the raw `C_ChatInfo.SendAddonMessage`. Open: on the
@@ -528,6 +508,10 @@ Finished; see `00-finished.md`.
     because the raw API drops a throttled message and the refill rate would
     otherwise stay unknown. With one account, `echo guild` and `state` still
     show whether the own message comes back intact.
+  - Also to check here: a character name has a space (`Nota Scam`). See what
+    `CHAT_MSG_ADDON` gives as the sender, what `UnitName("player")` returns,
+    and whether a whisper to the full name arrives. Sections 5 and 6 assume a
+    name without a space; correct them with the result.
   - Substeps
     - `echo guild` and `echo whisper <name>`: send the 94-character payload
       through `C_ChatInfo.SendAddonMessage`; the other client sends it back; the
