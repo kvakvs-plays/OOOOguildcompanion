@@ -515,27 +515,6 @@ policy of 7.4, see step 6.1):
 
 ### Stage 2. Core logic with host tests
 
-- **2.2 `VersionId`: make, parse, validate**
-  - Substeps
-    - `newGenerator(origin, timeFn, randomFn)` returns `next(maxId)`; it holds
-      the previous id and applies the three ordering rules of section 3.
-    - `parse(id)` returns timestamp, origin, and counter; `originOf(id)`.
-    - `isValid(id, now)`: length, alphabet, and at most 5 minutes ahead.
-    - `newOrigin(randomFn)`.
-  - Checkpoint: `lua Tests/sync_versionid.lua` passes.
-  - Host tests (`Tests/sync_versionid.lua`)
-    - 10000 ids from one generator with a clock that stands still, moves ahead,
-      and moves back: each id is greater than the one before.
-    - More ids in one second than the counter holds: the timestamp moves ahead
-      and the order holds.
-    - `next(maxId)` is greater than `maxId` when `maxId` is in the same second
-      and when it is 3 minutes ahead.
-    - Ids from two origins in the same second: their order equals the order of
-      the origins.
-    - `parse` returns what the generator put in.
-    - `isValid` rejects length 10 and 12, a space, byte 127, a non-string, and
-      an id 301 seconds ahead; it accepts one 299 seconds ahead.
-  - Done when: time, random source, and origin are parameters only.
 - **2.3 `SyncStore`: records, clock, fingerprint**
   - Substeps
     - `newTable(schema)` returns the structure of 4.1.

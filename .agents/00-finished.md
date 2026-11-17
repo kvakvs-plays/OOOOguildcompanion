@@ -32,3 +32,7 @@
 - **2.1 `Base94`**: `Src/Sync/Base94.lua` with `encode`, `decode`, `isValid`,
   `hash` (32 bits, no `bit` library, constants checked against Python), and
   `compare`; `Tests/sync_base94.lua`. Host only by design.
+- **2.2 `VersionId`**: `Src/Sync/VersionId.lua` with `make`, `parse`,
+  `originOf`, `isWellFormed`, `isValid`, `newOrigin`, `newGenerator(origin,
+  timeFn, randomFn)`, and the smallest id `ZERO`; `Tests/sync_versionid.lua`.
+  Host only by design.

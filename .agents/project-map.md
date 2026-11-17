@@ -46,6 +46,7 @@ moved, or removed.
 | `Emoji/EmojiChat.lua` | Replaces emoji names in guild, party, and raid chat; holds the guild check (to move to `Guild/GuildState.lua`, plan step 4.1). |
 | `Options/OptionsWindow.lua` | `ns.optionsWindow`: the AceConfig settings window. |
 | `Sync/Base94.lua` | `ns.base94`: `encode`, `decode`, `isValid`, the 32-bit `hash`, byte-wise `compare`. Host-testable, no WoW API. |
+| `Sync/VersionId.lua` | `ns.versionId`: `make`, `parse`, `originOf`, `isWellFormed`, `isValid`, `newOrigin`, `newGenerator`, `ZERO`. Host-testable, no WoW API. |
 | `Sync/SyncProbe.lua` | `ns.syncProbe`: `/oooo sync probe <name>`, the probe registry, reports stored in `db.global.probeResults`, and the computing helpers of the probes. Host-loadable. |
 
 ## `Tests/` (host only, Lua 5.4, not packaged)
@@ -59,4 +60,5 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `sync_harness.lua` | Tests of the harness itself. |
 | `sync_base94.lua` | Tests of `Sync/Base94.lua`. |
 | `sync_probe.lua` | Tests of `Slash.lua` and of the computing parts of `Sync/SyncProbe.lua`. |
+| `sync_versionid.lua` | Tests of `Sync/VersionId.lua`. |
 | `fixtures/` | Helper files of the tests; not matched by `run_all.lua`. |

@@ -25,4 +25,5 @@ Src\Emoji\EmojiChat.lua
 Src\Options\OptionsWindow.lua
 
 Src\Sync\Base94.lua
+Src\Sync\VersionId.lua
 Src\Sync\SyncProbe.lua
