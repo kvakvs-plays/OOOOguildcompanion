@@ -69,6 +69,10 @@ TTTTT OOOO RR
 - **Requirement: ids are strongly ordered by time.** Three rules give this:
   - Time comes from `GetServerTime()`, so all members share one clock and the
     local PC clock does not matter.
+    Assumption: the server clocks of all members are the same or close, also
+    for members on different home servers. The design needs no exact match:
+    a small difference only decides which of two writes made within that
+    difference wins, and an id up to 5 minutes ahead is still accepted.
   - Within one replica: when the second is the same as for the previous id, the
     random part is the previous one plus 1; otherwise it is a random value in
     the lower half of the range. If it would overflow, the timestamp moves 1
