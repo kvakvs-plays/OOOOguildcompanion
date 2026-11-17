@@ -10,6 +10,8 @@ ns.optionsWindow = optionsWindow
 
 local WINDOW_TITLE = "OO OO Guild Companion"
 local EMOJI_SIZE = 32
+---Silver, for the aliases beside the white emoji name
+local ALIAS_COLOR = "|cffc0c0c0"
 
 ---AceConfig `get` of an emoji checkbox; `info.arg` is the emoji name.
 ---@param info table AceConfig info table
@@ -25,7 +27,21 @@ local function setEmojiEnabled(info, value)
   ns.emoji:SetEnabled(info.arg, value)
 end
 
----The Emoji tab: one line per emoji with the image, the trigger word, and a checkbox.
+---Text of an emoji line: the name, then in silver the aliases and a note for a case sensitive emoji.
+---@param emoji OOOOEmoji
+---@return string
+local function emojiLabel(emoji)
+  local label = emoji.name
+  if #emoji.aliases > 0 then
+    label = label .. "  " .. ALIAS_COLOR .. table.concat(emoji.aliases, ", ") .. "|r"
+  end
+  if emoji.caseSensitive then
+    label = label .. "  " .. ALIAS_COLOR .. "(exact letter case)|r"
+  end
+  return label
+end
+
+---The Emoji tab: one line per emoji with the image, the name with the aliases, and a checkbox.
 ---@return table group AceConfig group
 local function buildEmojiTab()
   local args = {
@@ -42,7 +58,7 @@ local function buildEmojiTab()
     args["image_" .. emoji.name] = {
       type = "description",
       order = index * 2,
-      name = emoji.trigger,
+      name = emojiLabel(emoji),
       fontSize = "medium",
       image = emoji.texture,
       imageWidth = EMOJI_SIZE,
@@ -54,7 +70,7 @@ local function buildEmojiTab()
       type = "toggle",
       order = index * 2 + 1,
       name = "Enabled",
-      desc = "Show " .. emoji.trigger .. " as an image.",
+      desc = "Show " .. emoji.name .. " as an image.",
       arg = emoji.name,
       width = "relative",
       relWidth = 0.35,

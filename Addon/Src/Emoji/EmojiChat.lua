@@ -1,11 +1,20 @@
 local addonName, ns = ...
 
----Shows emoji in guild, party, and raid chat: a word which is exactly an emoji name (case sensitive) is
----replaced by the texture of that emoji.
+---@class OOOOEmojiPhrase An alias which is not one plain word, like "gz kush"
+---@field text string The alias: in lower case, or as written when `caseSensitive` is set
+---@field name string Emoji name
+---@field caseSensitive boolean true when chat must have the exact letter case
+
+---Shows emoji in guild, party, and raid chat: a word which is exactly an emoji name or one of its aliases
+---is replaced by the texture of that emoji. The letter case matters only for the emoji which
+---EmojiOptions.lua marks as case sensitive.
 ---@class OOOOEmojiChat AceAddon-3.0 module with AceEvent-3.0 mixed in
 ---@field RegisterEvent fun(self: OOOOEmojiChat, event: string, handler: string|function)
 ---@field filtersInstalled boolean true while the chat filters are registered
 ---@field escapes table<string, string>|nil Emoji name -> texture escape sequence; built on first use
+---@field words table<string, string> Name or one-word alias in lower case -> emoji name; built together with `escapes`
+---@field exactWords table<string, string> Name or one-word alias of a case sensitive emoji -> emoji name
+---@field phrases table<string, OOOOEmojiPhrase[]> First word of an alias in lower case -> aliases, longest first
 local emojiChat = ns.addon:NewModule("EmojiChat", "AceEvent-3.0")
 ns.emojiChat = emojiChat
 
@@ -22,10 +31,11 @@ local CHAT_EVENTS = {
   "CHAT_MSG_RAID_LEADER",
 }
 
----A word with an optional colon on each side, so that both `Kek` and `:Kek:` show the emoji. Bytes above 127
----are parts of UTF-8 letters: they belong to the word, which keeps an emoji name inside a non-English word
----from matching.
-local WORD_PATTERN = "(:?)([%w_\128-\255]+)(:?)"
+---A word. Bytes above 127 are parts of UTF-8 letters: they belong to the word, which keeps an emoji name
+---inside a non-English word from matching.
+local WORD_PATTERN = "[%w_\128-\255]+"
+local FIRST_WORD_PATTERN = "^[%w_\128-\255]+"
+local WORD_CHARACTER_PATTERN = "^[%w_\128-\255]"
 
 ---Escape sequences which must pass through unchanged; an emoji name inside a link would break the link.
 ---Each is tried at the position of a `|` character.
@@ -41,35 +51,125 @@ local ESCAPE_PATTERNS = {
 
 emojiChat.filtersInstalled = false
 
----@return table<string, string> escapes Emoji name -> texture escape sequence
-function emojiChat:GetEscapes()
-  if not self.escapes then
-    local escapes = {} ---@type table<string, string>
-    for _, emoji in ipairs(ns.emoji:GetAll()) do
-      escapes[emoji.name] = "|T" .. emoji.texture .. ":" .. CHAT_EMOJI_SIZE .. ":" .. CHAT_EMOJI_SIZE .. "|t"
+---Builds the lookup tables of the names and aliases.
+function emojiChat:BuildLookup()
+  local escapes = {} ---@type table<string, string>
+  local words = {} ---@type table<string, string>
+  local exactWords = {} ---@type table<string, string>
+  local phrases = {} ---@type table<string, OOOOEmojiPhrase[]>
+  local all = ns.emoji:GetAll()
+
+  -- All names go in before any alias, so an alias can never take over the name of another emoji
+  for _, emoji in ipairs(all) do
+    escapes[emoji.name] = "|T" .. emoji.texture .. ":" .. CHAT_EMOJI_SIZE .. ":" .. CHAT_EMOJI_SIZE .. "|t"
+    if emoji.caseSensitive then
+      exactWords[emoji.name] = emoji.name
+    else
+      -- Of two names which differ only in case, the first in the list is the one that chat shows
+      local key = emoji.name:lower()
+      words[key] = words[key] or emoji.name
     end
-    self.escapes = escapes
   end
-  return self.escapes
+  for _, emoji in ipairs(all) do
+    for _, originalAlias in ipairs(emoji.aliases) do
+      local alias = emoji.caseSensitive and originalAlias or originalAlias:lower()
+      local firstWord = alias:match(FIRST_WORD_PATTERN)
+      if firstWord == alias then
+        local target = emoji.caseSensitive and exactWords or words
+        target[alias] = target[alias] or emoji.name
+      elseif firstWord then
+        local key = firstWord:lower()
+        local list = phrases[key] or {}
+        phrases[key] = list
+        list[#list + 1] = { text = alias, name = emoji.name, caseSensitive = emoji.caseSensitive }
+      end
+      -- An alias which does not start with a word character can never be found and is skipped
+    end
+  end
+  for _, list in pairs(phrases) do
+    table.sort(list, function(a, b)
+      return #a.text > #b.text
+    end)
+  end
+
+  self.escapes, self.words, self.exactWords, self.phrases = escapes, words, exactWords, phrases
 end
 
----Replaces the emoji names in text which has no escape sequences.
+---Finds the emoji written at a word of the text: an alias of several words first, then a name or an alias
+---of one word.
+---@param text string
+---@param lowerText string The text in lower case, for the emoji which match in any letter case
+---@param wordStart integer Position of the first character of the word
+---@param wordEnd integer Position of the last character of the word
+---@return string|nil name Emoji name; nil when the word is not an emoji or the emoji is turned off
+---@return integer|nil matchEnd Position of the last character of the match
+function emojiChat:MatchAt(text, lowerText, wordStart, wordEnd)
+  local lowerWord = lowerText:sub(wordStart, wordEnd)
+  local list = self.phrases[lowerWord]
+  if list then
+    for _, phrase in ipairs(list) do
+      local source = phrase.caseSensitive and text or lowerText
+      local phraseEnd = wordStart + #phrase.text - 1
+      -- The phrase must end at the end of a word: "gz kush" is not a part of "gz kushy"
+      if source:sub(wordStart, phraseEnd) == phrase.text
+        and not text:find(WORD_CHARACTER_PATTERN, phraseEnd + 1)
+        and ns.emoji:IsEnabled(phrase.name) then
+        return phrase.name, phraseEnd
+      end
+    end
+  end
+
+  local name = self.exactWords[text:sub(wordStart, wordEnd)]
+  if name and ns.emoji:IsEnabled(name) then
+    return name, wordEnd
+  end
+  name = self.words[lowerWord]
+  if name and ns.emoji:IsEnabled(name) then
+    return name, wordEnd
+  end
+  return nil, nil
+end
+
+---Replaces the emoji names and aliases in text which has no escape sequences.
 ---@param text string
 ---@return string
 function emojiChat:ReplaceInPlainText(text)
-  local escapes = self:GetEscapes()
-  local replaced = text:gsub(WORD_PATTERN, function(before, word, after)
-    local escape = escapes[word]
-    if not escape or not ns.emoji:IsEnabled(word) then
-      return nil -- gsub keeps the original text
+  if not self.escapes then
+    self:BuildLookup()
+  end
+
+  -- string.lower changes only ASCII letters, so the positions in `lowerText` and `text` are the same
+  local lowerText = text:lower()
+  local parts ---@type string[]|nil
+  local position = 1 -- the text before it is already in `parts`
+  local searchFrom = 1
+  while true do
+    local wordStart, wordEnd = text:find(WORD_PATTERN, searchFrom)
+    if not wordStart then
+      break
     end
-    if before == ":" and after == ":" then
-      return escape
+    local name, matchEnd = self:MatchAt(text, lowerText, wordStart, wordEnd)
+    if name then
+      local from, to = wordStart, matchEnd
+      -- Colons on both sides belong to the emoji (":Kek:"); a single colon is punctuation ("Kek: nice")
+      if from > position and text:sub(from - 1, from - 1) == ":" and text:sub(to + 1, to + 1) == ":" then
+        from, to = from - 1, to + 1
+      end
+      parts = parts or {}
+      parts[#parts + 1] = text:sub(position, from - 1)
+      parts[#parts + 1] = self.escapes[name]
+      position = to + 1
+      searchFrom = position
+    else
+      searchFrom = wordEnd + 1
     end
-    -- A single colon is punctuation ("Kek: nice"), not a part of the trigger
-    return before .. escape .. after
-  end)
-  return replaced
+  end
+
+  if not parts then
+    return text
+  end
+  parts[#parts + 1] = text:sub(position)
+  return table.concat(parts)
 end
 
 ---Replaces every word which is an enabled emoji name with the texture of the emoji. Hyperlinks, textures,
@@ -110,6 +210,11 @@ end
 
 -- The client runs the filter once per chat frame which shows the message, so the last result is kept
 local lastMessage, lastResult ---@type string|nil, string|nil
+
+---Forgets the remembered result; called when an emoji is turned on or off, which changes the result.
+function emojiChat:ResetCache()
+  lastMessage, lastResult = nil, nil
+end
 
 ---Chat message filter, see ChatFrameUtil.AddMessageEventFilter.
 ---@param _chatFrame table

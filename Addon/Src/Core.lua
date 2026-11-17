@@ -19,6 +19,8 @@ local addonName, ns = ...
 ---@field emoji OOOOEmojiModule
 ---@field emojiChat OOOOEmojiChat
 ---@field emojiIndex table<string, string[]>
+---@field emojiAliases table<string, string[]>
+---@field emojiOptions table<string, OOOOEmojiOptions>
 ---@field optionsWindow OOOOOptionsWindow
 
 ---Version of the saved variables layout. Raise it together with a migration step in `migrate`.

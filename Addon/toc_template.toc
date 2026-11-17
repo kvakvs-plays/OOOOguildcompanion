@@ -16,6 +16,8 @@ embeds.xml
 Src\Core.lua
 
 Src\Emoji\EmojiIndex.lua
+Src\Emoji\EmojiAliases.lua
+Src\Emoji\EmojiOptions.lua
 Src\Emoji\Emoji.lua
 Src\Emoji\EmojiChat.lua
 
