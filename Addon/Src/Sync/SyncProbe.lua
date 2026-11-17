@@ -710,7 +710,7 @@ local function onAddonMessage(prefix, message, channel, sender)
   if not handler then
     return
   end
-  -- A region has one realm per ruleset; a realm suffix is cut off if the client adds one
+  -- No realm suffix was seen on Forever; one is cut off in case the client adds it for another home server
   local from = (not isSecret(sender) and type(sender) == "string") and sender:match("^[^-]+") or nil
   handler(message:sub(2), channel, from, from ~= nil and from == playerName(), sender)
 end
