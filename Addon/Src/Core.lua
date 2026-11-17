@@ -38,6 +38,8 @@ local addonName, ns = ...
 ---@field syncStore OOOOSyncStore
 ---@field database OOOODatabaseModule
 ---@field sync OOOOSync
+---@field syncCharacter OOOOSyncCharacter
+---@field syncCommands OOOOSyncCommands
 ---@field dbIsNewer boolean|nil true when the saved variables are from a newer addon version and were left alone
 
 local defaults = {

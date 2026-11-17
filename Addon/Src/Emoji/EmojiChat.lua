@@ -271,7 +271,13 @@ function emojiChat:UpdateGuildState()
     return
   end
   -- The name is nil for some seconds after login; the filters then wait for the next guild event
-  self:SetFiltersInstalled(guildName == GUILD_NAME)
+  local inGuild = guildName == GUILD_NAME
+  self:SetFiltersInstalled(inGuild)
+  -- Until the guild state module exists (plan step 4.1), this check also starts the shared database:
+  -- the character writes its own record once per session, and only inside the guild
+  if inGuild then
+    ns.syncCharacter.WriteOwn()
+  end
 end
 
 ---AceEvent handler of PLAYER_GUILD_UPDATE.

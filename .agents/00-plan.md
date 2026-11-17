@@ -251,6 +251,9 @@ API for feature modules:
   addon.
 - A player with two installs appears as two origins. Both write the same
   character names, so the alt query joins origins that share a character.
+  A record keeps only the id of its last writer, so the payload carries
+  `origins`, the list of all origins that have written the character; each
+  writer adds its own origin to the list that it finds.
 
 ### 5.2 Planned tables and write rules
 
@@ -579,6 +582,18 @@ Finished; see `00-finished.md`.
       alone.
   - Done when: an existing install keeps its emoji settings (**CLIENT**).
 - **3.4 The `character` and `debug` tables and the slash commands**
+  - Status: the code and the host tests are done, in
+    `Src\Sync\SyncCharacter.lua` and `Src\Sync\SyncCommands.lua`. Open: the
+    client checkpoint below.
+  - The payload of `character` has a third field, `origins`: the sorted list
+    of origins that have written the character. A record keeps only the id of
+    its last writer, so without the list two installs of one player could not
+    be joined (5.1).
+  - The record is written when the guild check passes, not at login: a
+    character outside `OO OO` writes nothing. Until step 4.1 the call sits in
+    `EmojiChat:UpdateGuildState`.
+  - `debug` has `writers = "anyone"`, a third value next to `owner` and
+    `officer`, because free keys cannot be checked by the owner rule (7.1).
   - Substeps
     - Register `character` (payload: class, level) and write the record of the
       current character at login when the payload has changed.
@@ -606,7 +621,9 @@ Finished; see `00-finished.md`.
       roster cache `name -> { online, rankIndex }`, filled on
       `GUILD_ROSTER_UPDATE` after one `C_GuildInfo.GuildRoster()` request.
     - Callbacks `OnGuildStateChanged(inGuild)` and `OnRosterChanged()`.
-    - `EmojiChat.lua` uses the module and loses its own check.
+    - `EmojiChat.lua` uses the module and loses its own check, and with it
+      the temporary call of `ns.syncCharacter.WriteOwn` from step 3.4, which
+      moves to `OnGuildStateChanged`.
     - `normalizeName(sender)` strips a realm suffix. Guard names with
       `issecretvalue`.
   - Checkpoint (**CLIENT**): the emoji still appear in the guild and stay off
