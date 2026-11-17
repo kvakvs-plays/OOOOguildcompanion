@@ -27,7 +27,7 @@ moved, or removed.
 | Path | Contents |
 | --- | --- |
 | `toc_template.toc` | Source of the generated, git-ignored `OOOOguildcompanion.toc`; sets the load order. |
-| `embeds.xml` | Loads the Ace3 libraries in use. |
+| `embeds.xml` | Loads the Ace3 libraries in use, among them AceComm-3.0 (with ChatThrottleLib) and AceSerializer-3.0. |
 | `Ace3/` | Embedded Ace3 (third party, not linted). |
 | `Icons/` | `Logo32/64/128/256.png`, generated from `Art/clock.png`. |
 | `Icons/Emoji/<guild id>/` | Imported Discord emoji, 64x64 PNG. Generated. |
@@ -53,6 +53,7 @@ moved, or removed.
 | `Sync/SyncTables.lua` | `ns.sync`: registry of table definitions (`RegisterTable`), `Initialize` with the stored database, `GetTable`, `GetOrigin`; the API `Put`, `Get`, `Delete`, `Iterate`, `Count`, the callback `OnRecordChanged`, and `dirtySince`. Needs LibStub and CallbackHandler-1.0; no WoW API. |
 | `Sync/SyncCharacter.lua` | `ns.syncCharacter`: the table `character` (class, level, origins), `validate`, `buildPayload`, `alts`, `playerName`, `WriteOwn` (called on `OnGuildStateChanged`); `ns.sync:GetAlts`. Host-loadable. |
 | `Sync/SyncCommands.lua` | `ns.syncCommands`: the table `debug` and `/oooo sync put|get|del|status`; `statusLines`, `escape`. Host-loadable. |
+| `Sync/SyncProtocol.lua` | `ns.syncProtocol`: `new(serializer)` gives `encode` and `decode` of the messages (`H`, `S`) with the checks of every field; `VERSION`, `CHANNELS`, `NEWER`. Host-testable, no WoW API. |
 | `Sync/SyncProbe.lua` | `ns.syncProbe`: `/oooo sync probe <name>`, the probe registry, reports stored in `db.global.probeResults`, and the computing helpers of the probes. Host-loadable. |
 
 ## `Tests/` (host only, Lua 5.4, not packaged)
@@ -69,9 +70,10 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `sync_api.lua` | Tests of `Put`, `Get`, `Delete`, `Iterate`, and the callback in `Sync/SyncTables.lua`. |
 | `sync_base94.lua` | Tests of `Sync/Base94.lua`. |
 | `sync_migrate.lua` | Tests of `Database.lua`: migration and origin. |
+| `sync_protocol.lua` | Tests of `Sync/SyncProtocol.lua`, with the stub serializer and with AceSerializer-3.0. |
 | `sync_probe.lua` | Tests of `Slash.lua` and of the computing parts of `Sync/SyncProbe.lua`. |
 | `sync_delta.lua` | Tests of `Sync/SyncStore.lua`: digest, delta, batches, cut transfers, convergence of three replicas. |
 | `sync_store.lua` | Tests of `Sync/SyncStore.lua`: merge, clock, fingerprint, table version. |
 | `sync_tables.lua` | Tests of the registry in `Sync/SyncTables.lua`. |
 | `sync_versionid.lua` | Tests of `Sync/VersionId.lua`. |
-| `fixtures/` | Helper files of the tests; not matched by `run_all.lua`. |
+| `fixtures/` | Helper files of the tests; not matched by `run_all.lua`. `stub_serializer.lua`: a serializer with the interface of AceSerializer-3.0. |

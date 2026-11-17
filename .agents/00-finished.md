@@ -74,3 +74,14 @@
   (`/oooo sync put|get|del|status`); `Tests/sync_alts.lua`. Client check on
   2026-11-18: `put`, `/reload`, `get` printed the text; the saved file holds
   `character` with the one record `Nota Scam` (SHAMAN, level 1).
+
+## Stage 4. Transport and discovery
+
+- **4.2 Protocol: envelope, `H`, `S`**: `Src/Sync/SyncProtocol.lua` with
+  `protocol.new(serializer)`, which gives `encode(type, ...)` and
+  `decode(text)` (the type and the checked fields in a new table, or nil and a
+  reason; `newer` for a greater protocol version), `VERSION = 1`, and
+  `CHANNELS` (type -> channel). `AceComm-3.0` and `AceSerializer-3.0` are in
+  `embeds.xml`. `Tests/sync_protocol.lua` runs with a stub serializer
+  (`Tests/fixtures/stub_serializer.lua`) and with the real AceSerializer,
+  which loads on the host. Host only by design.
