@@ -46,3 +46,12 @@
   `Tests/sync_delta.lua` (cut transfers, bad records, three replicas with 20
   seeds). Two corrections of the design came out of the tests and are in plan
   section 4.2: the weaker invariant, and the clock rest in the last batch.
+
+## Stage 3. Storage and API
+
+- **3.2 Table registry**: `Src/Sync/SyncTables.lua` with `ns.sync:RegisterTable`
+  (raises on a bad definition), `Initialize(data, timeFn, randomFn)`,
+  `GetTable`, `GetOrigin`. A schema change or a broken structure empties the
+  stored table; an unknown stored table stays. `writers` also accepts
+  `"anyone"`, for the debug table. `Tests/sync_tables.lua`. Host only; `Core.lua`
+  calls `Initialize` after the migration, which the client check of 3.1 covers.

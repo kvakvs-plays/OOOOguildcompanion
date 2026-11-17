@@ -82,6 +82,32 @@ function T.load(path, ns)
   return ns, chunk(ADDON_NAME, ns)
 end
 
+---Loads the embedded LibStub and CallbackHandler-1.0 into the globals of this process, as embeds.xml does
+---in the game, so that an addon file which needs them at file scope can be loaded.
+function T.loadLibraries()
+  -- Client functions that the two libraries use at file scope
+  _G.strmatch = _G.strmatch or string.match
+  _G.securecallfunction = _G.securecallfunction or function(fn, ...)
+    return fn(...)
+  end
+  if not _G.LibStub then
+    assert(loadfile("Addon/Ace3/LibStub/LibStub.lua"))()
+    assert(loadfile("Addon/Ace3/CallbackHandler-1.0/CallbackHandler-1.0.lua"))()
+  end
+end
+
+---Loads addon files in the given order into one namespace.
+---@param paths string[] Paths relative to the repository root
+---@param ns table? Namespace to pass; a new table when omitted
+---@return table ns
+function T.loadAll(paths, ns)
+  ns = ns or {}
+  for _, path in ipairs(paths) do
+    T.load(path, ns)
+  end
+  return ns
+end
+
 ---Passes when `actual` equals `expected`; tables are compared by content.
 ---@param actual any
 ---@param expected any

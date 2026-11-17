@@ -37,6 +37,7 @@ local addonName, ns = ...
 ---@field versionId OOOOVersionId
 ---@field syncStore OOOOSyncStore
 ---@field database OOOODatabaseModule
+---@field sync OOOOSync
 ---@field dbIsNewer boolean|nil true when the saved variables are from a newer addon version and were left alone
 
 local defaults = {
@@ -107,7 +108,9 @@ function addon:OnInitialize()
   -- `true` selects one "Default" profile shared by all characters of the account
   ns.db = LibStub("AceDB-3.0"):New("OOOOguildcompanionDB", defaults, true)
   -- The layout version and the migration steps are in Database.lua
-  if not ns.database.migrate(ns.db, math.random) then
+  if ns.database.migrate(ns.db, math.random) then
+    ns.sync:Initialize(ns.db.global.sync, GetServerTime, math.random)
+  else
     ns.dbIsNewer = true
     self:Print("The saved data is from a newer version of the addon. Update the addon; the shared database is off.")
   end
