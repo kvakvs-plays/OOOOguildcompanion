@@ -515,26 +515,6 @@ policy of 7.4, see step 6.1):
 
 ### Stage 2. Core logic with host tests
 
-- **2.3 `SyncStore`: records, clock, fingerprint**
-  - Substeps
-    - `newTable(schema)` returns the structure of 4.1.
-    - `apply(tbl, key, id, payload, isTombstone)`: last writer wins; the clock,
-      `maxId`, and `fp` are updated also when the record loses. It returns
-      whether the stored record changed.
-    - `tableVersion(tbl)` and `parseTableVersion(text)`.
-    - `rebuild(tbl)`: computes `maxId` and `fp` again from the clock, for use
-      after a load and in tests.
-  - Checkpoint: `lua Tests/sync_store.lua` passes.
-  - Host tests (`Tests/sync_store.lua`)
-    - A newer id replaces a record, an older one does not, and an equal one
-      changes nothing.
-    - A losing record still raises the clock of its origin.
-    - After 1000 random `apply` calls, `fp` and `maxId` equal the values from
-      `rebuild`.
-    - Two tables with equal clocks have equal table versions; a change of one
-      clock entry changes the version.
-    - A tombstone replaces a record, and a newer record replaces a tombstone.
-  - Done when: `fp` is always updated in place and never by a full pass.
 - **2.4 `SyncStore`: digest, delta, batches**
   - Substeps
     - `digest(tbl)` gives the clock as one string of 11-character ids;

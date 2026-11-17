@@ -26,4 +26,5 @@ Src\Options\OptionsWindow.lua
 
 Src\Sync\Base94.lua
 Src\Sync\VersionId.lua
+Src\Sync\SyncStore.lua
 Src\Sync\SyncProbe.lua

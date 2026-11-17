@@ -36,3 +36,7 @@
   `originOf`, `isWellFormed`, `isValid`, `newOrigin`, `newGenerator(origin,
   timeFn, randomFn)`, and the smallest id `ZERO`; `Tests/sync_versionid.lua`.
   Host only by design.
+- **2.3 `SyncStore`: records, clock, fingerprint**: `Src/Sync/SyncStore.lua`
+  with `newTable`, `apply`, `tableVersion`, `parseTableVersion`, `rebuild`. An
+  empty table has `maxId = versionId.ZERO` and `fp = 0`;
+  `Tests/sync_store.lua`. Host only by design.
