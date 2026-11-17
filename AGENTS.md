@@ -188,7 +188,9 @@ may be fixed there. Test a claim on the release client before relying on it.
     `'Nota Scam'`. The sender had no realm suffix. To find the own character
     in the roster or in a message, join the two values with a space.
   - Out of combat, a `GUILD` addon message returns 0 and is delivered, both
-    outside an instance and inside a dungeon (instance type `party`).
+    outside an instance and inside a dungeon (instance type `party`). From
+    inside the dungeon, `GUILD` and `WHISPER` messages reach a member outside
+    and the replies come back unchanged.
   - Not yet checked: addon messages in combat (in the world and in a boss
     fight) and in a raid (plan step 1.3).
 - If you are not sure that an API exists on Forever, say so and write a

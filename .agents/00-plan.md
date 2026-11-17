@@ -511,7 +511,8 @@ Finished; see `00-finished.md`.
     AGENTS.md and in section 6. Open:
     - `/oooo sync probe state` in combat (in the world and in a boss fight)
       and in a raid. Out of combat it returned 0 and the message was
-      delivered, in a rest area and inside a dungeon.
+      delivered, in a rest area and inside a dungeon; `echo guild` and
+      `echo whisper` from inside the dungeon came back intact.
     - Done: `names`. The sender of an addon message and the roster name are
       `First Last` with a space and no realm suffix; `UnitName("player")`
       returns the two names as two values. Sections 5 and 6 have the result.
