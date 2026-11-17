@@ -14,6 +14,10 @@
 embeds.xml
 
 Src\Slash.lua
+Src\Sync\Base94.lua
+Src\Sync\VersionId.lua
+Src\Sync\SyncStore.lua
+Src\Database.lua
 Src\Core.lua
 
 Src\Emoji\EmojiIndex.lua
@@ -24,7 +28,4 @@ Src\Emoji\EmojiChat.lua
 
 Src\Options\OptionsWindow.lua
 
-Src\Sync\Base94.lua
-Src\Sync\VersionId.lua
-Src\Sync\SyncStore.lua
 Src\Sync\SyncProbe.lua

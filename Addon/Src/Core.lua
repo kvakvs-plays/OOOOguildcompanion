@@ -13,6 +13,7 @@ local addonName, ns = ...
 ---@class OOOOGlobalSettings
 ---@field schemaVersion integer|nil Version of the saved variables layout, for migrations
 ---@field probeResults table<string, OOOOProbeResult>|nil Probe name -> last result, written by SyncProbe.lua
+---@field sync OOOOSyncData|nil The shared database; created by the migration to layout 2 (Database.lua)
 
 ---@class OOOODatabase AceDB-3.0 database object
 ---@field profile OOOOProfile
@@ -32,9 +33,11 @@ local addonName, ns = ...
 ---@field slash OOOODispatcher Commands after `/oooo`
 ---@field syncSlash OOOODispatcher Commands after `/oooo sync`
 ---@field syncProbe OOOOSyncProbe
-
----Version of the saved variables layout. Raise it together with a migration step in `migrate`.
-local SCHEMA_VERSION = 1
+---@field base94 OOOOBase94
+---@field versionId OOOOVersionId
+---@field syncStore OOOOSyncStore
+---@field database OOOODatabaseModule
+---@field dbIsNewer boolean|nil true when the saved variables are from a newer addon version and were left alone
 
 local defaults = {
   profile = {
@@ -99,20 +102,15 @@ function addon:SetOptAliasEnabled(enabled)
   end
 end
 
----Brings saved variables of an older addon version to the current layout.
----@param db OOOODatabase
-local function migrate(db)
-  -- Version 1 is the first layout, so there is nothing to convert yet
-  if (db.global.schemaVersion or 0) < SCHEMA_VERSION then
-    db.global.schemaVersion = SCHEMA_VERSION
-  end
-end
-
 ---Called by AceAddon on ADDON_LOADED for this addon, when the saved variables are available.
 function addon:OnInitialize()
   -- `true` selects one "Default" profile shared by all characters of the account
   ns.db = LibStub("AceDB-3.0"):New("OOOOguildcompanionDB", defaults, true)
-  migrate(ns.db)
+  -- The layout version and the migration steps are in Database.lua
+  if not ns.database.migrate(ns.db, math.random) then
+    ns.dbIsNewer = true
+    self:Print("The saved data is from a newer version of the addon. Update the addon; the shared database is off.")
+  end
 
   ns.optionsWindow:Register()
   self:RegisterChatCommand("oooo", "OnSlashCommand")

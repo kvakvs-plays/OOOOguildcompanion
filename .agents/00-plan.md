@@ -111,7 +111,7 @@ TTTTT OOOO RR
 ### 4.1 Storage
 
 In AceDB `global` (one copy per account, not per profile). `SCHEMA_VERSION` in
-`Src\Core.lua` rises to 2 and `migrate` creates the empty structure.
+`Src\Database.lua` is 2 and `migrate` creates the empty structure.
 
 ```lua
 db.global.sync = {
@@ -556,6 +556,11 @@ Finished; see `00-finished.md`.
 ### Stage 3. Storage and API
 
 - **3.1 Saved variables schema 2 and the origin**
+  - Status: the code and the host tests are done. The layout version and
+    `migrate(db, randomFn)` are in `Src\Database.lua`, not in `Core.lua`,
+    because `Core.lua` cannot load on the host. Open: the client check below
+    (after a `/reload`: `schemaVersion = 2`, an origin of 4 characters, and
+    the emoji settings as before).
   - Substeps
     - `SCHEMA_VERSION = 2`; `migrate` gets a table of steps keyed by version and
       creates `db.global.sync = { tables = {} }` without touching other data.
