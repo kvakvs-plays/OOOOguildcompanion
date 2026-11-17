@@ -11,5 +11,6 @@ ns.emojiAliases = {
   gzkush = { "gz kush" },
   Holy_Leader = { "holyleader" },
   BIG_LEAGUE = { "bigleague" },
-  aightimmaheadout = { "headout" }
+  aightimmaheadout = { "headout" },
+  wtfhorse = { "mount" },
 }

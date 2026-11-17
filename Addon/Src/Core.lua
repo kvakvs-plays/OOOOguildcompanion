@@ -3,7 +3,11 @@ local addonName, ns = ...
 ---@class OOOOEmojiSettings
 ---@field disabled table<string, boolean> Emoji name -> true when the user turned the emoji off
 
+---@class OOOOGeneralSettings
+---@field optAlias boolean True when `/opt` opens the settings window, like `/oooo opt`
+
 ---@class OOOOProfile
+---@field general OOOOGeneralSettings
 ---@field emoji OOOOEmojiSettings
 
 ---@class OOOOGlobalSettings
@@ -34,6 +38,9 @@ local SCHEMA_VERSION = 1
 
 local defaults = {
   profile = {
+    general = {
+      optAlias = true,
+    },
     emoji = {
       disabled = {},
     },
@@ -43,6 +50,8 @@ local defaults = {
 ---@class OOOOAddon AceAddon-3.0 object with AceConsole-3.0 mixed in
 ---@field Print fun(self: OOOOAddon, ...: any)
 ---@field RegisterChatCommand fun(self: OOOOAddon, command: string, handler: string|function)
+---@field UnregisterChatCommand fun(self: OOOOAddon, command: string)
+---@field SetOptAliasEnabled fun(self: OOOOAddon, enabled: boolean)
 ---@field NewModule fun(self: OOOOAddon, name: string, ...: string): table
 local addon = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0")
 ns.addon = addon
@@ -54,6 +63,41 @@ end
 ns.slash:Register("opt", "opt - open the settings window", function()
   ns.optionsWindow:Open()
 end)
+
+---The short slash command, without the slash, that does the same as `/oooo opt`
+local OPT_ALIAS = "opt"
+---True while `/opt` is registered with the game
+local optAliasRegistered = false
+
+---Handles `/opt`. The setting is checked again because the command can outlive the setting until a reload.
+local function onOptAlias()
+  if ns.db.profile.general.optAlias then
+    ns.optionsWindow:Open()
+  else
+    ns.print("/opt is turned off. Use /oooo opt.")
+  end
+end
+
+---Turns the `/opt` alias of `/oooo opt` on or off and saves the choice.
+---@param enabled boolean
+function addon:SetOptAliasEnabled(enabled)
+  ns.db.profile.general.optAlias = enabled
+  if enabled then
+    if not optAliasRegistered then
+      self:RegisterChatCommand(OPT_ALIAS, onOptAlias)
+      optAliasRegistered = true
+    end
+  elseif optAliasRegistered then
+    -- AceConsole clears the game's lookup cache `hash_SlashCmdList` and throws when the client has none.
+    -- Its presence on Forever was not checked; without it the command stays until the next reload.
+    if type(_G.hash_SlashCmdList) == "table" then
+      self:UnregisterChatCommand(OPT_ALIAS)
+      optAliasRegistered = false
+    else
+      ns.print("/opt stays until the next /reload.")
+    end
+  end
+end
 
 ---Brings saved variables of an older addon version to the current layout.
 ---@param db OOOODatabase
@@ -72,6 +116,7 @@ function addon:OnInitialize()
 
   ns.optionsWindow:Register()
   self:RegisterChatCommand("oooo", "OnSlashCommand")
+  self:SetOptAliasEnabled(ns.db.profile.general.optAlias)
 end
 
 ---Handles `/oooo <command>`: the first word selects a handler in `ns.slash` (Slash.lua).

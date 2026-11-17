@@ -38,13 +38,13 @@ moved, or removed.
 | Path | Contents |
 | --- | --- |
 | `Slash.lua` | `ns.newDispatcher`: command dispatch by first word; `ns.slash` (`/oooo`) and `ns.syncSlash` (`/oooo sync`); `ns.print`. No WoW API. Loads before `Core.lua`. |
-| `Core.lua` | AceAddon object, AceDB setup, `SCHEMA_VERSION` and `migrate`, registration of `/oooo`, LuaLS classes of the saved variables. |
+| `Core.lua` | AceAddon object, AceDB setup, `SCHEMA_VERSION` and `migrate`, registration of `/oooo` and of the `/opt` alias (`addon:SetOptAliasEnabled`), LuaLS classes of the saved variables. |
 | `Emoji/EmojiIndex.lua` | Generated list of emoji names per Discord guild (`ns.emojiIndex`). |
 | `Emoji/EmojiAliases.lua` | Hand-edited aliases per emoji (`ns.emojiAliases`). |
 | `Emoji/EmojiOptions.lua` | Hand-edited per-emoji options such as `caseSensitive`. |
 | `Emoji/Emoji.lua` | `ns.emoji`: builds the emoji list from index, aliases, and options. |
 | `Emoji/EmojiChat.lua` | Replaces emoji names in guild, party, and raid chat; holds the guild check (to move to `Guild/GuildState.lua`, plan step 4.1). |
-| `Options/OptionsWindow.lua` | `ns.optionsWindow`: the AceConfig settings window. |
+| `Options/OptionsWindow.lua` | `ns.optionsWindow`: the AceConfig settings window with the General and Emoji tabs. |
 | `Sync/Base94.lua` | `ns.base94`: `encode`, `decode`, `isValid`, the 32-bit `hash`, byte-wise `compare`. Host-testable, no WoW API. |
 | `Sync/VersionId.lua` | `ns.versionId`: `make`, `parse`, `originOf`, `isWellFormed`, `isValid`, `newOrigin`, `newGenerator`, `ZERO`. Host-testable, no WoW API. |
 | `Sync/SyncStore.lua` | `ns.syncStore`: one table of the shared database. `newTable`, `apply` (last writer wins, clock, `fp`, `maxId`), `tableVersion`, `parseTableVersion`, `rebuild`; for transfers `digest`, `parseDigest`, `selectDelta`, `splitBatches`, `applyBatch`, `clockRest`, `mergeClock`, `wants`, `estimateSize`. Host-testable, no WoW API. |

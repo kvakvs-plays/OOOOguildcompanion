@@ -41,6 +41,31 @@ local function emojiLabel(emoji)
   return label
 end
 
+---The General tab: settings of the addon as a whole.
+---@return table group AceConfig group
+local function buildGeneralTab()
+  return {
+    type = "group",
+    order = 0,
+    name = "General",
+    args = {
+      optAlias = {
+        type = "toggle",
+        order = 1,
+        width = "full",
+        name = "Enable the /opt command",
+        desc = "/opt opens this window, like /oooo opt. Turn it off when another addon uses /opt.",
+        get = function()
+          return ns.db.profile.general.optAlias
+        end,
+        set = function(_, value)
+          ns.addon:SetOptAliasEnabled(value)
+        end,
+      },
+    },
+  }
+end
+
 ---The Emoji tab: one line per emoji with the image, the name with the aliases, and a checkbox.
 ---@return table group AceConfig group
 local function buildEmojiTab()
@@ -96,6 +121,7 @@ local function getOptions()
       name = WINDOW_TITLE .. " " .. (C_AddOns.GetAddOnMetadata(addonName, "Version") or ""),
       childGroups = "tab",
       args = {
+        general = buildGeneralTab(),
         emoji = buildEmojiTab(),
       },
     }
