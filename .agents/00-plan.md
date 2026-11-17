@@ -568,21 +568,6 @@ Finished; see `00-finished.md`.
 
 ### Stage 5. Pull
 
-- **5.1 Protocol: `Q`, `D`, `B`**
-  - Substeps
-    - Encode, decode, and check the three types: a registered table name, a
-      schema number, a nonce, a digest length that is a multiple of 11 and under
-      the limit, a batch number, a record count under the limit, a valid id for
-      every record, a key that is a string under the length limit.
-    - The record form on the wire (`key, id, payload` or `key, id, tombstone
-      marker`).
-  - Checkpoint: the protocol test covers every message type except `P`.
-  - Host tests (in `Tests/sync_protocol.lua`)
-    - A round trip of each type, with a tombstone in `D`.
-    - A rejection for each field out of range; 1000 random variations of valid
-      messages never raise.
-  - Done when: every field that the session code reads has been checked by
-    `decode`.
 - **5.2 Responder**
   - Substeps
     - On `Q`: answer `B` for an unknown table, another schema, or a pull that is

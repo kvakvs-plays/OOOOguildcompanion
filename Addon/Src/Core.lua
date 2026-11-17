@@ -66,6 +66,13 @@ local defaults = {
 local addon = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0")
 ns.addon = addon
 
+-- AceConsole's Print prefixes tostring(self), which AceAddon maps to the long addon name.
+-- The metatable belongs to this addon object alone; addon.name stays as it is, because
+-- AceAddon uses it as the registry key and for module names.
+getmetatable(addon).__tostring = function()
+  return "OOOOgc"
+end
+
 function ns.print(text)
   addon:Print(text)
 end

@@ -118,3 +118,16 @@
   This was also the first run of AceComm and AceSerializer in the client:
   `H` and `S` arrive on `GUILD`, so the global `Ambiguate` that AceComm
   calls exists on Forever.
+
+## Stage 5. Pull
+
+- **5.1 Protocol: `Q`, `D`, `B`**: in `Src/Sync/SyncProtocol.lua`. `decode`
+  gives a table of checked fields: `Q` `{ table, schema, nonce, clock }` (the
+  digest read into a clock), `D` `{ table, nonce, batch, last, records, rest,
+  wants }`, `B` `{ table, nonce, reason, retry }`. A record travels as
+  `{ key, id, payload }` or `{ key, id, [4] = true }` (`packRecords`). The
+  table name is checked by its form only, because a responder must answer `B`
+  for a table that it does not have; payloads are checked by the receiver.
+  Limits: 2000 origins, 500 records per batch, key of 64 bytes, retry of 3600
+  s. One malformed record refuses the whole message. Tests in
+  `Tests/sync_protocol.lua`. Host only by design.

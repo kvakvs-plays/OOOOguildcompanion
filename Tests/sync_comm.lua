@@ -11,7 +11,8 @@ _G.issecretvalue = function(value)
 end
 
 local ns = T.loadAll({ "Addon/Src/Guild/GuildState.lua", "Addon/Src/Sync/Base94.lua",
-  "Addon/Src/Sync/SyncProtocol.lua", "Addon/Src/Sync/SyncComm.lua" })
+  "Addon/Src/Sync/VersionId.lua", "Addon/Src/Sync/SyncStore.lua", "Addon/Src/Sync/SyncProtocol.lua",
+  "Addon/Src/Sync/SyncComm.lua" })
 local comm, protocol = ns.syncComm, ns.syncProtocol
 local codec = protocol.new(dofile("Tests/fixtures/stub_serializer.lua"))
 local random = T.newRandom()

@@ -124,8 +124,8 @@ return function(T)
   end
 
   ---Codec for reading the message log of a network
-  Replica.codec = T.load("Addon/Src/Sync/SyncProtocol.lua", T.load("Addon/Src/Sync/Base94.lua")).syncProtocol
-    .new(serializer)
+  Replica.codec = T.loadAll({ "Addon/Src/Sync/Base94.lua", "Addon/Src/Sync/VersionId.lua",
+    "Addon/Src/Sync/SyncStore.lua", "Addon/Src/Sync/SyncProtocol.lua" }).syncProtocol.new(serializer)
 
   ---Counts the logged messages of one type, optionally from one sender and from a time on.
   ---@param net Fakenet
