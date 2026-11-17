@@ -191,8 +191,10 @@ may be fixed there. Test a claim on the release client before relying on it.
     outside an instance and inside a dungeon (instance type `party`). From
     inside the dungeon, `GUILD` and `WHISPER` messages reach a member outside
     and the replies come back unchanged.
-  - Not yet checked: addon messages in combat (in the world and in a boss
-    fight) and in a raid (plan step 1.3).
+  - In combat inside a dungeon, a `GUILD` addon message returns 0 and is
+    delivered. Whether that fight was a boss encounter was not recorded.
+  - Not yet checked: addon messages in a raid group and in a raid instance
+    (the raids unlock on December 9, 2026), and during a boss encounter.
 - If you are not sure that an API exists on Forever, say so and write a
   capability probe. Do not invent `C_` functions. The Blizzard UI source at
   `F:\Projects\WowAddons\BlizzardInterfaceCode\` is for Classic, not Forever, so

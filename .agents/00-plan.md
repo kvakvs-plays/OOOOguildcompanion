@@ -509,8 +509,10 @@ Finished; see `00-finished.md`.
   - Status: `echo guild`, `echo whisper`, `burst`, and `offline` ran on the
     release client with two accounts on 2026-11-17; the results are in
     AGENTS.md and in section 6. Open:
-    - `/oooo sync probe state` in combat (in the world and in a boss fight)
-      and in a raid. Out of combat it returned 0 and the message was
+    - `/oooo sync probe state` in a raid group, in a raid instance (the
+      raids unlock on December 9, 2026), and during a boss encounter. In
+      combat inside a dungeon it returned 0 and the message was delivered.
+      Out of combat it returned 0 and the message was
       delivered, in a rest area and inside a dungeon; `echo guild` and
       `echo whisper` from inside the dungeon came back intact.
     - Done: `names`. The sender of an addon message and the roster name are
