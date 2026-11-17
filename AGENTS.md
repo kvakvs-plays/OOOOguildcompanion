@@ -78,7 +78,9 @@ message.
   launch raids are Barrow Deeps (10), Hyjal Summit (20), and Onyxia's Lair (40);
   they unlock on December 9, 2026.
 - Each region has one mega-realm per ruleset: Normal (PvE), PvP, RP, RP-PvP, and
-  later Hardcore.
+  later Hardcore. The realm has a long internal name that the game does
+  not normally show, and the player cannot select a realm. Names therefore
+  appear without a realm suffix; do not build features on realm names.
 - Forever has systems that Classic Era lacks: dual talent specialization (from
   level 40), the Legacy system in place of achievements, camping, reagent bags,
   account-wide Collections, and first and last names for characters.
