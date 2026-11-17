@@ -275,8 +275,9 @@ Rules for `writers = "owner"`:
 - Sender checks: a whisper from a name that is not in the guild roster cache is
   ignored. On Forever a region has one realm per ruleset, so sender names need
   no realm handling; strip a realm suffix if present.
-- Expected speed: about one 255-byte message per second per prefix after a burst
-  of 10, if Forever has the Retail limit (**PROBE**). A full copy of 150 KB then
+- Speed, measured on the release client (step 1.3): a burst of 10 messages of
+  255 bytes, then about one message per second (1.02). The raw API returns 3
+  for a throttled message and drops it; ChatThrottleLib must do the queueing. A full copy of 150 KB then
   takes about 10 minutes, which is acceptable for background work. LibDeflate
   can be added later if this proves too slow.
 
@@ -498,19 +499,17 @@ Finished; see `00-finished.md`.
 ### Stage 1. Probes
 
 - **1.3 Message probes** (**CLIENT**, two accounts)
-  - Status: the code and the host tests are done. The probes use their own
-    prefix `OOOOprobe` and the raw `C_ChatInfo.SendAddonMessage`. Open: on the
-    second account run `/oooo sync probe listen`; on the first run
-    `echo guild`, `echo whisper <name>`, `burst`, `offline <name>`, and
-    `state` (in combat, in a dungeon, in a raid); then do the "Done when"
-    part. `burst` also sends one message every 0.5 s for 20 s after the 30,
-    because the raw API drops a throttled message and the refill rate would
-    otherwise stay unknown. With one account, `echo guild` and `state` still
-    show whether the own message comes back intact.
-  - Also to check here: a character name has a space (`Nota Scam`). See what
-    `CHAT_MSG_ADDON` gives as the sender, what `UnitName("player")` returns,
-    and whether a whisper to the full name arrives. Sections 5 and 6 assume a
-    name without a space; correct them with the result.
+  - Status: `echo guild`, `echo whisper`, `burst`, and `offline` ran on the
+    release client with two accounts on 2026-11-17; the results are in
+    AGENTS.md and in section 6. Open:
+    - `/oooo sync probe state` in combat, in a dungeon, and in a raid. The
+      first run returned 3 because the burst probe was still sending; run it
+      alone.
+    - `/oooo sync probe names`: the client did not recognize its own guild
+      message, so the sender name differs from `UnitName("player")`. Sections
+      5 and 6 and the sender check of step 4.3 need the form that matches.
+    - The offline whisper prints "No player named '<name>' is currently
+      playing.", so the `CHAT_MSG_SYSTEM` filter of step 5.3 is needed.
   - Substeps
     - `echo guild` and `echo whisper <name>`: send the 94-character payload
       through `C_ChatInfo.SendAddonMessage`; the other client sends it back; the

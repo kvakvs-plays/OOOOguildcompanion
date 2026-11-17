@@ -162,8 +162,24 @@ may be fixed there. Test a claim on the release client before relying on it.
     `PLAYER_UPDATE_RESTING`, `GROUP_ROSTER_UPDATE`, `PLAYER_ENTERING_WORLD`,
     `PLAYER_GUILD_UPDATE`, `GUILD_ROSTER_UPDATE`, `CHAT_MSG_ADDON`,
     `CHAT_MSG_SYSTEM`.
-  - Not yet checked: whether addon messages arrive, their rate limit, and
-    their behaviour in combat and in instances (plan step 1.3).
+  - Addon messages (`C_ChatInfo.SendAddonMessage`, two accounts): all 94
+    characters from byte 33 to 126 arrive unchanged on `GUILD` and on
+    `WHISPER`. A whisper to a name with a space arrives. A `GUILD` message
+    also comes back to its sender.
+  - Send results: 0 is success. Of 30 messages of 255 bytes sent at once, 10
+    got 0 and 20 got 3 (throttled). The raw API drops a throttled message;
+    it does not queue it. After the burst, about 1 message per second is
+    accepted (measured: 1.02). A send can therefore fail with 3 right after
+    other traffic of the addon.
+  - An addon whisper to an offline member returns 0 and prints the system
+    line `No player named '<name>' is currently playing.` in the chat frame.
+    The `CHAT_MSG_SYSTEM` text was not secret.
+  - The sender name of `CHAT_MSG_ADDON` did not equal `UnitName("player")`
+    for the own character, so a client did not recognize its own guild
+    message. Do not rely on that comparison until `/oooo sync probe names`
+    shows which form matches.
+  - Not yet checked: addon messages in combat, in a dungeon, and in a raid
+    (plan step 1.3).
 - If you are not sure that an API exists on Forever, say so and write a
   capability probe. Do not invent `C_` functions. The Blizzard UI source at
   `F:\Projects\WowAddons\BlizzardInterfaceCode\` is for Classic, not Forever, so

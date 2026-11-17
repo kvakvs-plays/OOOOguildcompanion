@@ -169,4 +169,8 @@ for _, command in ipairs({ "echo", "echo whisper", "echo guild", "echo whisper N
   T.ok(result ~= "" and not result:find("Lua error", 1, true), "probe " .. command .. " reports without an error")
 end
 
+-- Value list of the names probe
+T.eq(probe.listValues("Nota", nil, 5), "'Nota', nil, 5", "listValues shows every value, also nil")
+T.eq(probe.listValues(), "no value", "listValues names a call without values")
+
 T.finish()

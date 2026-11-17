@@ -596,7 +596,8 @@ end
 
 ---Handlers of the probe messages by their first character.
 ---Arguments: the rest of the message, the channel, the sender's name (nil when secret), and whether it is our own.
----@type table<string, fun(body: string, channel: string, from: string|nil, own: boolean)>
+---The fifth argument is the sender as the client gave it, which can be secret.
+---@type table<string, fun(body: string, channel: string, from: string|nil, own: boolean, sender: any)>
 local messageHandlers = {}
 
 ---Echo request: another client asks for the payload back.
@@ -673,6 +674,18 @@ function messageHandlers.S(_body, channel, from, own)
   newReport("received", true):Add("state message from " .. (from or "<secret>") .. " on " .. channel)
 end
 
+---The names probe that waits for its own message
+---@type OOOOProbeReport|nil
+local pendingNames
+
+---Names message: shows the sender name that the client gives for a message of this character.
+function messageHandlers.N(_body, channel, from, _own, sender)
+  if pendingNames then
+    pendingNames:Add("CHAT_MSG_ADDON sender on " .. channel .. ": '" .. text(sender) .. "', without a realm suffix: '"
+      .. text(from) .. "'")
+  end
+end
+
 ---Handler of CHAT_MSG_ADDON. Every argument comes from another client or can be secret, so each is checked.
 ---@param prefix any
 ---@param message any
@@ -694,7 +707,7 @@ local function onAddonMessage(prefix, message, channel, sender)
   end
   -- A region has one realm per ruleset; a realm suffix is cut off if the client adds one
   local from = (not isSecret(sender) and type(sender) == "string") and sender:match("^[^-]+") or nil
-  handler(message:sub(2), channel, from, from ~= nil and from == playerName())
+  handler(message:sub(2), channel, from, from ~= nil and from == playerName(), sender)
 end
 
 ---true once the prefix is registered and CHAT_MSG_ADDON is handled; it stays so until the next reload
@@ -850,5 +863,50 @@ probe.Register("state", "state - one message to the guild and its result; run it
       end
       report:Add(pending.delivered and "RESULT: the message was delivered in this state"
         or "RESULT: the message did not come back within 5 s")
+    end)
+  end)
+
+---Shows every value of a call for a result line: "'Nota', nil".
+---@param ... any
+---@return string
+local function listValues(...)
+  local values = {}
+  for index = 1, select("#", ...) do
+    local value = select(index, ...)
+    values[index] = type(value) == "string" and not isSecret(value) and ("'" .. value .. "'") or text(value)
+  end
+  return #values > 0 and table.concat(values, ", ") or "no value"
+end
+probe.listValues = listValues
+
+probe.Register("names", "names - the forms of this character's name: unit functions, roster, and message sender",
+  function(report)
+    -- Which of these is equal to the sender of an addon message decides how a client knows its own messages
+    for _, path in ipairs({ "UnitName", "UnitFullName", "UnitNameUnmodified", "GetUnitName" }) do
+      local unitFunction = lookup(path)
+      report:Add(path .. '("player"): ' .. (unitFunction and listValues(unitFunction("player")) or "missing"))
+    end
+    local guid = UnitGUID("player")
+    local total = GetNumGuildMembers()
+    if not isSecret(guid) and not isSecret(total) and type(total) == "number" then
+      for index = 1, total do
+        local name = GetGuildRosterInfo(index)
+        -- The GUID is the 17th value of GetGuildRosterInfo
+        local memberGuid = select(17, GetGuildRosterInfo(index))
+        if not isSecret(memberGuid) and memberGuid == guid then
+          report:Add("roster name of this character: " .. listValues(name))
+        end
+      end
+    end
+    if not startListening(report) then
+      return
+    end
+    pendingNames = report
+    report:Add("sent on GUILD, result: " .. sendMessage("N", "GUILD") .. "; waiting 5 s for the message to come back")
+    later(report, 5, function()
+      if pendingNames == report then
+        pendingNames = nil
+      end
+      report:Add("RESULT: compare the sender line with the lines above")
     end)
   end)
