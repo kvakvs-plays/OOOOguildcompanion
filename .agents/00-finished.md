@@ -177,3 +177,19 @@
   `Tests/sync_policy.lua`. Host only; the event frame runs in the client with
   step 6.4. The deferred checks of stage 1 were still open (the raids unlock
   on 2026-12-09), so no state was made a hard limit.
+- **6.2 Push of local changes**: protocol type `P` (table, schema, table
+  version, own flag, base, records, clock rest) and `Src/Sync/SyncPush.lua`,
+  which adds the push to the session class. A local write starts the push
+  timer of its table (`SchedulePush`): due when `pushDelay` has passed since
+  the first unsent change and `minInterval` since the last push; held while
+  the table may not send. `PushLocal` sends the own records after
+  `tbl.pushed`, which is stored with the table. After a login, writes that
+  were never pushed are found when discovery ends (`MarkUnpushed`). The
+  receiver applies an origin only without a gap, else it ignores the records
+  and schedules a pull after 30 to 120 s (`ScheduleDelayedPull`); a hello and
+  a summary with a differing version schedule it too (`NoteVersions`). Beyond
+  the plan: the fields table version, own flag, and clock rest; a push of
+  several messages; every version that this replica has had itself counts as
+  merged, so a peer with an out-of-date entry is not asked.
+  `Tests/sync_push.lua`; the older session tests run with
+  `Replica.withoutPush`. Host only by design.

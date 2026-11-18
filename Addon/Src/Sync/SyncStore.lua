@@ -17,6 +17,7 @@ local addonName, ns = ...
 ---@field records table<string, OOOOSyncRecord> Key -> record
 ---@field syncedAt integer|nil Server time of the last completed pull; nil when there was none
 ---@field trusted boolean|nil Officer tables only (plan section 7.5)
+---@field pushed string|nil The id of this install's last write that was pushed to the guild (plan section 7.3)
 
 ---@class OOOOSyncStore
 local store = {}

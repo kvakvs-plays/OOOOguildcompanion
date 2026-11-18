@@ -3,6 +3,8 @@
 local T = dofile("Tests/harness.lua")
 local Fakenet = dofile("Tests/fakenet.lua")
 local Replica = dofile("Tests/fixtures/replica.lua")(T)
+-- The push has its own test (sync_push.lua)
+Replica.withoutPush = true
 
 local random = T.newRandom()
 

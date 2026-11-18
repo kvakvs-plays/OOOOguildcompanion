@@ -20,6 +20,7 @@ local FILES = {
   "Addon/Src/Sync/SyncPolicy.lua",
   "Addon/Src/Sync/SyncSession.lua",
   "Addon/Src/Sync/SyncPull.lua",
+  "Addon/Src/Sync/SyncPush.lua",
 }
 
 ---@param T TestHarness
@@ -108,8 +109,18 @@ return function(T)
     self.endpoint.onRosterChanged = function()
       self.session:OnRosterChanged()
     end
+    if Replica.withoutPush then
+      -- The fields hide the methods of the session class
+      local function nothing() end
+      self.session.SchedulePush, self.session.MarkUnpushed, self.session.ScheduleDelayedPull = nothing, nothing,
+        nothing
+    end
     return self
   end
+
+  ---Set to true by a test of discovery or of the pull alone: its replicas then push nothing and schedule no
+  ---pull for a version that they hear, so every message in the log belongs to what the test looks at.
+  Replica.withoutPush = false
 
   ---The guild check passes: the transport listens and the session starts.
   function Replica:Login()

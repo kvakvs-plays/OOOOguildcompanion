@@ -53,11 +53,12 @@ moved, or removed.
 | `Sync/SyncTables.lua` | `ns.sync`: registry of table definitions (`RegisterTable`), `Initialize` with the stored database, `GetTable`, `GetOrigin`; the API `Put`, `Get`, `Delete`, `Iterate`, `Count`, the callback `OnRecordChanged`, and `dirtySince`; `ApplyRemote` merges received records with their checks. Needs LibStub and CallbackHandler-1.0; no WoW API. |
 | `Sync/SyncCharacter.lua` | `ns.syncCharacter`: the table `character` (class, level, origins), `validate`, `buildPayload`, `alts`, `playerName`, `WriteOwn` (called on `OnGuildStateChanged`); `ns.sync:GetAlts`. Host-loadable. |
 | `Sync/SyncCommands.lua` | `ns.syncCommands`: the table `debug` and `/oooo sync put|get|del|status`; `statusLines` (tables, discovery, peers), `escape`. Host-loadable. |
-| `Sync/SyncProtocol.lua` | `ns.syncProtocol`: `new(serializer)` gives `encode` and `decode` of the messages (`H`, `S`, `Q`, `D`, `B`) with the checks of every field; `packRecords`, `VERSION`, `CHANNELS`, `NEWER`, the limits, the refusal reasons. Host-testable, no WoW API. |
+| `Sync/SyncProtocol.lua` | `ns.syncProtocol`: `new(serializer)` gives `encode` and `decode` of the messages (`H`, `S`, `Q`, `D`, `B`, `P`) with the checks of every field; `packRecords`, `VERSION`, `CHANNELS`, `NEWER`, the limits, the refusal reasons. Host-testable, no WoW API. |
 | `Sync/SyncComm.lua` | `ns.syncComm`: `new(parts)` gives a transport (`Send`, `Receive` with the sender checks, `SetActive`, `onMessage`, `drops`); `Start()` builds the transport of the game on AceComm-3.0 with the prefix `OOOO` (`ns.syncComm.transport`) and hides the system line of a whisper to an offline name (`offlineNoticeName`). Host-loadable. |
 | `Sync/SyncPolicy.lua` | `ns.syncPolicy`: `conditionMet`, `effective` (table definition plus the override in `db.profile.sync.tables`), `new(parts)` (the view that the session asks), and for the game `state`, `Refresh`, `Start`, the callback `OnConditionsChanged`. Host-loadable. |
-| `Sync/SyncSession.lua` | `ns.syncSession`: `new(parts)` gives a session: the hello 20 to 40 s after the guild check, the answer to a hello after 1 to 8 s with its suppression, the peer list, `StatusLines`; `Start()` builds the session of the game (`ns.syncSession.current`); `Session` and `handlers` are open for `SyncPull.lua`. The push comes with plan stage 6. Host-loadable. |
+| `Sync/SyncSession.lua` | `ns.syncSession`: `new(parts)` gives a session: the hello 20 to 40 s after the guild check, the answer to a hello after 1 to 8 s with its suppression, the peer list, `StatusLines`; `Start()` builds the session of the game (`ns.syncSession.current`); `Session` and `handlers` are open for `SyncPull.lua` and `SyncPush.lua`. Host-loadable. |
 | `Sync/SyncPull.lua` | `ns.syncPull`: the pull, added to the session class of `SyncSession.lua`. Responder: the handler of `Q`, `Refuse`, `SendBatch`. Requester: `chooseSource`, `responderVersion`, `PumpPulls` (the queue), `StartPull`, the handlers of `D` and `B`, `FinishPull`, `CheckRecord` (roster rule). The constants of batch size, timeouts, and waits. Host-loadable. |
+| `Sync/SyncPush.lua` | `ns.syncPush`: the push, added to the session class. `SendPush` (one or several `P` with bases), `PushLocal`, `SchedulePush`, `MarkUnpushed`, the handler of `P`, `NoteVersions`, `ScheduleDelayedPull`, `RememberOwnVersion`. Host-loadable. |
 | `Sync/SyncProbe.lua` | `ns.syncProbe`: `/oooo sync probe <name>`, the probe registry, reports stored in `db.global.probeResults`, and the computing helpers of the probes. Host-loadable. |
 
 ## `Tests/` (host only, Lua 5.4, not packaged)
@@ -79,6 +80,7 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `sync_protocol.lua` | Tests of `Sync/SyncProtocol.lua`, with the stub serializer and with AceSerializer-3.0. |
 | `sync_pull.lua` | Tests of `Sync/SyncPull.lua`, with replicas and hand-made messages on the fake network. |
 | `sync_policy.lua` | Tests of `Sync/SyncPolicy.lua` and of what the session does with the conditions. |
+| `sync_push.lua` | Tests of `Sync/SyncPush.lua`: push timer, conditions, gaps, chained pushes. |
 | `sync_probe.lua` | Tests of `Slash.lua` and of the computing parts of `Sync/SyncProbe.lua`. |
 | `sync_discovery.lua` | Tests of discovery in `Sync/SyncSession.lua`, with replicas on the fake network. |
 | `sync_delta.lua` | Tests of `Sync/SyncStore.lua`: digest, delta, batches, cut transfers, convergence of three replicas. |

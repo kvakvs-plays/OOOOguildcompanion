@@ -59,6 +59,7 @@ protocol.CHANNELS = {
   Q = "WHISPER", -- pull request: asks one peer for the records that the sender lacks
   D = "WHISPER", -- delta: one batch of the answer to a pull request
   B = "WHISPER", -- busy: the peer refuses a pull request
+  P = "GUILD", -- push: new records for everybody
 }
 
 ---@class OOOOSyncPullRequest Checked fields of a `Q`
@@ -81,6 +82,16 @@ protocol.CHANNELS = {
 ---@field nonce integer The nonce of the pull request
 ---@field reason string Why the pull is refused: a `protocol.REASON_*` value, or a word of a newer version
 ---@field retry number Seconds after which the request may be repeated
+
+---@class OOOOSyncPush Checked fields of a `P`
+---@field table string
+---@field schema integer Payload layout version of the table on the sender's side
+---@field version string Table version of the sender when it sent the push
+---@field own boolean true: the sender's own new writes; false: records passed on after a pull
+---@field base table<string, string> Origin -> the id before the first pushed record of that origin; the zero
+---id when the sender pushed nothing of that origin before
+---@field records OOOOSyncWireRecord[] In ascending id order; payloads are not checked here
+---@field rest table<string, string> Origin -> id: clock values that no record of this push carries
 
 ---Reasons of a refusal
 protocol.REASON_BUSY = "busy" -- the peer serves another pull, or may not send now
@@ -272,6 +283,44 @@ function checks.D(tableName, nonce, batch, last, packed, rest, wants)
   end
   return { table = tableName, nonce = nonce, batch = batch, last = last, records = records, rest = checkedRest,
     wants = checkedWants }
+end
+
+---Push: table, schema, table version, own flag, base, records, clock rest.
+---@return OOOOSyncPush|nil
+---@return string|nil reason
+function checks.P(tableName, schema, version, own, base, packed, rest)
+  if not isTableName(tableName) then
+    return nil, "bad table name"
+  end
+  if not isInteger(schema, 1, protocol.MAX_SCHEMA) then
+    return nil, "bad schema"
+  end
+  if type(version) ~= "string" or #version ~= protocol.TABLE_VERSION_LENGTH or not base94.isValid(version) then
+    return nil, "bad table version"
+  end
+  if type(own) ~= "boolean" then
+    return nil, "bad own flag"
+  end
+  -- A base is an id of its origin, or the zero id for an origin of which nothing was pushed before
+  local checkedBase = checkClock(base, false)
+  if not checkedBase or base == nil then
+    return nil, "bad base"
+  end
+  for origin, id in pairs(checkedBase) do
+    if id ~= versionId.ZERO and versionId.originOf(id) ~= origin then
+      return nil, "bad base"
+    end
+  end
+  local records = unpackRecords(packed)
+  if not records then
+    return nil, "bad records"
+  end
+  local checkedRest = checkClock(rest, true)
+  if not checkedRest then
+    return nil, "bad clock rest"
+  end
+  return { table = tableName, schema = schema, version = version, own = own, base = checkedBase, records = records,
+    rest = checkedRest }
 end
 
 ---Busy: table, nonce, reason, retry seconds.

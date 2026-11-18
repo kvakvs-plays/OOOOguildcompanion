@@ -330,7 +330,7 @@ Rules for `writers = "owner"`:
 | `S` summary | GUILD | `{ table -> tableVersion }` | Answer to hello, and notice after a merge. |
 | `Q` pull request | WHISPER | table, schema, nonce, digest | Digest is the clock as one string of 11-char ids. |
 | `D` delta | WHISPER | table, nonce, batch number, last flag, records, clock rest, wants | Records the requester lacks, ascending. |
-| `P` push | GUILD | table, schema, base, records | New records for everybody. |
+| `P` push | GUILD | table, schema, table version, own flag, base, records, clock rest | New records for everybody. |
 | `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal: busy, unknown table, or other schema. |
 
 - A record on the wire is `key, id, payload` (or `key, id` with a tombstone
@@ -346,6 +346,16 @@ Rules for `writers = "owner"`:
   applies the records of an origin only when its own clock for that origin is at
   or beyond the base. Otherwise it has a gap, ignores those records, and
   schedules a pull.
+- A push that does not fit into 2 KB travels as several `P` messages. The base
+  of each is the last id of the one before, so a receiver that misses one
+  ignores the rest of the chain.
+- `clock rest` in a push, like in a delta, holds the clock values that no
+  pushed record carries. A receiver takes an entry only when it has no gap for
+  that origin and dropped no record of the push.
+- `own flag` in a push is true for the sender's own new writes and false for
+  records that it passes on after a pull (needed by step 7.1).
+- The `table version` in a push is the sender's. A receiver whose version
+  still differs after it has applied the push schedules a pull (7.3).
 - A table with a different `schema` on the two sides is not synchronized.
   Unknown table names are ignored.
 
@@ -582,30 +592,7 @@ announces a version.
 
 ### Stage 6. Push and policy
 
-- 6.1 is finished; see `00-finished.md`.
-- **6.2 Push of local changes**
-  - Substeps
-    - Protocol type `P` with its checks, including `base` as a table of
-      `origin -> id`.
-    - A push timer per table: fires when `pushDelay` has passed since the first
-      unsent change and `minInterval` since the last push; when the conditions
-      are false it waits for `OnConditionsChanged`.
-    - The push holds the replica's own records after its last pushed id, with
-      that id as base; store the last pushed id per table in the saved
-      variables.
-    - Receiver: for each origin, apply only when the own clock is at or beyond
-      the base; otherwise ignore those records and schedule a pull.
-  - Checkpoint: on the host, a Put on one replica reaches four others without a
-    pull.
-  - Host tests (`Tests/sync_push.lua`, fake network)
-    - 10 Puts within `pushDelay` give one `P`.
-    - Two changes that are `pushDelay` apart but within `minInterval`: the
-      second push waits.
-    - A push while in combat is held and goes out after the state changes.
-    - A receiver with a gap ignores the records and has a pull scheduled; a
-      receiver without a gap applies them.
-    - A `P` that is lost: the next `P` has a base that shows the gap.
-  - Done when: a push never breaks the invariant of 4.2 on a receiver.
+- 6.1 and 6.2 are finished; see `00-finished.md`.
 - **6.3 Push after a pull, and the delayed pull**
   - Substeps
     - After the last `D`, push the records named by `wants`, with the

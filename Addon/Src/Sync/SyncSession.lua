@@ -3,7 +3,7 @@ local addonName, ns = ...
 -- The session of the shared database: what a replica does while the character is online. This stage holds
 -- discovery (.agents/00-plan.md, section 7.1): the hello after login, the answers to the hellos of others,
 -- and the list of peers. The pull is in SyncPull.lua, which adds its methods and message handlers to the
--- session of this file. The push comes with stage 6.
+-- session of this file. The push is in SyncPush.lua, in the same way.
 --
 -- `session.new` builds a session from parts that are passed in, so the host tests run many of them over a
 -- fake network (Tests/sync_discovery.lua). `session.Start` builds the one of the game. Nothing at file scope
@@ -45,6 +45,9 @@ local addonName, ns = ...
 ---@field merged table<string, table<string, boolean>> Table name -> set of table versions whose data this
 ---replica holds already, from complete pulls of this session
 ---@field retryTimer OOOOSyncTimer|nil Runs until a peer that has to wait can be asked again
+---@field pushTimers table<string, OOOOSyncTimer> Table name -> timer that runs until the table is pushed
+---@field lastPushAt table<string, number> Table name -> server time of the last push of local changes
+---@field delayedPullTimer OOOOSyncTimer|nil Runs until the pull that a differing version has asked for
 local Session = {}
 Session.__index = Session
 
@@ -81,7 +84,15 @@ function session.new(parts)
     helloHeld = false,
     discovered = false,
     merged = {},
+    pushTimers = {},
+    lastPushAt = {},
   }, Session)
+  -- A local write starts the push timer of its table (SyncPush.lua)
+  parts.sync.RegisterCallback(self, "OnRecordChanged", function(_event, tableName, _key, _payload, isRemote)
+    if not isRemote then
+      self:SchedulePush(tableName)
+    end
+  end)
   parts.transport.onMessage = function(sender, messageType, fields)
     self:OnMessage(sender, messageType, fields)
   end
@@ -138,6 +149,7 @@ function Session:OnConditionsChanged()
     self:SendHello()
   end
   self:PumpPulls()
+  self:SchedulePushes()
 end
 
 ---Follows the guild state: inside the guild the hello timer starts, outside it everything stops.
@@ -165,6 +177,7 @@ function Session:Stop()
   self.helloSent, self.helloHeld, self.discovered = false, false, false
   self.peers = {}
   self:StopPull()
+  self:StopPush()
 end
 
 ---Sends the hello with the versions of all tables and starts collecting the answers. While the conditions
@@ -203,6 +216,7 @@ end
 function Session:OnDiscoveryDone()
   self.discovered = true
   self:PumpPulls()
+  self:MarkUnpushed()
 end
 
 ---Adds the sender to the peer list, or renews its entry.
@@ -276,8 +290,7 @@ session.handlers = handlers
 ---@param versions table<string, string>
 function handlers.H(self, sender, versions)
   local own = self:LocalVersions()
-  self:SuppressAnswer(versions, own)
-  self:TouchPeer(sender, versions, true)
+  self:NoteVersions(sender, versions, true)
   local tables = self.answerTables
   for name, version in pairs(own) do
     -- A table that the sender does not list is one that its addon version does not have
@@ -300,9 +313,7 @@ end
 ---@param sender string
 ---@param versions table<string, string>
 function handlers.S(self, sender, versions)
-  self:SuppressAnswer(versions, self:LocalVersions())
-  self:TouchPeer(sender, versions, false)
-  -- Stage 6 schedules a pull here when a version differs
+  self:NoteVersions(sender, versions, false)
 end
 
 ---Takes a checked message from the transport.

@@ -3,6 +3,8 @@
 local T = dofile("Tests/harness.lua")
 local Fakenet = dofile("Tests/fakenet.lua")
 local Replica = dofile("Tests/fixtures/replica.lua")(T)
+-- The push has its own test (sync_push.lua)
+Replica.withoutPush = true
 
 local random = T.newRandom()
 local codec = Replica.codec
@@ -477,11 +479,9 @@ do
   for index = 1, 3 do
     T.eq(b.sync:Get("debug", "source" .. index .. "key40"), "text 40", "with the records of source " .. index)
   end
-  local merged = 0
-  for _ in pairs(b.session.merged.debug) do
-    merged = merged + 1
+  for index, source in ipairs(sources) do
+    T.eq(b.session.merged.debug[source:Version("debug")], true, "the version of source " .. index .. " is merged")
   end
-  T.eq(merged, 3, "the versions of all three count as merged")
 end
 
 -- Hand-made answers: wrong nonce, third peer, wrong batch number, refusals, bad records
@@ -489,7 +489,8 @@ do
   local net = Fakenet.new({ random = random })
   local b = Replica.new(net, "Other One", { random = random })
   local versionId, store = b.ns.versionId, b.ns.syncStore
-  local source = joinSource(net, "Nota Scam", { debug = otherVersion(b, net) })
+  local announced = otherVersion(b, net)
+  local source = joinSource(net, "Nota Scam", { debug = announced })
   local third = joinRaw(net, "Third One")
   b:Login()
   net:Advance(60)
@@ -543,7 +544,7 @@ do
     "the clock of the bad origin stays at its last good record, and the clock rest is not merged")
   T.eq(b.session.pull, nil, "the last batch ends the pull")
   T.eq(tbl.syncedAt, nil, "a pull with dropped records is not a completed one")
-  T.eq(b.session.merged.debug, nil, "and its source does not count as merged")
+  T.eq(b.session.merged.debug[announced], nil, "and its source does not count as merged")
   T.eq(Replica.count(net, "S", "Other One"), 1, "the requester announces its new version")
   net:Advance(1700)
   T.eq(#source.queries, 1, "the peer that sent a bad record is not asked again for 30 minutes")

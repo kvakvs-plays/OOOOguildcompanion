@@ -1,0 +1,296 @@
+local addonName, ns = ...
+
+-- The push of the shared database (.agents/00-plan.md, section 7.3): a replica sends new records to the
+-- whole guild in `P`, and every replica that has no gap before them applies them without a pull.
+--
+-- This file adds the methods and the message handler of the push to the session of SyncSession.lua. It
+-- uses no WoW API, so the host tests run it over the fake network (Tests/sync_push.lua).
+
+---@class OOOOSyncPushModule
+local push = {}
+ns.syncPush = push
+
+local store = ns.syncStore
+local versionId = ns.versionId
+local protocol = ns.syncProtocol
+---@class OOOOSyncSession
+local Session = ns.syncSession.Session
+local handlers = ns.syncSession.handlers
+
+---Size of one push message in bytes, by `syncStore.recordSize`; a larger push travels as several messages
+push.BATCH_BYTES = 2000
+---Seconds between hearing a version that differs and the pull that it asks for: a random value in this
+---range. In most cases a push closes the difference in that time, and the delay keeps many peers from
+---pulling from one member at the same moment.
+push.PULL_DELAY_MIN, push.PULL_DELAY_MAX = 30, 120
+
+---Stops a timer when it runs.
+---@param timer OOOOSyncTimer|nil
+local function cancel(timer)
+  if timer then
+    timer:Cancel()
+  end
+end
+
+--------------------------------------------------------------------------------
+-- Sending
+--------------------------------------------------------------------------------
+
+---Sends records to the guild, as one `P` or as several when they do not fit into one. Each message names,
+---for every origin of its records, the id before the first of them (`base`): a receiver whose clock is at
+---or beyond the base has no gap and applies them. The last message carries the clock values that no
+---record carries (`rest`).
+---@param tableName string
+---@param records OOOOSyncWireRecord[] In ascending id order
+---@param base table<string, string> Origin -> the id that the receivers are expected to have seen
+---@param tops table<string, string> Origin -> clock value of this table, for the origins of `base`
+---@param isOwn boolean true: own new writes; false: records passed on after a pull
+---@return boolean sent false when a message could not be handed to the transport
+function Session:SendPush(tableName, records, base, tops, isOwn)
+  local tbl, definition = self.parts.sync:GetTable(tableName)
+  if not tbl or not definition then
+    return false
+  end
+  local batches = store.splitBatches(records, push.BATCH_BYTES)
+  if #batches == 0 then
+    -- Nothing but clock values: the writes behind them were replaced by writes of other origins
+    batches[1] = {}
+  end
+  local version = store.tableVersion(tbl)
+  ---Origin -> the last id of that origin in the messages so far
+  local reached = {}
+  for origin, id in pairs(base) do
+    reached[origin] = id
+  end
+  for index, batch in ipairs(batches) do
+    local batchBase = {}
+    for _, record in ipairs(batch) do
+      local origin = versionId.originOf(record.id)
+      batchBase[origin] = batchBase[origin] or reached[origin] or versionId.ZERO
+    end
+    for _, record in ipairs(batch) do
+      reached[versionId.originOf(record.id)] = record.id
+    end
+    local rest
+    if index == #batches then
+      rest = {}
+      for origin, top in pairs(tops) do
+        if top > (reached[origin] or versionId.ZERO) then
+          rest[origin] = top
+          -- The rest is taken only by a receiver that has no gap before it
+          batchBase[origin] = batchBase[origin] or reached[origin] or versionId.ZERO
+        end
+      end
+    end
+    if not self.parts.transport:Send("P", nil, "BULK", nil, tableName, definition.schema, version, isOwn, batchBase,
+      protocol.packRecords(batch), rest) then
+      return false
+    end
+  end
+  return true
+end
+
+---Lists the records of a table that one origin wrote after an id, in ascending id order.
+---@param tbl OOOOSyncTable
+---@param origin string
+---@param after string An id; `versionId.ZERO` for all records of the origin
+---@return OOOOSyncWireRecord[]
+local function recordsOf(tbl, origin, after)
+  local records = {}
+  for key, record in pairs(tbl.records) do
+    if record.v > after and versionId.originOf(record.v) == origin then
+      records[#records + 1] = { key = key, id = record.v, payload = record.d, tombstone = record.x }
+    end
+  end
+  table.sort(records, function(a, b)
+    return a.id < b.id
+  end)
+  return records
+end
+
+---Returns the id of this install's last pushed write in a table.
+---@param tbl OOOOSyncTable
+---@return string id `versionId.ZERO` when nothing was pushed
+local function pushedId(tbl)
+  -- The value comes from the saved variables
+  return versionId.isWellFormed(tbl.pushed) and tbl.pushed or versionId.ZERO
+end
+
+---Pushes the local changes of a table: this install's own records after its last pushed id, with that id
+---as base. It does nothing while the table may not send; `SchedulePushes` tries again when it may.
+---@param tableName string
+function Session:PushLocal(tableName)
+  local sync = self.parts.sync
+  local tbl = sync:GetTable(tableName)
+  local origin = sync:GetOrigin()
+  if not tbl or not origin or not sync.dirtySince[tableName] or not self:MayTransfer(tableName) then
+    return
+  end
+  local top, pushed = tbl.clock[origin], pushedId(tbl)
+  if top and top > pushed then
+    if not self:SendPush(tableName, recordsOf(tbl, origin, pushed), { [origin] = pushed }, { [origin] = top },
+      true) then
+      -- Not in the guild: the change stays unsent
+      return
+    end
+    tbl.pushed = top
+    self.lastPushAt[tableName] = self.parts.now()
+  end
+  sync.dirtySince[tableName] = nil
+end
+
+---Starts the push timer of a table that has unsent local changes: it fires when `pushDelay` has passed
+---since the first unsent change and `minInterval` since the last push of the table.
+---@param tableName string
+function Session:SchedulePush(tableName)
+  local dirtySince = self.parts.sync.dirtySince[tableName]
+  local effective = self.parts.policy:Get(tableName)
+  if not dirtySince or not effective or self.pushTimers[tableName] or not self.parts.transport.active then
+    return
+  end
+  local due = dirtySince + effective.pushDelay
+  local lastPushAt = self.lastPushAt[tableName]
+  if lastPushAt and lastPushAt + effective.minInterval > due then
+    due = lastPushAt + effective.minInterval
+  end
+  self.pushTimers[tableName] = self.parts.after(math.max(0, due - self.parts.now()), function()
+    self.pushTimers[tableName] = nil
+    self:PushLocal(tableName)
+  end)
+end
+
+---Starts the push timers of all tables with unsent local changes. Called when the conditions change:
+---a push that was due while its table could not send goes out now.
+function Session:SchedulePushes()
+  for _, name in ipairs(self.parts.sync.names) do
+    self:SchedulePush(name)
+  end
+end
+
+---Finds the tables in which this install has writes that were never pushed, after a login: the mark of
+---an unsent change lives in memory only, the last pushed id in the saved variables.
+function Session:MarkUnpushed()
+  local sync = self.parts.sync
+  local origin = sync:GetOrigin()
+  for _, name in ipairs(sync.names) do
+    local tbl = sync:GetTable(name)
+    local top = tbl and origin and tbl.clock[origin]
+    if tbl and top and top > pushedId(tbl) then
+      sync.dirtySince[name] = sync.dirtySince[name] or math.floor(self.parts.now())
+    end
+  end
+  self:SchedulePushes()
+end
+
+--------------------------------------------------------------------------------
+-- Receiving
+--------------------------------------------------------------------------------
+
+---Push: the sender gives new records to everybody. For each origin they are applied only when the clock
+---of this table is at or beyond the base of that origin. Otherwise this replica has a gap before them: the
+---records are ignored, and a pull is scheduled.
+---@param self OOOOSyncSession
+---@param sender string
+---@param pushed OOOOSyncPush
+function handlers.P(self, sender, pushed)
+  local sync = self.parts.sync
+  local tbl, definition = sync:GetTable(pushed.table)
+  if not tbl or not definition or definition.schema ~= pushed.schema
+    or not self.parts.policy:IsEnabled(pushed.table) then
+    return
+  end
+  ---Origin -> true when this table has a gap before the pushed records of the origin
+  local hasGap = {}
+  for origin, base in pairs(pushed.base) do
+    hasGap[origin] = (tbl.clock[origin] or versionId.ZERO) < base
+  end
+  local accepted = {}
+  for _, record in ipairs(pushed.records) do
+    -- An origin without a base cannot be checked for a gap
+    if hasGap[versionId.originOf(record.id)] == false then
+      accepted[#accepted + 1] = record
+    end
+  end
+  local _, dropped = sync:ApplyRemote(pushed.table, accepted, function(record, recordDefinition)
+    return self:CheckRecord(record, recordDefinition)
+  end)
+  if dropped == 0 then
+    local now = math.floor(self.parts.now())
+    local rest = {}
+    for origin, id in pairs(pushed.rest) do
+      if hasGap[origin] == false and versionId.isValid(id, now) then
+        rest[origin] = id
+      end
+    end
+    store.mergeClock(tbl, rest)
+  end
+  self:NoteVersions(sender, { [pushed.table] = pushed.version }, false)
+end
+
+--------------------------------------------------------------------------------
+-- The pull that a differing version asks for
+--------------------------------------------------------------------------------
+
+---Takes note of table versions that a peer has announced, in a hello, a summary, or a push: the peer list
+---follows, a pending answer with the same version is dropped, and a version that differs from the own one
+---schedules a pull.
+---@param sender string
+---@param versions table<string, string>
+---@param isComplete boolean true when the message lists all tables of the sender (a hello)
+function Session:NoteVersions(sender, versions, isComplete)
+  local own = self:LocalVersions()
+  self:SuppressAnswer(versions, own)
+  self:TouchPeer(sender, versions, isComplete)
+  for name, version in pairs(own) do
+    self:RememberOwnVersion(name, version)
+  end
+  for name, version in pairs(versions) do
+    local merged = self.merged[name]
+    if own[name] and own[name] ~= version and not (merged and merged[version]) then
+      self:ScheduleDelayedPull()
+      return
+    end
+  end
+end
+
+---Counts a table version that this replica has itself as merged. The clock only grows, so the replica
+---holds for ever what a table with that version holds. A peer whose last announced version is one that
+---this replica has passed is then not asked: its entry in the peer list is only out of date.
+---@param tableName string
+---@param version string The current table version of this replica
+function Session:RememberOwnVersion(tableName, version)
+  local merged = self.merged[tableName]
+  if not merged then
+    merged = {}
+    self.merged[tableName] = merged
+  end
+  merged[version] = true
+end
+
+---Starts the timer of a pull, when none runs: after a random time `PumpPulls` compares the versions again
+---and asks a peer only when one still differs. Before discovery has ended nothing is scheduled, because
+---its end starts the pulls anyway.
+function Session:ScheduleDelayedPull()
+  if self.delayedPullTimer or not self.discovered then
+    return
+  end
+  self.delayedPullTimer = self.parts.after(self:RandomDelay(push.PULL_DELAY_MIN, push.PULL_DELAY_MAX), function()
+    self.delayedPullTimer = nil
+    self:PumpPulls()
+  end)
+end
+
+--------------------------------------------------------------------------------
+-- Hooks of SyncSession.lua
+--------------------------------------------------------------------------------
+
+---Stops the timers of the push. Called when the session stops. Unsent changes stay marked.
+function Session:StopPush()
+  for name, timer in pairs(self.pushTimers) do
+    timer:Cancel()
+    self.pushTimers[name] = nil
+  end
+  cancel(self.delayedPullTimer)
+  self.delayedPullTimer = nil
+  self.lastPushAt = {}
+end
