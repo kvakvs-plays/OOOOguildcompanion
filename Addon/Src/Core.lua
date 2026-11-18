@@ -5,6 +5,7 @@ local addonName, ns = ...
 
 ---@class OOOOGeneralSettings
 ---@field optAlias boolean True when `/opt` opens the settings window, like `/oooo opt`
+---@field emojiSize integer Side of an emoji in chat in pixels: 16, 20, 24, 32, or 40
 
 ---@class OOOOSyncSettings
 ---@field tables table<string, OOOOSyncPolicyOverride> Table name -> what the user changed of its send policy
@@ -59,6 +60,7 @@ local defaults = {
   profile = {
     general = {
       optAlias = true,
+      emojiSize = 32,
     },
     emoji = {
       disabled = {},

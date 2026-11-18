@@ -62,6 +62,27 @@ local function buildGeneralTab()
           ns.addon:SetOptAliasEnabled(value)
         end,
       },
+      emojiSize = {
+        type = "select",
+        order = 2,
+        name = "Emoji size",
+        desc = "Size of an emoji in chat. Lines that are already in the chat window keep their size.",
+        values = function()
+          local values = {}
+          for _, size in ipairs(ns.emojiChat.SIZES) do
+            values[size] = size .. " px"
+          end
+          return values
+        end,
+        -- A list, so that the sizes are in ascending order and not in the order of the hash table
+        sorting = ns.emojiChat.SIZES,
+        get = function()
+          return ns.emojiChat:GetSize()
+        end,
+        set = function(_, value)
+          ns.emojiChat:SetSize(value)
+        end,
+      },
     },
   }
 end

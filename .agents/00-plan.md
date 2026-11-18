@@ -35,9 +35,9 @@ Rules" and in the sections below.
 Out of scope for this plan: the code that scans professions and equipment and
 writes the records. Each of those gets its own plan. This plan delivers the
 engine and an API for them. The table `guildchat` (5.3, stage 10) is the
-exception: it is part of this plan, without a UI. The features that read it
-(the catch-up of mentions in `user-wishes.md`, perhaps a bridge to Discord)
-get their own plans.
+exception: it is part of this plan. The chat history window with the
+mentions of `user-wishes.md` reads it and is stage 11. A bridge to Discord, if it comes,
+gets its own plan.
 
 Not planned:
 
@@ -872,6 +872,265 @@ Design in 5.3. It does not depend on stage 9.
       a line of a non-peer and writes nothing.
     - Two replicas that do not know each other yet both write; `Lines` shows
       one line.
+  - Done when: the client checkpoint is recorded.
+
+### Stage 11. Chat history and mentions
+
+Two wishes in one window (`user-wishes.md`): a member can read the guild chat
+of the last days, also from the time in which they were offline, and finds in
+it the lines that mentioned them as `@nickname`. Both read the table
+`guildchat` and depend on stage 10 (10.2 for the lines of members with the
+addon, 10.3 for the others). The stage adds no shared table and no message
+type: the list of mentions is local.
+
+Design:
+
+- **Window.** One floating window, "Guild chat history", opened with
+  `/oooo chat` and from the notice below. It can be moved, and its position
+  is kept in `db.profile.chatHistory`. It is an own frame with
+  `BackdropTemplate`, not a page of the settings window.
+
+  ```
+  +--------------------------------------------+----------------+
+  | [14:02] Nota Scam: anyone for BRD?         | Unread         |
+  | [14:03] Other One: @tall can you tank?     |  @tall         |
+  | [14:05] Third One: gz                      |  @tall         |
+  | ...                                        +----------------+
+  |                                            | Read           |
+  |                                            |  @tall         |
+  +--------------------------------------------+----------------+
+  ```
+
+- **History.** The left part shows the stored guild chat, oldest line at the
+  top and newest at the bottom, like a chat frame: the time, the sender, the
+  text. It opens with the last 100 lines, scrolled to the bottom. When the
+  user scrolls to the top, the 100 lines before are loaded, until the table
+  has no more. A line that arrives while the window is open is added at the
+  bottom.
+  - The lines come from `ns.guildChat` (10.2), with the double records of
+    one line joined. The time is the timestamp of the record id.
+  - The text of a record is untrusted (`writers = "anyone"`): it is shown
+    with its hyperlinks and colour codes kept, by the escape patterns of
+    `EmojiChat.lua`, and with every other `|` doubled. Emoji names are
+    replaced like in chat.
+  - The list is a `ScrollingMessageFrame`, the widget of the chat frames: it
+    wraps long lines, scrolls with the mouse wheel, and passes hyperlink
+    clicks. A highlight is made by filling it again with the marked line in
+    another colour, which is cheap for some hundred lines. Whether Forever
+    lets an addon scroll it to a given message was not checked: step 11.3
+    probes it. If not, the fallback is a list of own rows.
+- **Mention list.** Each replica keeps a list of the guild chat lines that
+  have a word starting with `@`, whoever is meant. An entry is the id of the
+  `guildchat` record and a flag, read or unread; the sender and the text stay
+  in the record. The list is `db.global.mentions.lines` (`id -> isRead`),
+  account-wide like the chat copy, and it is not synchronized.
+  - The list follows the table: a `guildchat` record that arrives or is
+    written (`OnRecordChanged`) and has an `@` word gets an entry; an entry
+    whose record is gone is removed, so the list lives as long as the chat
+    age setting `keepDays` (5.3). At login the list is checked against the
+    table: entries without a record go, and missing ones are added.
+  - Whether an entry concerns the user is not stored. It is decided when it
+    is needed, from the watch list of that moment, so a nickname that the
+    user adds later also finds older lines.
+- **Watch list.** The user lists the nicknames that they are known by and
+  other keywords to watch, separated by commas. The list is stored in
+  `db.profile.mentions.watch` as typed. The default is empty; an empty list
+  gives no notice and empty side lists.
+- **Match.** A line concerns the user when it has `@` directly followed by
+  an entry of the watch list, without regard to letter case, and the entry
+  ends at the end of a word (`@kv` does not match `@kvakvs`). The word
+  pattern is the one of `EmojiChat.lua`, so UTF-8 letters count as parts of
+  a word. An `@` inside a hyperlink does not count.
+- **Side lists.** The right part of the window has two lists, one above the
+  other: "Unread" and "Read". Each holds the entries that concern the user,
+  newest first, and each entry shows only its `@text` fragment as it was
+  written (`@Tall`); a line with two watched fragments shows both in one
+  entry. A tooltip gives the time and the sender.
+  - A click on an entry scrolls the history to its line and highlights the
+    line. If the line is older than what is loaded, the history is loaded
+    back to it first.
+  - A click on an unread entry also marks it read in the storage and moves
+    it to the "Read" list. Nothing else makes an entry read: neither opening
+    the window nor scrolling past the line.
+- **Read or unread at arrival.** A new entry is unread when the user cannot
+  have seen the line in the game: its id time is after the account was last
+  online and before the login of this session. Every other new entry is
+  read: a line of the logged-in character, and a line from a time at which
+  the user was online and saw it in chat.
+  - `db.global.mentions.lastOnline` holds the server time at which the
+    account was last seen online: written on `PLAYER_LOGOUT` and every 5
+    minutes, because a crash writes nothing.
+- **Notice.** When the sync brings new entries, and the list then holds an
+  unread entry that concerns the user, the addon prints: "Someone mentioned
+  you or a keyword you watch earlier, and the chat has synchronized. Click
+  to open recent mentions." The words "Click to open recent mentions" are a
+  link that opens the window.
+  - New entries are collected for 5 seconds before the check, so a pull of
+    many batches gives one notice.
+  - The notice is printed again only when a new unread entry has come since
+    the last one.
+  - With the setting "Tell me after login" on, the same check also runs 10
+    seconds after login, for unread entries of an earlier session. The
+    missed lines themselves arrive later: the first pull of `guildchat`
+    starts 30 to 50 seconds after login and can take minutes (5.3, Size).
+  - The link is a custom hyperlink. Whether Forever passes an `addon:` link
+    to addons was not checked: step 11.4 probes it. Without it the notice
+    names `/oooo chat`.
+- **Limit.** The history and the mentions reach back `keepDays` days (5.3,
+  default 1). A line that no replica wrote (5.3, witness) is in neither.
+- **Warning for the writer.** When the user sends a guild chat line with a
+  word that starts with `@`, and the session knows no online peer after its
+  discovery, the addon prints: "No other player with the addon is online.
+  Your @mention is not shared until one comes online." The line is still
+  stored, and reaches the others with the push after the next pull (7.3).
+  The warning is printed at most once in 5 minutes. Before discovery has
+  ended the peers are unknown and nothing is printed.
+
+- **11.1 Settings and matching**
+  - Substeps
+    - `Src\Chat\Mentions.lua` (`ns.mentions`): `parseWatchList(text)`
+      (split on commas, trim, lower case, drop empty and repeated entries;
+      an entry keeps its inner spaces), `hasMention(text)` (any `@` word),
+      `fragments(text, watchList)` (the watched `@text` fragments of a line
+      as written, in their order; empty when the line does not concern the
+      user), and `sanitize(text)` for the window. No WoW API at file scope.
+    - Defaults in `Core.lua`: `profile.mentions = { watch = "",
+      notifyOnLogin = true }`.
+    - The General tab gets a section "Mentions": an edit box "Nicknames and
+      keywords to watch (comma separated)" and a checkbox "Tell me after
+      login about unread mentions". The description of the edit box names
+      the `@nickname` form.
+    - Add the file to `toc_template.toc` and to `.agents/project-map.md`.
+  - Checkpoint: on the host, `fragments` gives `@Kvakvs` for the entry
+    `kvakvs` and nothing for `@kvakvsy`.
+  - Host tests (`Tests/sync_mentions.lua`; the name starts with `sync_` so
+    that `run_all.lua` finds it)
+    - `parseWatchList`: spaces around commas, an empty list, a repeated
+      entry, upper case.
+    - `hasMention`: `@word` anywhere in the line; a lone `@`; an e-mail
+      form `a@b`, which counts; an `@` inside an item link, which does not.
+    - `fragments`: at the start, in the middle, and at the end of a line;
+      before punctuation; another letter case, returned as written; an
+      entry that is the start of a longer word; two watched fragments in
+      one line; an entry with a UTF-8 letter; an empty watch list.
+    - `sanitize`: an item link and a colour code stay, a lone `|` and a
+      texture escape are doubled.
+  - Done when: the options appear in the client and keep their values over a
+    `/reload` (**CLIENT**).
+- **11.2 The mention list**
+  - Substeps
+    - `db.global.mentions = { lines = {}, lastOnline = nil }` with a
+      migration step (`SCHEMA_VERSION` 3). Write `lastOnline` on
+      `PLAYER_LOGOUT` and with a `C_Timer` every 5 minutes; check the event
+      with `C_EventUtils.IsEventValid`.
+    - Follow `OnRecordChanged` of `guildchat`: add an entry for a record
+      with an `@` word, with the flag by the rule above; remove the entry of
+      a record that is gone (`Expire`, the stale reset).
+    - At login, drop the entries without a record and add the missing ones.
+    - `ns.mentions:List()`: the entries that concern the user, newest
+      first, each with id, time, sender, fragments, and the flag.
+      `ns.mentions:UnreadCount()` and `MarkRead(id)`.
+    - The callback `OnMentionsChanged`, for the notice and the window.
+  - Checkpoint: on the host, a replica that joins after three lines were
+    written, two of them with a watched `@` word, lists the two as unread
+    after its pull.
+  - Host tests (`Tests/sync_mentions.lua`, fake network and fake clock)
+    - A line with an unwatched `@` word is in the stored list and not in
+      `List()`; after the word is added to the watch list it is.
+    - A line of the own character and a line from a time at which the
+      account was online are added as read.
+    - A line from before the login and after `lastOnline` is added as
+      unread; `MarkRead` makes it read, and it stays read over a new login.
+    - With `keepDays` 1, an entry of 25 hours ago is gone after `Expire`.
+    - Entries without a record are dropped at login, and a record with an
+      `@` word and no entry gets one.
+  - Done when: the full host suite passes.
+- **11.3 Chat history window** (**CLIENT**)
+  - Substeps
+    - `ns.guildChat:Page(beforeId, count)` in `SyncGuildChat.lua`: up to
+      `count` lines older than `beforeId` (the newest ones when it is nil),
+      in id order, from the sorted key list of 10.2; and whether older lines
+      exist.
+    - `Src\Chat\ChatHistory.lua` (`ns.chatHistory`): the model of the
+      window, without frames: the loaded lines, `LoadOlder()`,
+      `LoadBackTo(id)`, the line that is highlighted, and the text of a line
+      (time, sender, sanitized text). It follows `OnRecordChanged` while the
+      window is open.
+    - `Src\Chat\ChatHistoryWindow.lua`: the frame, movable, closed with
+      Escape (`UISpecialFrames`), its position saved; the
+      `ScrollingMessageFrame` with hyperlink clicks passed to
+      `HandleModifiedItemClick` and `SetItemRef` as a chat frame does;
+      loading of older lines when the user scrolls to the top.
+    - Probe in the client: whether the frame can be scrolled to a given
+      message, and whether a hyperlink click from an addon frame works
+      without an "Interface action failed" entry. Record the result in
+      AGENTS.md. If scrolling to a message is not possible, build the list
+      from own rows instead.
+    - `/oooo chat` opens and closes the window. Show nothing in combat
+      lockdown that needs a protected call; the frame itself is not
+      protected.
+  - Checkpoint (**CLIENT**): after some hundred lines of guild chat with two
+    accounts, `/oooo chat` shows the last 100 with times and senders;
+    scrolling to the top loads older lines; an item link in a line shows its
+    tooltip on click; a new guild chat line appears at the bottom after its
+    push.
+  - Host tests (`Tests/sync_chathistory.lua`)
+    - `Page`: the newest 100 of 250 lines; the 100 before; the last 50 with
+      "no older lines"; an empty table.
+    - The model: `LoadOlder` three times gives all 250 lines once, in
+      order; `LoadBackTo` loads up to and with the given line; a line that
+      arrives is added at the end; two records of one line (5.3) are one
+      line.
+    - The text of a line: the time of the id, the sender, a sanitized text.
+  - Done when: the client checkpoint and the probe results are recorded.
+- **11.4 Mentions in the window, and the notice** (**CLIENT**, two accounts)
+  - Substeps
+    - The side lists "Unread" and "Read" in `ChatHistoryWindow.lua`, each
+      scrolling by itself, filled from `ns.mentions:List()` and refreshed on
+      `OnMentionsChanged`.
+    - A click on an entry: `LoadBackTo(id)`, scroll to the line, highlight
+      it, and `MarkRead(id)` for an unread one.
+    - The notice: 5 seconds after the last new entry, and 10 seconds after
+      login when `notifyOnLogin` is on; only when an unread entry concerns
+      the user and is newer than the one of the last notice; only in the
+      guild state `in`.
+    - Probe the link: an `addon:` hyperlink and the callback that the
+      client gives for it. Record the result in AGENTS.md. When the link is
+      not usable, the notice ends with "Type /oooo chat to open recent
+      mentions."
+  - Checkpoint (**CLIENT**): account B watches `tall` and is offline.
+    Account A writes "@tall hello", "nothing here", and
+    "look @Tall [item link]" in guild chat. Account B logs in; after its
+    pull it sees one notice. The click opens the window with `@tall` and
+    `@Tall` under "Unread". A click on `@Tall` scrolls to its line,
+    highlights it, and moves the entry to "Read". After a `/reload` the
+    entry is still read, the other still unread, and no notice is printed.
+  - Host tests (`Tests/sync_mentions.lua`)
+    - A pull of several batches gives one notice, not one per batch.
+    - No notice for an unread entry that does not concern the user, and
+      none with an empty watch list.
+    - A second sync without a new unread entry gives no second notice.
+    - With `notifyOnLogin` off, the login gives no notice for old unread
+      entries, and a sync that brings a new one still does.
+    - The model: a click on a mention older than the loaded lines loads
+      back to it and sets the highlight.
+  - Done when: the client checkpoint is recorded.
+- **11.5 Warning for a mention that nobody can copy** (**CLIENT**)
+  - Substeps
+    - In the handler of own guild chat lines (`SyncGuildChat.lua`, 10.2):
+      when the text has a word that starts with `@`, the session has ended
+      its discovery, and its peer list is empty, print the warning, at most
+      once in 5 minutes.
+    - Guard the text with `issecretvalue`; a secret line gives no warning.
+  - Checkpoint (**CLIENT**): alone with the addon, "@tall test" in guild
+    chat prints the warning once; with the second account online it prints
+    nothing.
+  - Host tests (`Tests/sync_mentions.lua`)
+    - No peer and discovery done: one warning; a second mention within 5
+      minutes gives none.
+    - A peer online: no warning.
+    - Before discovery has ended: no warning.
+    - A line without `@`: no warning.
   - Done when: the client checkpoint is recorded.
 
 ## 11. Decisions taken

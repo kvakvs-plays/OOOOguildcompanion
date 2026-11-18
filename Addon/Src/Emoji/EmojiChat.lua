@@ -17,8 +17,31 @@ local addonName, ns = ...
 local emojiChat = ns.addon:NewModule("EmojiChat")
 ns.emojiChat = emojiChat
 
----Side of the emoji square in chat, in pixels
-local CHAT_EMOJI_SIZE = 32
+---Sides of the emoji square in chat that the user can choose, in pixels
+emojiChat.SIZES = { 16, 20, 24, 32, 40 }
+---Side of the emoji square in chat when the setting is missing or is not one of `SIZES`
+emojiChat.DEFAULT_SIZE = 32
+
+---Returns the side of the emoji square in chat, in pixels: the setting `db.profile.general.emojiSize`.
+---@return integer
+function emojiChat:GetSize()
+  local size = ns.db and ns.db.profile.general.emojiSize
+  for _, allowed in ipairs(self.SIZES) do
+    if size == allowed then
+      return allowed
+    end
+  end
+  return self.DEFAULT_SIZE
+end
+
+---Stores the side of the emoji square in chat. Lines that the chat frames already show keep their size.
+---@param size integer One of `SIZES`
+function emojiChat:SetSize(size)
+  ns.db.profile.general.emojiSize = size
+  -- The texture escapes carry the size: they are built again with the next chat line
+  self.escapes = nil
+  self:ResetCache()
+end
 
 local CHAT_EVENTS = {
   "CHAT_MSG_GUILD",
@@ -55,10 +78,11 @@ function emojiChat:BuildLookup()
   local exactWords = {} ---@type table<string, string>
   local phrases = {} ---@type table<string, OOOOEmojiPhrase[]>
   local all = ns.emoji:GetAll()
+  local size = self:GetSize()
 
   -- All names go in before any alias, so an alias can never take over the name of another emoji
   for _, emoji in ipairs(all) do
-    escapes[emoji.name] = "|T" .. emoji.texture .. ":" .. CHAT_EMOJI_SIZE .. ":" .. CHAT_EMOJI_SIZE .. "|t"
+    escapes[emoji.name] = "|T" .. emoji.texture .. ":" .. size .. ":" .. size .. "|t"
     if emoji.caseSensitive then
       exactWords[emoji.name] = emoji.name
     else
