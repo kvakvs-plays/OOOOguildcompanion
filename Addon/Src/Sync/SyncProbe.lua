@@ -399,6 +399,95 @@ probe.Register("ranks", "ranks - rank index and rank name of the guild members (
   later(report, 10, function() finish("no GUILD_ROSTER_UPDATE within 10 s; reading the cached roster") end)
 end)
 
+---Says what a roster read means for the roster cleanup (plan 4.4), which removes the records of every name
+---that the roster lacks. The cleanup trusts a read in which the number of entries equals the member count.
+---@param total integer Member count of `GetNumGuildMembers`
+---@param entries integer Entries that `GetGuildRosterInfo` gave for the indexes 1 to `total`
+---@param offline integer Entries of members who are offline
+---@param beyond boolean true when an entry exists at the index `total + 1`
+---@return string verdict One result line
+function probe.rosterVerdict(total, entries, offline, beyond)
+  if beyond then
+    return "RESULT: UNSAFE: the roster has entries beyond the member count, so the count leaves members out "
+      .. "and the cleanup would remove their records"
+  end
+  if entries < total then
+    return "RESULT: safe: " .. (total - entries) .. " of " .. total .. " entries are missing or secret, so the "
+      .. "roster cache is incomplete and the cleanup waits"
+  end
+  if offline > 0 then
+    return "RESULT: safe: the roster lists " .. offline .. " offline members, so the cleanup keeps their records"
+  end
+  return "RESULT: UNDECIDED: no offline entry among " .. total .. ". Either every member is online, or hidden "
+    .. "members are left out and the cleanup would remove their records. Run it while a member is offline"
+end
+
+---Reports how the records of the table `character` stand against the roster cache, and whether the roster
+---cleanup of this session has run: after it, records of offline members must still be there.
+---@param report OOOOProbeReport
+local function reportCleanupState(report)
+  local guild, sync = ns.guildState, ns.sync
+  local current = ns.syncSession and ns.syncSession.current
+  if not guild or not sync then
+    return
+  end
+  report:Add("roster cache: " .. guild.rosterCount .. " members, complete: " .. tostring(guild:IsRosterComplete())
+    .. "; discovery done: " .. tostring(current ~= nil and current.discovered == true)
+    .. "; roster cleanup started: " .. tostring(current ~= nil and current.rosterCleaned == true))
+  local online, offline, outside = 0, 0, {}
+  for key in sync:Iterate("character") do
+    local name = sync.keyName(key)
+    local member = name and guild:GetMember(name)
+    if not member then
+      outside[#outside + 1] = key
+    elseif member.online then
+      online = online + 1
+    else
+      offline = offline + 1
+    end
+  end
+  report:Add("character records: " .. online .. " of online members, " .. offline .. " of offline members, "
+    .. #outside .. " of names outside the roster cache"
+    .. (#outside > 0 and (" (" .. table.concat(outside, ", ", 1, math.min(#outside, 5)) .. ")") or ""))
+end
+
+probe.Register("roster", "roster - does the roster list offline members; run it with \"Show offline members\" "
+  .. "on and off (plan step 8.2)",
+  function(report)
+    local getCount, getInfo = lookup("GetNumGuildMembers"), lookup("GetGuildRosterInfo")
+    if not getCount or not getInfo then
+      report:Add("RESULT: GetNumGuildMembers or GetGuildRosterInfo is missing")
+      return
+    end
+    local showOffline = lookup("GetGuildRosterShowOffline")
+    report:Add("GetGuildRosterShowOffline(): " .. (showOffline and probe.listValues(showOffline()) or "missing"))
+    report:Add("GetNumGuildMembers(): " .. probe.listValues(getCount()))
+    local total = getCount()
+    if isSecret(total) or type(total) ~= "number" then
+      report:Add("RESULT: the member count is not a plain number")
+      return
+    end
+    local entries, online, offline = 0, 0, 0
+    for index = 1, total do
+      -- The 9th value tells whether the member is online
+      local name, _, _, _, _, _, _, _, isOnline = getInfo(index)
+      if not isSecret(name) and type(name) == "string" and not isSecret(isOnline) then
+        entries = entries + 1
+        if isOnline == true then
+          online = online + 1
+        else
+          offline = offline + 1
+        end
+      end
+    end
+    local beyondName = getInfo(total + 1)
+    local beyond = isSecret(beyondName) or beyondName ~= nil
+    report:Add("entries at the indexes 1 to " .. total .. ": " .. entries .. " readable, " .. online .. " online, "
+      .. offline .. " offline; an entry at the index " .. (total + 1) .. ": " .. tostring(beyond))
+    reportCleanupState(report)
+    report:Add(probe.rosterVerdict(total, entries, offline, beyond))
+  end)
+
 ---Functions that later stages of the plan call
 local API_FUNCTIONS = {
   "GetServerTime", "IsResting", "IsInRaid", "IsInInstance", "InCombatLockdown", "issecretvalue",

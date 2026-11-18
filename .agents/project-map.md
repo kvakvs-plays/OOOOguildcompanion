@@ -61,7 +61,7 @@ moved, or removed.
 | `Sync/SyncPush.lua` | `ns.syncPush`: the push, added to the session class. `SendPush` (one or several `P` with bases), `PushLocal`, `SchedulePush`, `MarkUnpushed`, `PushWanted` (after a pull), the periodic summary (`ScheduleSummary`, `SendSummary`), the handler of `P`, `NoteVersions`, `ScheduleDelayedPull`, `RememberOwnVersion`. Host-loadable. |
 | `Sync/SyncCleanup.lua` | `ns.syncCleanup`: the local cleanup, added to the session class. `CleanUp` (old tombstones, once per stay in the guild), `CleanRoster` (records of characters who left), `IsStale`, `MarkFresh`, `ResetIfStale`. Host-loadable. |
 | `Sync/SyncOptions.lua` | `ns.syncOptions`: the "Sync" tab of the settings window, shown only in the developer mode (`buildTab`), `statusText`, `ago`, `setOverride`, `getValue`. Host-loadable. |
-| `Sync/SyncProbe.lua` | `ns.syncProbe`: `/oooo sync probe <name>`, the probe registry, reports stored in `db.global.probeResults`, and the computing helpers of the probes. Host-loadable. |
+| `Sync/SyncProbe.lua` | `ns.syncProbe`: `/oooo sync probe <name>`, the probe registry, reports stored in `db.global.probeResults`, and the computing helpers of the probes (`rosterVerdict` of the probe `roster` for plan step 8.2). Host-loadable. |
 
 ## `Tests/` (host only, Lua 5.4, not packaged)
 

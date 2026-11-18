@@ -773,6 +773,16 @@ The code of both steps is finished; see `00-finished.md`. One check is open:
       The cleanup trusts the roster cache when `GetNumGuildMembers()` equals
       the number of entries that `GetGuildRosterInfo` gave; whether that
       number covers offline members when they are hidden was not checked.
+      `/oooo sync probe roster` answers it: run it once with the box on and
+      once with it off, while a member with a `character` record is offline
+      and after `/oooo sync status` shows "discovery: done". It prints the
+      member counts, the online and offline entries, the `character` records
+      of online members, of offline members, and of names outside the roster,
+      whether the cleanup has started, and a `RESULT` line (`safe`, `UNSAFE`,
+      or `UNDECIDED`). Passed when both runs say `safe` and the count of
+      records of offline members is the same before and after the cleanup.
+      On `UNSAFE`, the cleanup must not trust `GetNumGuildMembers()` while
+      offline members are hidden.
     - `/oooo sync debug on` and a `/reload` bring the `debug` table back, on
       both accounts; `put` on one arrives on the other.
   - Seen so far (2026-11-18, accounts with the origins `>/qs` and `p:i<`,

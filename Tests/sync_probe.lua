@@ -173,4 +173,42 @@ end
 T.eq(probe.listValues("Nota", nil, 5), "'Nota', nil, 5", "listValues shows every value, also nil")
 T.eq(probe.listValues(), "no value", "listValues names a call without values")
 
+-- Roster probe (plan step 8.2): the verdict, and a run against a stubbed roster
+T.ok(probe.rosterVerdict(5, 5, 3, false):find("^RESULT: safe: the roster lists 3 offline"), "offline entries are safe")
+T.ok(probe.rosterVerdict(5, 2, 0, false):find("^RESULT: safe: 3 of 5 entries are missing"), "missing entries are safe")
+T.ok(probe.rosterVerdict(2, 2, 0, false):find("^RESULT: UNDECIDED"), "no offline entry decides nothing")
+T.ok(probe.rosterVerdict(2, 2, 1, true):find("^RESULT: UNSAFE"), "an entry beyond the count is unsafe")
+ns.slash:Dispatch("sync probe roster")
+T.ok(printed():find("RESULT: GetNumGuildMembers or GetGuildRosterInfo is missing", 1, true),
+  "the roster probe reports a missing API")
+local members = { { "Nota Scam", true }, { "Other One", false }, { "Gone Away", false } }
+_G.GetNumGuildMembers = function() return #members, 1, 1 end
+_G.GetGuildRosterInfo = function(index)
+  local member = members[index]
+  if member then
+    return member[1], "Rank", 1, 60, "Mage", "Zone", "", "", member[2]
+  end
+end
+ns.guildState = {
+  rosterCount = 2,
+  IsRosterComplete = function() return true end,
+  GetMember = function(_self, name)
+    return ({ ["Nota Scam"] = { online = true }, ["Other One"] = { online = false } })[name]
+  end,
+}
+ns.sync = {
+  keyName = function(key) return key end,
+  Iterate = function() return next, { ["Nota Scam"] = 1, ["Other One"] = 1, ["Left Guild"] = 1 } end,
+}
+ns.slash:Dispatch("sync probe roster")
+local roster = printed()
+T.ok(roster:find("GetNumGuildMembers(): 3, 1, 1", 1, true), "the roster probe shows the member counts")
+T.ok(roster:find("3 readable, 1 online, 2 offline; an entry at the index 4: false", 1, true), "and the entries")
+T.ok(roster:find("1 of online members, 1 of offline members, 1 of names outside the roster cache (Left Guild)", 1,
+  true), "and how the character records stand against the roster")
+T.ok(roster:find("roster cleanup started: false", 1, true), "and the state of the cleanup")
+T.ok(roster:find("RESULT: safe: the roster lists 2 offline members", 1, true), "and the verdict")
+T.ok(not roster:find("Lua error", 1, true), "the roster probe does not raise")
+_G.GetNumGuildMembers, _G.GetGuildRosterInfo = nil, nil
+
 T.finish()
