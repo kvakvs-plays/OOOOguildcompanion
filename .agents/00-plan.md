@@ -20,7 +20,7 @@ Rules" and in the sections below.
 - Each member holds a full copy, stored in the account-wide saved variables.
 - The database has named **tables** (sections). Examples:
   `profession_id[name]`, `profession_skills[name][id]`, `equipment[name]`,
-  `guildbank`.
+  `guildchat`.
 - Every record carries a version id. Every table carries a table version, so two
   members can tell with one short message whether their copies of a table
   differ.
@@ -31,9 +31,21 @@ Rules" and in the sections below.
   raid, or only when resting).
 - Messages from other members are untrusted input.
 
-Out of scope for this plan: the code that scans professions, equipment, and the
-guild bank and writes the records. Each of those gets its own plan. This plan
-delivers the engine and an API for them.
+Out of scope for this plan: the code that scans professions and equipment and
+writes the records. Each of those gets its own plan. This plan delivers the
+engine and an API for them. The table `guildchat` (5.3, stage 10) is the
+exception: it is part of this plan, without a UI. The features that read it
+(the catch-up of mentions in `user-wishes.md`, perhaps a bridge to Discord)
+get their own plans.
+
+Not planned:
+
+- A guild bank table. The guild bank is expected as a standard feature of the
+  game, so the addon does not copy it.
+- Tables that only officers may write. The guild bank was their only use, so
+  the officer rules, member relay, and the trust flag are dropped for now. The
+  old design is in the git history of this file (before this change: section
+  7.5 and the stage steps 7.2 and 7.3).
 
 The result of implementing the plan should be
 - communication library implemented and starting upon connecting to the game
@@ -123,7 +135,6 @@ db.global.sync = {
       maxId = "<id>",             -- greatest value in clock
       fp = 123456789,             -- fingerprint of clock, see 4.3
       syncedAt = 1795000000,      -- server time of the last completed pull
-      trusted = true,             -- officer tables only, see 7.5
       records = {
         ["Charname"] = { v = "<id>", d = { ... } },
         ["Gone"] = { v = "<id>", x = true },   -- tombstone
@@ -167,17 +178,15 @@ db.global.sync = {
   them (`SyncStore.mergeClock`) only when it applied every batch and dropped no
   record. Without this the clocks of two replicas with equal data can stay
   different, and they would pull from each other without end.
-- Assumption on concurrent writes: only officers compete for a key, in officer
-  tables. In an owner table a key is written by its owner alone, so two
-  players never write the same key. Last writer wins is therefore only ever
-  decided between officers, where losing one of two edits made in the same
-  seconds is acceptable.
+- Assumption on concurrent writes: no planned table has a key that two players
+  write. In an owner table a key is written by its owner alone. Last writer
+  wins therefore never has to decide between two players; only the `debug`
+  table (`writers = "anyone"`) lets two players write one key.
   - A key of an owner table can still have writes of two origins: one player
     with two installs. These are not concurrent, because one account is
     logged in once.
-  - The clock rest above is needed in both cases: an officer who replaces
-    another officer's record, and a second install that replaces the first
-    one's record.
+  - The clock rest above is needed for that case: a second install that
+    replaces the first one's record.
 - Why a clock and not one "newer than X" mark per table: a replica can hold a
   new record from origin A and still lack an older one from origin B. A single
   mark would skip B's record forever.
@@ -209,6 +218,10 @@ db.global.sync = {
 - For tables keyed by character name, each replica also drops records of
   characters that are no longer in the guild roster. This is a local rule and
   sends nothing.
+- A table with `maxAge` (5.3) drops records whose id is older than that age.
+  This is also a local rule: it sends nothing and leaves the clock and `fp` as
+  they are. Two replicas with equal clocks can then hold different numbers of
+  old records, which is intended.
 
 ## 5. Table definitions and API
 
@@ -223,8 +236,7 @@ ns.sync:RegisterTable({
   validate = function(key, payload) ... end,  -- returns boolean; rejects wrong types and ranges
   maxRecordBytes = 2000,
   writers = "owner",                  -- "owner": a player writes only records of their own characters (5.2)
-                                      -- "officer": only officers write, see 7.5
-  memberRelay = false,                -- officer tables: members may copy from members when no officer is online
+                                      -- "anyone": every member writes every key (the debug table)
   policy = { when = "nocombat", pushDelay = 300, minInterval = 600 },   -- defaults, user can override
 })
 ```
@@ -264,7 +276,7 @@ API for feature modules:
 | `profession_skills` | name, profession id | owner | anyone |
 | `equipment` | name | owner | anyone |
 | `attunement` | name | owner | anyone |
-| `guildbank` | free | officer | officers; members too when no officer is online (`memberRelay = true`) |
+| `guildchat` | the record's own id | anyone; by rule the sender, or one witness (5.3) | anyone |
 
 Rules for `writers = "owner"`:
 
@@ -278,6 +290,115 @@ Rules for `writers = "owner"`:
   that fails is dropped by the rule in section 8.
 - Records that arrive through a third member (pull, or the push after a pull)
   cannot be checked this way. This is the accepted risk in section 8.
+
+### 5.3 Table `guildchat`
+
+A copy of the guild chat that every replica holds for the last days. Its
+purpose is the time in which a member was offline: a member who logs in gets
+the lines that they missed. It has no UI in this plan. Officer chat is not
+recorded.
+
+```lua
+ns.sync:RegisterTable({
+  name = "guildchat",
+  schema = 1,
+  keyKind = "free",
+  validate = ...,                     -- s: a string of 1 to 48 bytes; t: a string of 1 to 255 bytes
+  maxRecordBytes = 400,
+  writers = "anyone",
+  maxAge = function() return keepDays * 86400 end,   -- new field, see below
+  policy = { when = "nocombat", pushDelay = 300, minInterval = 600 },
+})
+```
+
+- **Not real time.** An online member reads the chat in the game, so the table
+  does not have to follow the chat closely. A writer collects its lines for 5
+  minutes and sends them in one push, at most once in 10 minutes. The member
+  who logs in pulls what is missing (7.2); that is the path that matters.
+  - Known gap: a member who writes a line and logs out before the push keeps
+    that line alone. It reaches the others when that member logs in again
+    (the push after a pull, 7.3). The delay can be lowered on the "Sync" page.
+- **Record.** One chat line is one record that is written once and never
+  changed or deleted. Payload: `{ s = sender name, t = text }`.
+  - `t` is the text as the `CHAT_MSG_GUILD` event gives it, with item links
+    and other escape sequences. The emoji replacement is a chat frame filter
+    and changes only what the chat frame shows, so the event text is the
+    original.
+  - The time of the line is the timestamp inside the record id (section 3).
+    The payload carries no time.
+- **Key and order.** The key is the record's own id. Sorting the keys with `<`
+  gives the lines in the order of time. The engine gets
+  `ns.sync:Append(tableName, payload)` for this: it makes the id and stores the
+  record under it.
+  - Two lines within one second from different writers are ordered by origin,
+    not by arrival. A reader must accept that.
+  - An id can be ahead of the real time: by 1 second or more when the replica
+    has already seen a later id (section 3), at most 5 minutes.
+- **Who writes a line.** Every online member hears the same line, but the
+  game gives the line no id that all clients share. If every replica stored
+  what it hears, one line would become one record per listener. So exactly one
+  replica writes it:
+  - The sender's addon writes its own lines.
+  - A line of a member who is not a peer (no addon, or not yet announced) is
+    written by the **witness**: the replica whose character name is the first
+    in byte order among itself and its online peers.
+  - Replicas can disagree for a short time about who is a peer. Then a line
+    is written twice or not at all. Twice is repaired on reading: records with
+    the same sender and the same text whose ids are within 3 minutes count as
+    one line (`DUPLICATE_WINDOW = 180`); the earliest one is shown. The window
+    is wide because an id can be minutes ahead of the real time (above). A
+    member who repeats a text within the window is therefore shown once; that
+    is accepted. A lost line is accepted too.
+  - A replica is not a witness before its first discovery is complete (7.1
+    step 5). Until then it knows no peers and would write every line that it
+    hears, also the lines of members who have the addon.
+  - Every other replica gets the line through the push and the pull. It does
+    not store what it hears itself.
+- **No gap after login.** A member who logs in can hear a push, write an own
+  line, or act as witness before the first pull has run. None of this may make
+  the replica believe that it is up to date. Three rules of the engine give
+  that, and no "newest line that I hold" mark may ever replace them:
+  - What a replica lacks is decided per origin, by the clock (4.2), not by the
+    time of its newest record. A new record of origin A says nothing about the
+    records of origin B.
+  - A pushed record of an origin is applied only when the own clock for that
+    origin is at or beyond the `base` of the push (6.1). A replica that was
+    away has an older clock value, so it ignores the records and schedules a
+    pull. It never stores a late line with a hole before it.
+  - An own line or a witness line raises only the clock entry of the own
+    origin, and a replica holds all records of its own origin.
+  - `floor` only cuts what a responder sends; the requester sets it from
+    `keepDays`, never from the records that it holds.
+- **Secret values.** The sender and the text of a chat event can be secret
+  (AGENTS.md). A line with a secret sender or text is not recorded. Whether
+  guild chat is secret in combat or in an instance is not known; step 10.2
+  checks it.
+- **Retention.** The setting `keepDays` (1 to 30, default 1) is a slider on the
+  "Sync" page. It is stored in `db.global`, beside the data, because the data
+  is account-wide and two profiles must not fight over it.
+  - `maxAge` is a new, optional field of a table definition: a function that
+    returns seconds. The engine uses it in two places. On receive, a record
+    older than that age is not stored but still raises the clock (the verdict
+    `"seen"`, as in the roster rule of section 8). At login and then once per
+    hour, the stored records older than that age are removed (4.4).
+  - A lower setting removes records at the next cleanup. A higher setting holds
+    from then on; it does not bring back lines that the clock already covers.
+  - A pull request gets an optional field `floor`: an id, and the responder
+    sends no record below it. A replica that keeps 1 day then does not receive
+    30 days from a replica that keeps more. The clock rest still brings the
+    requester's clock to the responder's.
+  - A member who was away for longer than `keepDays` gets only the last
+    `keepDays` days.
+- **Trust.** `writers = "anyone"` is needed for the witness, so a member with a
+  modified addon can write a line under any sender name. A reader can tell the
+  sender's own write from a witness write: the origin in the id belongs to the
+  sender in the `character` table (5.1) or it does not. A feature that shows
+  the lines may mark the second kind.
+- **Size.** Assumed, not measured: 1000 lines per day at about 90 bytes on the
+  wire (22 bytes of key and id, the name, the text) is about 90 KB per day. A
+  first pull of 1 day takes about 6 minutes at the measured speed (section 6);
+  30 days would be near 3 MB and 3 hours. This is why the default is 1 day.
+  The key repeats the id; sending it once is a later saving, like LibDeflate.
 
 ## 6. Transport
 
@@ -328,7 +449,7 @@ Rules for `writers = "owner"`:
 | --- | --- | --- | --- |
 | `H` hello | GUILD | `{ table -> tableVersion }` | Sent once after login. Asks peers to answer. |
 | `S` summary | GUILD | `{ table -> tableVersion }` | Answer to hello, and notice after a merge. |
-| `Q` pull request | WHISPER | table, schema, nonce, digest | Digest is the clock as one string of 11-char ids. |
+| `Q` pull request | WHISPER | table, schema, nonce, digest, floor | Digest is the clock as one string of 11-char ids. `floor` is optional (5.3). |
 | `D` delta | WHISPER | table, nonce, batch number, last flag, records, clock rest, wants | Records the requester lacks, ascending. |
 | `P` push | GUILD | table, schema, table version, version before, own flag, base, records, clock rest | New records for everybody. |
 | `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal: busy, unknown table, or other schema. |
@@ -471,42 +592,6 @@ Per table, with defaults from the table definition and overrides in
 - The options window gets a "Sync" page (AceConfig) with these fields per table
   and a status line per table: record count, last sync time, current source.
 
-### 7.5 Officer tables
-
-A table with `writers = "officer"` (for example `guildbank`) has stricter rules.
-"Officer" means the rank indexes 0 and 1 of the roster API, which counts ranks
-from 0: in `OO OO` the ranks `O` (guild master) and `Ministry of War`. The rank
-`Core` (index 2) is not an officer rank. The list is a hardcoded constant in the
-addon (`ns.OFFICER_RANKS = { [0] = true, [1] = true }`), not a setting. Checked
-on the release client (step 1.2): the guild master has index 0. The roster gives
-the rank of every sender. The rank belongs to the character that is logged in,
-not to the player.
-
-| Who | Writes | Takes data from | Serves pulls | Pushes |
-| --- | --- | --- | --- | --- |
-| Officer | yes | officers only | yes | yes |
-| Member | no | officers; members only by the rule below | only by the rule below | never |
-
-- **Member relay.** A member takes an officer table from another member only
-  when the table has `memberRelay = true` and no officer peer is online. In
-  every other case only an officer is a source. A member serves a pull for such
-  a table under the same two conditions.
-- A push of an officer table is applied only when the sender is an officer.
-- In discovery (7.1), officers always answer for officer tables; an answer from
-  a member does not suppress theirs. In source choice (7.2), officer peers are
-  taken first, by the greatest `maxId`.
-- `Put` and `Delete` fail on a character that is not an officer.
-- **Trust flag.** A copy that has taken data through member relay is marked
-  `trusted = false`.
-  - A member with an untrusted copy replaces it when an officer is online: it
-    empties the table and the clock and pulls from the officer.
-  - A copy that is trusted and not empty never uses member relay, also when the
-    player is on a member-rank alt. This keeps an officer's copy clean.
-  - An officer character with an untrusted copy does not serve or push it. It
-    empties the table and pulls from another officer, or empties it at its first
-    own write when no other officer is online.
-- A member-rank alt of an officer follows the member rules.
-
 ## 8. Trust and validation
 
 - Deserialize with `AceSerializer:Deserialize` only; never run received text.
@@ -526,10 +611,6 @@ not to the player.
   data under any key. The addon cannot prove who owns a character. The damage is
   limited to wrong shared data, which a later correct write replaces; a future
   timestamp is limited to 5 minutes.
-- Officer tables do not have this risk while an officer is the source, because
-  the sender's rank comes from the roster and not from the message. Member relay
-  brings the risk back for the time until an officer is online; that is why it
-  marks the copy as untrusted (7.5). `guildbank` has relay on.
 
 ## 9. Files
 
@@ -544,6 +625,7 @@ Addon\Src\Sync\SyncComm.lua        AceComm wiring, sender checks, send queue
 Addon\Src\Sync\SyncSession.lua     hello, source choice, pull, push, timers, conditions
 Addon\Src\Sync\SyncOptions.lua     options page
 Addon\Src\Sync\SyncProbe.lua       /oooo sync probe commands (stage 1)
+Addon\Src\Sync\SyncGuildChat.lua   the table guildchat: capture, witness rule, ordered reading (stage 10)
 Tests\harness.lua                  file loader, assertions, seeded random
 Tests\fakenet.lua                  in-memory network with a fake clock and timer
 Tests\run_all.lua                  runs every host test
@@ -636,50 +718,20 @@ Finished; see `00-finished.md`.
     - A joined key (`"Name:id"`) is checked by its name part.
   - Done when: the owner rule is in one function that `Put`, `Delete`, and the
     receiver share.
-- **7.2 Officer tables: writers, sources, pushes**
+- **7.2 Remove the officer option**
   - Substeps
-    - `ns.OFFICER_RANKS` with the rank indexes 0 and 1 (7.5), and
-      `GuildState:IsOfficer(name)` from the roster cache.
-    - `Put` and `Delete` fail on a character that is not an officer.
-    - A push of an officer table is applied only from an officer.
-    - Discovery: officers always answer for officer tables. Source choice:
-      officer peers first.
-    - Register a test table `debugofficer`.
-  - Checkpoint: on the host, a member's push of an officer table changes
-    nothing.
-  - Host tests (`Tests/sync_officer.lua`, fake network with ranks)
-    - A Put by a member fails; by an officer it works.
-    - A `P` and a `D` from a member are ignored while an officer is online.
-    - Source choice: an officer with an older `maxId` is taken before a member
-      with a newer one.
-    - A member's `S` does not suppress an officer's `S`.
-  - Done when: the rank always comes from the roster cache and never from a
-    message.
-- **7.3 Member relay and the trust flag** (**CLIENT**, an officer and a member
-  account)
-  - Substeps
-    - A member is a source or a responder for an officer table only when
-      `memberRelay` is true and no officer peer is online.
-    - A copy that took data through relay gets `trusted = false`.
-    - With an officer online, an untrusted copy is emptied and pulled again.
-    - A trusted copy that is not empty never uses relay.
-    - An officer character with an untrusted copy does not serve or push; it
-      empties the table and pulls from another officer, or empties it at its own
-      first write.
-  - Checkpoint (**CLIENT**): the officer writes into `debugofficer`, the member
-    receives it, and a `/oooo sync put` into that table on the member account
-    is refused.
-  - Host tests (`Tests/sync_officer.lua`)
-    - No officer online and relay on: a member pulls from a member and is
-      untrusted.
-    - The same with relay off: no pull.
-    - An officer comes online: the untrusted copy is emptied and ends equal to
-      the officer's copy and trusted.
-    - A trusted copy on a member-rank alt with no officer online: no relay pull.
-    - An officer with an untrusted copy answers `Q` with `B`.
-    - A member with a modified copy and relay: after an officer appears, no
-      replica keeps the modified record.
-  - Done when: the client checkpoint is recorded.
+    - `SyncTables.lua`: `writers` accepts only `"owner"` and `"anyone"`; remove
+      `memberRelay` from the definition, its check, and its stored default.
+      No code enforces `"officer"`, so a table registered with it would be
+      open to every member.
+    - `SyncStore.lua`: remove the `trusted` field from the type annotation.
+    - `Tests/sync_tables.lua`: replace the `guildbank` definition with another
+      second table, drop the `memberRelay` cases, and add `"officer"` to the
+      rejected values of `writers`.
+  - Checkpoint: registering a table with `writers = "officer"` raises.
+  - Host tests (`Tests/sync_tables.lua`): as in the substeps.
+  - Done when: `officer`, `memberRelay`, and `trusted` no longer appear under
+    `Addon\Src\Sync` and `Tests`.
 
 ### Stage 8. Cleanup
 
@@ -710,8 +762,8 @@ Finished; see `00-finished.md`.
       that needs no serializer.
     - Constants for the key length, records per batch, digest length, and table
       count, used by `SyncProtocol`; a note in section 8 with the values.
-    - Remove the `debug` and `debugofficer` tables from release builds, or keep
-      them behind a setting that is off.
+    - Remove the `debug` table from release builds, or keep it behind a setting
+      that is off.
   - Checkpoint: `/oooo sync status` shows the size of each table in bytes.
   - Host tests (`Tests/sync_cleanup.lua`)
     - A character that left the roster loses its records; one that stays keeps
@@ -735,8 +787,97 @@ Finished; see `00-finished.md`.
       this plan.
   - Checkpoint: the new plan is reviewed.
   - Host tests: none in this step; the new plan names its own.
-  - Done when: the plan is committed. Professions and the guild bank follow in
-    the same way.
+  - Done when: the plan is committed. Professions follow in the same way.
+
+### Stage 10. Guild chat table
+
+Design in 5.3. It does not depend on stage 9.
+
+- **10.1 Engine: `Append`, `maxAge`, and `floor`**
+  - Substeps
+    - `ns.sync:Append(tableName, payload)`: makes a new id, stores the record
+      under that id as key, marks the table dirty, and returns the id.
+    - `maxAge` in the table definition (optional function that returns
+      seconds), checked in `RegisterTable`.
+    - On receive (pull and push): a record of a table with `maxAge` whose id
+      time is older than the age gets the verdict `"seen"`.
+    - `ns.sync:Expire(tableName)`: removes the stored records older than the
+      age, without a change to the clock, `maxId`, or `fp`. The work is cut
+      across frames for a large table. Called at login and once per hour with
+      `C_Timer`.
+    - `Q` gets the optional field `floor`; the requester sets it for a table
+      with `maxAge`, and the responder leaves out the records below it. Check
+      whether a decoder of the current protocol version accepts a `Q` with one
+      more field. If not, raise the protocol version.
+  - Checkpoint: on the host, a replica that keeps 1 day pulls from one that
+    holds 30 days and receives only the records of the last day.
+  - Host tests (`Tests/sync_maxage.lua`, fake clock)
+    - `Append` twice in one second gives two records in id order.
+    - A received record older than the age is not stored, and the clock rises.
+    - `Expire` removes the old records; the table version is the same before
+      and after.
+    - A pull with `floor` transfers no record below it, and both replicas end
+      with the same table version.
+    - A table without `maxAge` behaves as before (the whole host suite passes).
+  - Done when: the roster rule and the age rule share one place that gives the
+    verdict `"seen"`.
+- **10.2 Table `guildchat`: own lines, retention, reading** (**CLIENT**, two
+  accounts)
+  - Substeps
+    - `Src\Sync\SyncGuildChat.lua`: register the table (5.3) and listen to
+      `CHAT_MSG_GUILD` on an own event frame, only while the guild state is
+      `in`. Check the event with `C_EventUtils.IsEventValid` first.
+    - Guard the sender and the text with `issecretvalue`. Write with `Append`
+      when the sender is the own character.
+    - `keepDays` in `db.global` with a migration step, and the slider (1 to 30)
+      on the "Sync" page.
+    - `ns.guildChat:Lines(sinceTime)`: the lines in id order, with the double
+      records of one line joined (5.3). It keeps a sorted list of the keys,
+      built once and updated from `OnRecordChanged`.
+    - `/oooo sync chat [count]` prints the last lines, for the client check.
+  - Checkpoint (**CLIENT**): account B is offline. Account A writes three lines
+    in guild chat, one of them with an emoji name and one with an item link.
+    Account B logs in; after its pull, `/oooo sync chat` shows the three lines
+    in order with the original text. Record whether a line written in combat
+    and one written inside a dungeon are stored, or are secret.
+  - Host tests (`Tests/sync_guildchat.lua`)
+    - A line of the own character is stored; a line of another sender is not.
+    - A secret sender or text stores nothing (with a stub of `issecretvalue`).
+    - `validate` refuses a missing sender, an empty text, and a text of 256
+      bytes.
+    - `Lines` gives the id order after records arrive out of order, and joins
+      two records with the same sender and text 2 minutes apart, but not 4
+      minutes apart. Two records with the same sender and different texts 2
+      seconds apart stay two lines.
+    - With `keepDays` 1, a line of 25 hours ago is gone after `Expire`.
+    - A replica that joins the fake network 2 hours after three lines were
+      written holds them after its pull.
+    - The race after login: a replica that was away while A wrote 50 lines
+      joins, hears a push of A with 2 new lines, and writes an own line, all
+      before its first pull. It applies none of the pushed records, and after
+      the pull it holds all 52 lines of A and its own.
+    - The same with the first pull cut after one batch: the next pull brings
+      the rest.
+  - Done when: the client checkpoint is recorded.
+- **10.3 Witness for members without the addon** (**CLIENT**, two accounts and
+  a member without the addon)
+  - Substeps
+    - On a line of a sender that is not the own character and not an online
+      peer: write it when the own name is the first in byte order among the
+      own name and the online peers.
+    - `ns.guildChat:Lines` also tells for each line whether its origin belongs
+      to the sender (5.3, trust).
+  - Checkpoint (**CLIENT**): a member without the addon writes a line; it
+    appears once on both accounts.
+  - Host tests (`Tests/sync_guildchat.lua`, fake network)
+    - Three replicas hear a line of a non-peer: one record exists after the
+      push.
+    - The sender is a peer: no witness writes.
+    - A replica that has just joined and has not finished its discovery hears
+      a line of a non-peer and writes nothing.
+    - Two replicas that do not know each other yet both write; `Lines` shows
+      one line.
+  - Done when: the client checkpoint is recorded.
 
 ## 11. Decisions taken
 
@@ -744,10 +885,13 @@ Finished; see `00-finished.md`.
   hidden guild addon channel.
 - The origin is one random constant per player, made at install.
 - Alt detection through the origin is a wanted feature.
-- Officers are the rank indexes 0 (`O`, guild master) and 1
-  (`Ministry of War`), hardcoded in the addon. `Core` is not an officer rank.
-- `guildbank` is written by officers only; everyone reads it, and members may
-  pass it on when no officer is online (7.5).
 - `profession_id`, `profession_skills`, `equipment`, and `attunement` are
   written by each player for their own characters only, and anyone may pass them
   on (5.2).
+- `guildchat` holds the guild chat of the last `keepDays` days (1 to 30,
+  default 1), with the original text. It is not real time: it serves the
+  member who was offline. The sender's addon writes a line; a witness writes
+  the lines of members without the addon (5.3).
+- There is no `guildbank` table: the guild bank is expected as a standard
+  feature of the game. With it go the officer-only tables, member relay, and
+  the trust flag; no table restricts writing by guild rank for now.
