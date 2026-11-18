@@ -338,3 +338,30 @@
   responder and state" for 10 fixed seeds became "at most 7, and over 3 in
   at most a quarter of 20 runs": 400 seeds gave the same distribution with
   and without the whisper, so the old bound held by the choice of seeds.
+- **10.2 and 10.3, client checks** (2026-11-18, two accounts, `Nota Tall`
+  and `Nota Scam`, screenshots of `/oooo sync chat`):
+  - `CHAT_MSG_GUILD` is valid on Forever, and its sender is the roster name
+    (`Nixia Ameldus`, `Æz Clap`); both facts are in AGENTS.md.
+  - `Nota Tall` wrote "test", "test kek" (an emoji name), and "test" with an
+    item link while `Nota Scam` was offline; its own list showed them
+    without the mark `(witness)`. `Nota Scam` logged in and held all 8
+    lines, in the same order and with the original text, 3 minutes after
+    they were written. The link arrived as
+    `|cnIQ1:|Hitem:4603::::::::45:1485:::::::::|h[Raw Spotted Yellowtail]|h|r`.
+  - The lines of `Nota Tall` were unmarked on `Nota Scam` too: the origin
+    was found in the table `character`.
+  - Five lines of two members without the addon were stored by a witness,
+    marked `(witness)`, and listed once each and in the same order on both
+    accounts.
+  - The capture line of `Nota Scam` after its login: "listening; this
+    session 0 lines heard, 0 secret, 0 written; own name 'Nota Scam', last
+    sender 'nil'; witness".
+- **10, left to daily play** (closed on 2026-11-18 by decision of the user,
+  who plays with the addon on and reports what goes wrong):
+  - Whether a guild chat line written in combat or inside a dungeon is
+    secret: the count "secret" in the last line of `/oooo sync chat`.
+  - Whether the whisper `A` arrives: about 40 seconds after a `/reload`,
+    `/oooo sync status` lists the other account under the peers.
+  - Whether a line is written twice: the record count of `guildchat` in
+    `/oooo sync status` is then greater than the number of lines in
+    `/oooo sync chat`.

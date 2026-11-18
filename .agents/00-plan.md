@@ -5,8 +5,7 @@ converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
 Status: stages 0 to 8 are finished (`00-finished.md`). Stage 9
-is postponed. The code of stage 10 is finished; its client checks (10.2,
-10.3) are open. The probes of stage 1
+is postponed. Stage 10 is finished. The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -807,71 +806,9 @@ Postponed (2026-11-18): the guild has no use for equipment data yet. Stages
 
 ### Stage 10. Guild chat table
 
-Design in 5.3. It does not depend on stage 9. The code of the three steps is
-finished and checked on the host; the two client checks need two accounts.
-
-- **10.1 Engine: `Append` and `maxAge`**: finished; see `00-finished.md`.
-- **10.2 Table `guildchat`: own lines, retention, reading** (**CLIENT**, two
-  accounts). The code and the host tests are finished; see `00-finished.md`.
-  The client check is open:
-  - Checkpoint (**CLIENT**): account B is offline. Account A writes three lines
-    in guild chat, one of them with an emoji name and one with an item link.
-    Account B logs in; after its pull, `/oooo sync chat` shows the three lines
-    in order with the original text (the command doubles every `|`, so a
-    link shows as its escape sequence). Record whether a line written in combat
-    and one written inside a dungeon are stored, or are secret.
-  - Not known before this check. The last line of `/oooo sync chat`
-    ("capture: ...") shows each of them:
-    - Whether `CHAT_MSG_GUILD` is a valid event on Forever. If not, the line
-      reads "the client has no event CHAT_MSG_GUILD".
-    - Whether the sender of the event is the roster name (`Nota Scam`, no
-      realm suffix), as it is for an addon message. The line prints "own
-      name" and "last sender"; when they differ for an own line, "written"
-      stays 0.
-    - Whether guild chat is secret in combat or in a dungeon: "secret"
-      counts the lines that were not recorded for that reason.
-  - First result (2026-11-18, one account, screenshot of `/oooo sync chat`):
-    the event is valid and the sender is the roster name, see step 10.3.
-  - Second result (2026-11-18, two accounts, screenshots): the checkpoint
-    passed. `Nota Tall` wrote "test", "test kek" (an emoji name, shown as
-    the emoji in chat), and "test" with an item link while `Nota Scam` was
-    offline. On `Nota Tall`, `/oooo sync chat` showed the three lines
-    without the mark `(witness)`. `Nota Scam` logged in and showed, 3
-    minutes after the lines, all 8 stored lines in the same order with the
-    original text; the link arrived as
-    `|cnIQ1:|Hitem:4603::::::::45:1485:::::::::|h[Raw Spotted Yellowtail]|h|r`.
-    The lines of `Nota Tall` were unmarked there too, so the origin was
-    found in the table `character`. The capture line of `Nota Scam` read
-    "listening; this session 0 lines heard, 0 secret, 0 written; own name
-    'Nota Scam', last sender 'nil'; witness".
-  - Still to see: the count "secret" after a line in combat and one in a
-    dungeon.
-  - Done when: the client checkpoint is recorded.
-- **10.3 Witness for members without the addon** (**CLIENT**, two accounts and
-  a member without the addon). The code and the host tests are finished; see
-  `00-finished.md`. The client check is open:
-  - Checkpoint (**CLIENT**): a member without the addon writes a line; it
-    appears once on both accounts, marked `(witness)` in `/oooo sync chat`.
-    Also record how many records `/oooo sync status` counts for `guildchat`
-    after a `/reload` of one account and some lines of the other: more
-    records than lines means that the whisper `A` of step 10.4 did not
-    arrive (5.3). `/oooo sync status` on the reloaded account must list the
-    other one as a peer about 40 seconds after the reload.
-  - First result (2026-11-18, one account, screenshot of `/oooo sync chat`):
-    "5 lines stored", all five marked `(witness)`: four of `Nixia Ameldus`
-    and one of `Æz Clap`, 40 and 41 minutes old, in order, each once. So
-    `CHAT_MSG_GUILD` is valid, its sender is the roster name, and the lines
-    of members without the addon are written by a witness and marked.
-  - Second result (2026-11-18, two accounts): both accounts list the same
-    five witness lines, once each and in the same order.
-  - Still to see: the record count of `guildchat` in `/oooo sync status`
-    against the 8 lines (more records means a line was written twice); the
-    peer in the status about 40 seconds after a `/reload`; a line of a
-    member without the addon written while both accounts are online.
-  - Done when: the client checkpoint is recorded.
-- **10.4 A peer list without holes**: finished; see `00-finished.md`. The
-  whisper `A` travels in the client for the first time with the check of
-  step 10.3.
+Finished; see `00-finished.md`. Three observations were not made in the
+client checks and are left to daily play; they are listed there under
+"10, left to daily play".
 
 ### Stage 11. Chat history and mentions
 
