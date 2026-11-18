@@ -21,6 +21,9 @@ local addonName, ns = ...
 ---@field shownCount integer Number of lines that `messages` holds
 ---@field maxLines integer Number of lines that `messages` can hold
 ---@field refreshPending boolean|nil true while a refresh waits for its timer
+---@field unreadList OOOOMentionListWidget The list "Unread" at the right side
+---@field readList OOOOMentionListWidget The list "Read" below it
+---@field mentionsPending boolean|nil true while an update of the two lists waits for its timer
 local window = { shownCount = 0 }
 ns.chatHistoryWindow = window
 
@@ -48,6 +51,8 @@ local MIN_MAX_LINES = 500
 local LINES_BELOW = 4
 ---Seconds for which changes of the table are collected before the lines are shown again
 local REFRESH_DELAY = 0.2
+---Height of the title of a list of mentions, and of one of its rows
+local LIST_TITLE_HEIGHT, ROW_HEIGHT = 18, 16
 ---Anchor points that a saved position may name
 local POINTS = { TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true, CENTER = true, RIGHT = true,
   BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true }
@@ -218,6 +223,143 @@ function window:OnMouseWheel(delta)
   end
 end
 
+--------------------------------------------------------------------------------
+-- The lists of mentions (plan step 11.4)
+--------------------------------------------------------------------------------
+
+---@class OOOOMentionListWidget One list of mentions at the right side: a title and rows that the mouse
+---wheel scrolls
+---@field frame table
+---@field title table FontString
+---@field titleText string "Unread" or "Read"
+---@field rows table[] The row buttons, top first; each has `label` and, while it shows one, `entry`
+---@field entries OOOOMention[] What the list holds, newest first
+---@field offset integer Number of entries above the first row
+
+---Shows the entries of a list from its scroll offset on.
+---@param list OOOOMentionListWidget
+local function updateList(list)
+  local entries = list.entries
+  list.offset = math.max(0, math.min(list.offset, #entries - #list.rows))
+  list.title:SetText(list.titleText .. " (" .. #entries .. ")")
+  for index, row in ipairs(list.rows) do
+    local entry = entries[list.offset + index]
+    row.entry = entry
+    if entry then
+      -- The fragments are parts of the text outside its escape sequences, so they have no `|`
+      row.label:SetText(table.concat(entry.fragments, " "))
+      row:Show()
+    else
+      row:Hide()
+    end
+  end
+end
+
+---Shows the tooltip of a mention: the sender, the time, and the line.
+---@param row table A row button with `entry`
+local function showMentionTooltip(row)
+  local entry = row.entry ---@type OOOOMention|nil
+  if not entry then
+    return
+  end
+  local now = ns.sync.timeFn and ns.sync.timeFn() or 0
+  GameTooltip:SetOwner(row, "ANCHOR_LEFT")
+  GameTooltip:AddLine((entry.sender:gsub("|", "||")))
+  GameTooltip:AddLine(history.formatTime(entry.time, now), 0.6, 0.6, 0.6)
+  GameTooltip:AddLine(ns.mentions.sanitize(entry.text), 1, 1, 1, true)
+  GameTooltip:Show()
+end
+
+---Builds one list of mentions.
+---@param parent table The window
+---@param titleText string
+---@param height number
+---@return OOOOMentionListWidget
+local function createList(parent, titleText, height)
+  local frame = CreateFrame("Frame", nil, parent)
+  frame:SetSize(SIDE_WIDTH, height)
+  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOPLEFT")
+  ---@type OOOOMentionListWidget
+  local list = { frame = frame, title = title, titleText = titleText, rows = {}, entries = {}, offset = 0 }
+  for index = 1, math.floor((height - LIST_TITLE_HEIGHT) / ROW_HEIGHT) do
+    local row = CreateFrame("Button", nil, frame)
+    row:SetSize(SIDE_WIDTH, ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", 0, -(LIST_TITLE_HEIGHT + (index - 1) * ROW_HEIGHT))
+    row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+    local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("LEFT", 6, 0)
+    label:SetPoint("RIGHT", -2, 0)
+    label:SetJustifyH("LEFT")
+    call(label, "SetWordWrap", false)
+    row.label = label
+    row:SetScript("OnClick", function(clicked)
+      if clicked.entry then
+        window:OnMentionClick(clicked.entry)
+      end
+    end)
+    row:SetScript("OnEnter", showMentionTooltip)
+    row:SetScript("OnLeave", function()
+      GameTooltip:Hide()
+    end)
+    list.rows[index] = row
+  end
+  frame:EnableMouseWheel(true)
+  frame:SetScript("OnMouseWheel", function(_frame, delta)
+    list.offset = list.offset - delta
+    updateList(list)
+  end)
+  return list
+end
+
+---Fills the two lists from the mentions of the user.
+function window:UpdateMentions()
+  self.mentionsPending = false
+  if not self.frame or not self.frame:IsShown() then
+    return
+  end
+  local unread, read = {}, {}
+  for _, entry in ipairs(ns.mentions:List()) do
+    local target = entry.isRead and read or unread
+    target[#target + 1] = entry
+  end
+  self.unreadList.entries, self.readList.entries = unread, read
+  updateList(self.unreadList)
+  updateList(self.readList)
+end
+
+---Asks for `UpdateMentions` after `REFRESH_DELAY`, so that a pull with many mentions fills the lists once.
+function window:ScheduleMentions()
+  if self.mentionsPending or not self.frame or not self.frame:IsShown() then
+    return
+  end
+  self.mentionsPending = true
+  C_Timer.After(REFRESH_DELAY, function()
+    window:UpdateMentions()
+  end)
+end
+
+---Handles a click on a mention: the history scrolls to its line and highlights it, and an unread mention
+---becomes read. Nothing else makes a mention read.
+---@param entry OOOOMention
+function window:OnMentionClick(entry)
+  if not self:ShowLine(entry.id) then
+    ns.print("The line of this mention is no longer stored.")
+  end
+  if not entry.isRead then
+    -- The callback of the mention list fills the two lists again
+    ns.mentions:MarkRead(entry.id)
+  end
+end
+
+ns.mentions.RegisterCallback(window, "OnMentionsChanged", function()
+  window:ScheduleMentions()
+end)
+
+--------------------------------------------------------------------------------
+-- The window
+--------------------------------------------------------------------------------
+
 ---Builds the frames of the window.
 ---@return table frame
 function window:Create()
@@ -283,10 +425,17 @@ function window:Create()
     window:OnHyperlinkClick(link, text, button)
   end)
 
+  local listHeight = (HEIGHT - HEADER_HEIGHT - 2 * PADDING) / 2
+  self.unreadList = createList(frame, "Unread", listHeight)
+  self.unreadList.frame:SetPoint("TOPRIGHT", -PADDING, -HEADER_HEIGHT)
+  self.readList = createList(frame, "Read", listHeight)
+  self.readList.frame:SetPoint("TOPRIGHT", self.unreadList.frame, "BOTTOMRIGHT", 0, -PADDING)
+
   -- The game hides and shows the window with the whole interface too, so the model follows the frame
   frame:SetScript("OnShow", function()
     history:Open()
     window:Fill()
+    window:UpdateMentions()
   end)
   frame:SetScript("OnHide", function()
     history:Close()
@@ -368,14 +517,48 @@ ns.syncProbe.Register("chatframe", "chatframe - the widget and the globals of th
     for index = 1, 40 do
       widget:AddMessage("probe line " .. index)
     end
-    report:Add("after 40 messages: GetNumMessages " .. tostring(call(widget, "GetNumMessages")) .. ", offset "
-      .. tostring(call(widget, "GetScrollOffset")) .. ", AtBottom " .. tostring(call(widget, "AtBottom")))
+    report:Add("after 40 messages: GetNumMessages " .. tostring((call(widget, "GetNumMessages"))) .. ", offset "
+      .. tostring((call(widget, "GetScrollOffset"))) .. ", AtBottom " .. tostring((call(widget, "AtBottom"))))
     call(widget, "SetScrollOffset", 10)
-    report:Add("after SetScrollOffset(10): offset " .. tostring(call(widget, "GetScrollOffset")) .. ", AtTop "
-      .. tostring(call(widget, "AtTop")) .. ", AtBottom " .. tostring(call(widget, "AtBottom")))
+    report:Add("after SetScrollOffset(10): offset " .. tostring((call(widget, "GetScrollOffset"))) .. ", AtTop "
+      .. tostring((call(widget, "AtTop"))) .. ", AtBottom " .. tostring((call(widget, "AtBottom"))))
     call(widget, "SetScrollOffset", 1000)
-    report:Add("after SetScrollOffset(1000): offset " .. tostring(call(widget, "GetScrollOffset")) .. ", AtTop "
-      .. tostring(call(widget, "AtTop")))
+    report:Add("after SetScrollOffset(1000): offset " .. tostring((call(widget, "GetScrollOffset"))) .. ", AtTop "
+      .. tostring((call(widget, "AtTop"))))
     report:Add("Not covered here: click an item link in /oooo chat, then look for \"Interface action failed\" "
       .. "in the chat frame and in the taint log.")
+  end)
+
+---The data of the hyperlink that the probe `chatlink` prints
+local PROBE_LINK = "addon:" .. addonName .. ":probe"
+---true once the probe listens for its link
+local probeLinkRegistered = false
+
+ns.syncProbe.Register("chatlink", "chatlink - whether a click on an addon: hyperlink reaches the addon",
+  function(report)
+    local registry = ns.syncProbe.lookup("EventRegistry")
+    if type(registry) ~= "table" or type(registry.RegisterCallback) ~= "function" then
+      report:Add("EventRegistry.RegisterCallback is missing: the notice about mentions names /oooo chat")
+      return
+    end
+    if not probeLinkRegistered then
+      probeLinkRegistered = true
+      registry:RegisterCallback("SetItemRef", function(...)
+        local values = {}
+        local isProbe = false
+        for index = 1, select("#", ...) do
+          local value = select(index, ...)
+          local secret = issecretvalue(value)
+          isProbe = isProbe or (not secret and value == PROBE_LINK)
+          values[index] = secret and "<secret>" or type(value) .. " " .. tostring(value)
+        end
+        if isProbe then
+          report:Add("the click arrived; arguments of the callback: " .. table.concat(values, " | "))
+        end
+      end, PROBE_LINK)
+    end
+    report:Add("EventRegistry is present and the callback is registered. Click the link in the next line; "
+      .. "a result line follows when the click reaches the addon.")
+    -- Printed without the probe prefix, which doubles every `|`
+    ns.print("|cff71d5ff|H" .. PROBE_LINK .. "|h[Click this probe link]|h|r")
   end)

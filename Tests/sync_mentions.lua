@@ -277,4 +277,206 @@ do
   T.eq(entries(a), 2, "the line without an @ word has no entry")
 end
 
+--------------------------------------------------------------------------------
+-- Step 11.4: the notice
+--------------------------------------------------------------------------------
+
+local NOTICE = mentions.noticeText(false)
+T.ok(NOTICE:find("Type /oooo chat to open recent mentions.", 1, true), "without a link the notice names the command")
+T.ok(mentions.noticeText(true):find("|Haddon:OOOOguildcompanion:mentions|h[Click to open recent mentions]|h", 1,
+  true), "with a link its last words are the link")
+
+---Counts the notices about mentions that a replica has printed.
+---@param replica TestReplica
+---@return integer
+local function noticeCount(replica)
+  local count = 0
+  for _, line in ipairs(replica.notices) do
+    if line == NOTICE then
+      count = count + 1
+    end
+  end
+  return count
+end
+
+---Makes a writer and a reader who watches `tall` and is offline.
+---@return Fakenet net
+---@return TestReplica writer "Nota Scam", logged in
+---@return TestReplica reader "Nota Tall", offline
+local function writerAndReader()
+  local net = Fakenet.new({ random = random })
+  local a = Replica.new(net, "Nota Scam", { random = random })
+  local b = Replica.new(net, "Nota Tall", { random = random })
+  b.watch = "tall"
+  net:SetOnline("Nota Tall", false)
+  a:Login()
+  net:Advance(100)
+  return net, a, b
+end
+
+-- A pull of several batches gives one notice
+do
+  local net, a, b = writerAndReader()
+  for index = 1, 60 do
+    a:Hear("@tall line " .. index .. " " .. string.rep("x", 60), "Nota Scam")
+    net:Advance(2)
+  end
+  net:Advance(3600)
+  local loginAt = net:Now()
+  b:Login()
+  net:Advance(1200)
+  T.ok(Replica.count(net, "D", "Nota Scam", loginAt) > 1, "the pull had several batches")
+  T.eq(b.ns.mentions:UnreadCount(), 60, "the reader holds 60 unread mentions")
+  T.eq(noticeCount(b), 1, "and got one notice, not one per batch")
+  T.eq(noticeCount(a), 0, "the writer got none")
+
+  -- A second sync without a new unread entry gives no second notice
+  a:Hear("no mention this time", "Nota Scam")
+  a:Hear("@kvakvs is not watched by the reader", "Nota Scam")
+  net:Advance(1200)
+  T.eq(#b.ns.guildChat:Lines(), 62, "the reader has received the two new lines")
+  T.eq(noticeCount(b), 1, "a sync without a new mention of the reader gives no second notice")
+  a:Hear("@tall live", "Nota Scam")
+  net:Advance(1200)
+  T.eq({ b.ns.mentions:UnreadCount(), noticeCount(b) }, { 60, 1 },
+    "a mention from the online time is read and gives no notice")
+
+  -- After a reload: the unread entries are still unread, and no notice is printed
+  b:Logout()
+  b:Login()
+  net:Advance(600)
+  T.eq({ b.ns.mentions:UnreadCount(), noticeCount(b) }, { 60, 1 }, "a reload repeats no notice")
+
+  -- A new unread entry gives the next notice
+  b:Logout()
+  net:Advance(600)
+  a:Hear("@tall again", "Nota Scam")
+  net:Advance(600)
+  b:Login()
+  net:Advance(1200)
+  T.eq({ b.ns.mentions:UnreadCount(), noticeCount(b) }, { 61, 2 }, "a new unread mention gives the next notice")
+end
+
+-- No notice for an unread entry that does not concern the user, and none with an empty watch list
+do
+  local net, a, b = writerAndReader()
+  a:Hear("@kvakvs hello", "Nota Scam")
+  net:Advance(3600)
+  b:Login()
+  net:Advance(1200)
+  T.eq(b.mentionStore.lines[b.ns.guildChat:Lines()[1].id], false, "the reader holds the line as an unread entry")
+  T.eq(noticeCount(b), 0, "an unread entry that does not concern the user gives no notice")
+
+  local c = Replica.new(net, "Third One", { random = random })
+  net:SetOnline("Third One", false)
+  a:Hear("@tall hello", "Nota Scam")
+  net:Advance(3600)
+  c:Login()
+  net:Advance(1200)
+  T.eq({ #c.ns.guildChat:Lines(), noticeCount(c) }, { 2, 0 }, "an empty watch list gives no notice")
+end
+
+-- The notice after login, and the setting that turns it off
+for _, notifyOnLogin in ipairs({ true, false }) do
+  local net, a, b = writerAndReader()
+  b.notifyOnLogin = notifyOnLogin
+  a:Hear("@tall hello", "Nota Scam")
+  net:Advance(3600)
+  b:Login()
+  -- The lines arrive, and the reader leaves before the notice is due
+  local waited = 0
+  while #b.ns.guildChat:Lines() == 0 and waited < 600 do
+    net:Advance(1)
+    waited = waited + 1
+  end
+  T.eq({ b.ns.mentions:UnreadCount(), noticeCount(b) }, { 1, 0 }, "the mention has arrived; its notice is not due yet")
+  b:Logout()
+  net:Advance(600)
+  T.eq(noticeCount(b), 0, "a reader who has left gets no notice")
+  -- The writer leaves too: the next session of the reader brings nothing new
+  a:Logout()
+  b:Login()
+  net:Advance(mentions.LOGIN_NOTICE_DELAY - 1)
+  T.eq(noticeCount(b), 0, "nothing is printed right after the login")
+  net:Advance(600)
+  T.eq(noticeCount(b), notifyOnLogin and 1 or 0, notifyOnLogin
+    and "the login gives the notice for the unread mention of the earlier session"
+    or "with the setting off, the login gives no notice for old unread mentions")
+  if not notifyOnLogin then
+    b:Logout()
+    a:Login()
+    net:Advance(100)
+    a:Hear("@tall once more", "Nota Scam")
+    net:Advance(600)
+    b:Login()
+    net:Advance(1200)
+    T.eq({ b.ns.mentions:UnreadCount(), noticeCount(b) }, { 2, 1 }, "and a sync that brings a new one still does")
+  end
+end
+
+-- Outside the guild nothing is printed
+do
+  local net = Fakenet.new({ random = random })
+  local a = Replica.new(net, "Nota Tall", { random = random })
+  local printed = {}
+  local inGuild = false
+  local store = { lines = {} }
+  net:Advance(5000)
+  a.ns.mentions:Attach({
+    store = store,
+    watch = function()
+      return "tall"
+    end,
+    now = function()
+      return math.floor(net:Now())
+    end,
+    playerName = function()
+      return "Nota Tall"
+    end,
+    after = function(seconds, fn)
+      return a.endpoint:After(seconds, fn)
+    end,
+    inGuild = function()
+      return inGuild
+    end,
+    print = function(text)
+      printed[#printed + 1] = text
+    end,
+    linkUsable = true,
+  })
+  receive(a, math.floor(net:Now()) - 1000, "XXXX", "Other One", "@tall hello")
+  net:Advance(60)
+  T.eq(printed, {}, "while the guild check has not passed, no notice is printed")
+  inGuild = true
+  T.eq(a.ns.mentions:CheckNotice(), true, "in the guild the check prints it")
+  T.eq(printed, { mentions.noticeText(true) }, "with the link, when the client can pass its click")
+  T.eq(a.ns.mentions:CheckNotice(), false, "and a second check prints nothing")
+end
+
+-- The window: a click on a mention that is older than the loaded lines
+do
+  local net = Fakenet.new({ random = random })
+  local a = Replica.new(net, "Nota Tall", { random = random })
+  a.watch = "tall"
+  net:Advance(5000)
+  a:Login()
+  local now = math.floor(net:Now())
+  local old = receive(a, now - 4000, "XXXX", "Other One", "an old line for @Tall")
+  for index = 1, 250 do
+    receive(a, now - 3000 + index * 10, "XXXX", "Other One", "line " .. index)
+  end
+  local history = a.ns.chatHistory
+  history:Open()
+  T.eq({ #history.lines, history:IndexOf(old) }, { 100, nil }, "the window opens without the old line")
+  local entry = a.ns.mentions:List()[1]
+  T.eq({ entry.id, entry.isRead, entry.fragments }, { old, false, { "@Tall" } }, "the side list has the unread mention")
+  -- What a click on the entry does
+  local index = history:Highlight(entry.id)
+  a.ns.mentions:MarkRead(entry.id)
+  T.eq({ index, #history.lines, history.highlightId }, { 1, 251, old },
+    "the history is loaded back to the line, and the line is highlighted")
+  T.eq(a.ns.mentions:List()[1].isRead, true, "and the mention is read")
+  history:Close()
+end
+
 T.finish()

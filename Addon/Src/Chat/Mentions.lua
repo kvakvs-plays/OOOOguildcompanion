@@ -206,6 +206,8 @@ end
 ---@field lines table<string, boolean> Id of a `guildchat` record whose text has an `@` word, whoever is
 ---meant -> true when the user has read it
 ---@field lastOnline integer|nil Server time at which the account was last seen online
+---@field noticed table<string, boolean>|nil Id of an unread entry -> true when a notice has told the user
+---about it; so a `/reload` does not repeat the notice
 
 ---@class OOOOMentionParts What the mention list needs from the game; a host test passes its own
 ---@field store OOOOMentionStore
@@ -213,6 +215,12 @@ end
 ---@field now fun(): integer Server time in seconds
 ---@field playerName fun(): string|nil Name of the logged-in character, as the roster shows it
 ---@field loginTime integer|nil Server time of the login of this session; without it, the time of the call
+---@field after (fun(seconds: number, fn: fun()): any)|nil Calls `fn` once, later; without it no notice is
+---printed
+---@field inGuild (fun(): boolean)|nil Tells whether the guild check has passed; without it, it counts as passed
+---@field notifyOnLogin (fun(): boolean)|nil Gives the setting "Tell me after login"; without it, it is on
+---@field print (fun(text: string))|nil Prints the notice; without it, `ns.print`
+---@field linkUsable boolean|nil true when the client passes a click on an `addon:` hyperlink to addons
 
 ---@class OOOOMention One mention of the user, as `List` gives it
 ---@field id string Id of the `guildchat` record; of the earliest one when two records are one line
@@ -229,6 +237,9 @@ end
 ---@field onlineUntil integer|nil `lastOnline` as the session before left it
 ---@field list OOOOMention[]|nil The result of `List`, kept until the entries or the setting change
 ---@field listWatch any The setting for which `list` was built
+---@field noticeAt integer|nil Server time at which the collected new entries are checked for a notice
+---@field noticePending boolean|nil true while a timer waits for `noticeAt`
+---@field loginNoticeDone boolean|nil true when the check after login was scheduled in this session
 ---@field callbacks table CallbackHandler registry; fires "OnMentionsChanged"
 ---@field RegisterCallback fun(owner: any, event: string, handler: function|string, ...: any)
 ---@field UnregisterCallback fun(owner: any, event: string)
@@ -241,6 +252,13 @@ mentions.callbacks = LibStub("CallbackHandler-1.0"):New(mentions)
 
 ---Seconds between two writes of `lastOnline`: a crash writes nothing, so the logout alone is not enough
 mentions.ONLINE_INTERVAL = 300
+---Seconds for which new entries are collected before the notice, so that a pull of many batches gives one
+mentions.NOTICE_DELAY = 5
+---Seconds after the guild check at which unread entries of an earlier session are looked for
+mentions.LOGIN_NOTICE_DELAY = 10
+---The data of the hyperlink in the notice. A click on an `addon:` link is passed to addons by the Mainline
+---interface; on Forever that is not checked (`/oooo sync probe chatlink`).
+mentions.LINK = "addon:" .. addonName .. ":mentions"
 
 ---Decides whether a new entry starts as read. It is unread when the user cannot have seen the line in the
 ---game: the line is not an own one, and its time is after the account was last online and before the login
@@ -273,6 +291,13 @@ function mentions:AddEntry(id, payload)
   return true
 end
 
+---Tells whether a chat text concerns the user by the watch list of this moment.
+---@param text string
+---@return boolean
+function mentions:Concerns(text)
+  return #mentions.fragments(text, mentions.parseWatchList(self.parts.watch())) > 0
+end
+
 ---Makes the list equal to the table: an entry whose record is gone is dropped, and a record with an `@`
 ---word and no entry gets one. Called at login; later the list follows `OnRecordChanged`.
 function mentions:Reconcile()
@@ -288,6 +313,13 @@ function mentions:Reconcile()
       self:AddEntry(key, payload)
     end
   end
+  -- A notice mark lives as long as its entry is unread
+  local noticed = self.parts.store.noticed
+  for id in pairs(noticed) do
+    if lines[id] ~= false then
+      noticed[id] = nil
+    end
+  end
   self.list = nil
 end
 
@@ -298,7 +330,11 @@ function mentions:Attach(parts)
   if type(store.lines) ~= "table" then
     store.lines = {}
   end
+  if type(store.noticed) ~= "table" then
+    store.noticed = {}
+  end
   self.parts = parts
+  self.noticePending, self.loginNoticeDone = false, false
   self.loginTime = parts.loginTime or parts.now()
   self.onlineUntil = type(store.lastOnline) == "number" and store.lastOnline or nil
   self:Reconcile()
@@ -322,10 +358,14 @@ function mentions:OnRecordChanged(tableName, key, payload)
     local lines = self.parts.store.lines
     if lines[key] ~= nil then
       lines[key] = nil
+      self.parts.store.noticed[key] = nil
       self.list = nil
       self.callbacks:Fire("OnMentionsChanged")
     end
   elseif ns.guildChat:Payload(key) == payload and self:AddEntry(key, payload) then
+    if self.parts.store.lines[key] == false and self:Concerns(payload.t) then
+      self:ScheduleNotice()
+    end
     self.callbacks:Fire("OnMentionsChanged", key)
   end
 end
@@ -422,6 +462,7 @@ function mentions:MarkRead(id)
   for _, other in ipairs(ids) do
     if lines[other] == false then
       lines[other] = true
+      self.parts.store.noticed[other] = nil
       changed = true
     end
   end
@@ -435,6 +476,92 @@ end
 ---Tells the listeners that the setting with the watched nicknames has changed.
 function mentions:WatchChanged()
   self.callbacks:Fire("OnMentionsChanged")
+end
+
+--------------------------------------------------------------------------------
+-- The notice (plan step 11.4)
+--------------------------------------------------------------------------------
+
+---Builds the line that tells the user about unread mentions.
+---@param withLink boolean|nil true: the last words are a hyperlink that opens the window; else the line
+---names the slash command
+---@return string
+function mentions.noticeText(withLink)
+  local text = "Someone mentioned you or a keyword you watch earlier, and the chat has synchronized. "
+  if withLink then
+    return text .. "|cff71d5ff|H" .. mentions.LINK .. "|h[Click to open recent mentions]|h|r."
+  end
+  return text .. "Type /oooo chat to open recent mentions."
+end
+
+---Prints the notice when the list holds an unread mention of the user that no notice has covered yet, and
+---the character is in the guild. All unread mentions of that moment then count as covered, so the next
+---notice needs a new one.
+---@return boolean printed
+function mentions:CheckNotice()
+  local parts = self.parts
+  if not parts or (parts.inGuild and not parts.inGuild()) then
+    return false
+  end
+  local noticed = parts.store.noticed
+  local hasNew = false
+  for _, entry in ipairs(self:List()) do
+    if not entry.isRead then
+      for _, id in ipairs(entry.ids) do
+        if parts.store.lines[id] == false and not noticed[id] then
+          noticed[id] = true
+          hasNew = true
+        end
+      end
+    end
+  end
+  if hasNew then
+    (parts.print or ns.print)(mentions.noticeText(parts.linkUsable))
+  end
+  return hasNew
+end
+
+---Asks for the check `NOTICE_DELAY` after the last new entry.
+function mentions:ScheduleNotice()
+  local parts = self.parts
+  if not parts.after then
+    return
+  end
+  self.noticeAt = parts.now() + mentions.NOTICE_DELAY
+  if self.noticePending then
+    return
+  end
+  self.noticePending = true
+  local function check()
+    -- A login in between has taken the timer over
+    if self.parts ~= parts then
+      return
+    end
+    local wait = self.noticeAt - parts.now()
+    if wait > 0 then
+      parts.after(wait, check)
+      return
+    end
+    self.noticePending = false
+    self:CheckNotice()
+  end
+  parts.after(mentions.NOTICE_DELAY, check)
+end
+
+---Asks for the check after login, for unread mentions of an earlier session, when the setting "Tell me
+---after login" is on. Called once per session when the guild check has passed: before it, nothing is
+---printed.
+function mentions:ScheduleLoginNotice()
+  local parts = self.parts
+  if not parts or not parts.after or self.loginNoticeDone then
+    return
+  end
+  self.loginNoticeDone = true
+  parts.after(mentions.LOGIN_NOTICE_DELAY, function()
+    if self.parts == parts and (not parts.notifyOnLogin or parts.notifyOnLogin()) then
+      self:CheckNotice()
+    end
+  end)
 end
 
 --------------------------------------------------------------------------------
@@ -455,6 +582,27 @@ local function onlineTick()
   C_Timer.After(mentions.ONLINE_INTERVAL, onlineTick)
 end
 
+---Listens for a click on the hyperlink of the notice, which opens the chat history window. The Mainline
+---interface tells addons about a click on an `addon:` link through `EventRegistry`, event "SetItemRef".
+---@return boolean usable false when the client has no such registry; the notice then names the slash command
+function mentions.RegisterLink()
+  local registry = _G.EventRegistry
+  if type(registry) ~= "table" or type(registry.RegisterCallback) ~= "function" then
+    return false
+  end
+  registry:RegisterCallback("SetItemRef", function(...)
+    -- The link is the first argument after the owner; its place is not relied upon
+    for index = 1, select("#", ...) do
+      local value = select(index, ...)
+      if not issecretvalue(value) and value == mentions.LINK then
+        ns.chatHistoryWindow:Open()
+        return
+      end
+    end
+  end, mentions)
+  return true
+end
+
 ---Connects the mention list to the saved variables of the game. Core.lua calls it on PLAYER_LOGIN, before
 ---the session of the shared database starts.
 function mentions.Start()
@@ -468,7 +616,20 @@ function mentions.Start()
     end,
     now = GetServerTime,
     playerName = ns.syncCharacter.playerName,
+    after = C_Timer.After,
+    inGuild = function()
+      return ns.guildState.state == "in"
+    end,
+    notifyOnLogin = function()
+      return ns.db.profile.mentions.notifyOnLogin
+    end,
+    linkUsable = mentions.RegisterLink(),
   })
+  ns.guildState.RegisterCallback(mentions, "OnGuildStateChanged", function(_event, inGuild)
+    if inGuild then
+      mentions:ScheduleLoginNotice()
+    end
+  end)
   local frame = CreateFrame("Frame")
   frame:SetScript("OnEvent", function(_frame, event)
     handlers[event]()

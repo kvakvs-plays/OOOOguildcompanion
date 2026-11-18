@@ -49,6 +49,7 @@ return function(T)
   ---@field overrides table Table name -> policy override of this replica's user
   ---@field mentionStore table The mention list of this replica's account, as `db.global.mentions`
   ---@field watch string The setting with the watched nicknames of this replica's user
+  ---@field notifyOnLogin boolean The setting "Tell me after login" of this replica's user
   ---@field net Fakenet
   local Replica = {}
   Replica.__index = Replica
@@ -74,6 +75,7 @@ return function(T)
     self.overrides = {}
     self.mentionStore = { lines = {} }
     self.watch = ""
+    self.notifyOnLogin = true
     self.data = { origin = options.origin or ns.base94.encode(made, 4), tables = {} }
     ns.sync:Initialize(self.data, function()
       return math.floor(net:Now())
@@ -160,7 +162,15 @@ return function(T)
       playerName = function()
         return self.name
       end,
+      after = function(seconds, fn)
+        return self.endpoint:After(seconds, fn)
+      end,
+      notifyOnLogin = function()
+        return self.notifyOnLogin
+      end,
     })
+    -- The guild check has passed
+    self.ns.mentions:ScheduleLoginNotice()
     self.transport:SetActive(true)
     self.session:OnGuildStateChanged(true)
   end
