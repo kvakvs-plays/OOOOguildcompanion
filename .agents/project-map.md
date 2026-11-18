@@ -8,6 +8,7 @@ moved, or removed.
 | Path | Contents |
 | --- | --- |
 | `AGENTS.md` | Rules for agents: target client, API facts, style, checks. |
+| `CHANGELOG.md` | User-facing changes of each release, newest first. |
 | `.luacheckrc` | luacheck config for the whole repository: `lua51+wow` for `Addon`, `lua54` for `Tests`; `Addon/Ace3` excluded. |
 | `.agents/00-plan.md` | Plan of the shared guild database: open steps. |
 | `.agents/00-finished.md` | Finished steps of that plan, compacted. |
