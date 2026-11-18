@@ -223,6 +223,10 @@ function options.buildTab()
     type = "group",
     order = 2,
     name = "Sync",
+    -- A page for developers: other users run every table with the preset of its definition
+    hidden = function()
+      return not ns.syncCommands.isDeveloper()
+    end,
     args = args,
   }
 end

@@ -457,9 +457,8 @@ function session.Start()
     playerName = ns.syncCharacter.playerName,
     policy = ns.syncPolicy.new({
       sync = ns.sync,
-      overrides = function()
-        return ns.db.profile.sync.tables
-      end,
+      -- Only a developer changes the send settings; other users run the presets (SyncCommands.lua)
+      overrides = ns.syncCommands.policyOverrides,
       state = function()
         return ns.syncPolicy.state
       end,

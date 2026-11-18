@@ -19,7 +19,8 @@ local addonName, ns = ...
 ---@field schemaVersion integer|nil Version of the saved variables layout, for migrations
 ---@field probeResults table<string, OOOOProbeResult>|nil Probe name -> last result, written by SyncProbe.lua
 ---@field sync OOOOSyncData|nil The shared database; created by the migration to layout 2 (Database.lua)
----@field debugTable boolean|nil true when the table `debug` is on (`/oooo sync debug on`); off when absent
+---@field debugTable boolean|nil true in the developer mode (`/oooo sync debug on`): the table `debug`, the
+---Sync page of the settings, and its send settings; off when absent
 
 ---@class OOOODatabase AceDB-3.0 database object
 ---@field profile OOOOProfile

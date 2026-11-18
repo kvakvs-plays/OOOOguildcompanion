@@ -149,13 +149,23 @@ do
   T.eq(ns.db.global.debugTable, true, "debug on stores the setting")
   T.ok(sync.definitions.debug, "and registers the table at once")
   T.ok(sync:GetTable("debug"), "with its storage")
-  T.ok(printed():find("^The debug table is on"), "and says so")
+  T.ok(printed():find("^Developer mode is on"), "and says so")
   ns.slash:Dispatch("sync debug on")
-  T.ok(printed():find("^The debug table is on"), "a second debug on does not register the table twice")
+  T.ok(printed():find("^Developer mode is on"), "a second debug on does not register the table twice")
+
+  -- The send settings of the Sync page apply only in the developer mode
+  local stored = { character = { when = "resting" } }
+  ns.db.profile = { sync = { tables = stored } }
+  T.eq(commands.isDeveloper(), true, "debug on is the developer mode")
+  T.ok(commands.policyOverrides() == stored, "in the developer mode the stored send settings apply")
   ns.slash:Dispatch("sync debug off")
   T.eq(ns.db.global.debugTable, false, "debug off stores the setting")
   T.ok(printed():find("next /reload", 1, true), "and tells that it takes a reload")
   T.ok(sync.definitions.debug, "the table stays registered until then")
+  T.eq(commands.isDeveloper(), false, "debug off ends the developer mode")
+  T.eq(commands.policyOverrides(), {}, "outside the developer mode no stored send setting applies")
+  T.eq(ns.db.profile.sync.tables, stored, "the stored settings are kept for the next time")
+  ns.db.profile = nil
 end
 
 -- The debug table and the commands

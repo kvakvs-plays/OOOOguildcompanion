@@ -333,7 +333,7 @@ ns.sync:RegisterTable({
   validate = ...,                     -- s: a string of 1 to 48 bytes; t: a string of 1 to 255 bytes
   maxRecordBytes = 400,
   writers = "anyone",
-  maxAge = function() return keepDays * 86400 end,   -- new field, see below
+  maxAge = KEEP_DAYS * 86400,         -- new field, see below; KEEP_DAYS = 14
   policy = { when = "nocombat", pushDelay = 300, minInterval = 600 },
 })
 ```
@@ -344,7 +344,7 @@ ns.sync:RegisterTable({
   who logs in pulls what is missing (7.2); that is the path that matters.
   - Known gap: a member who writes a line and logs out before the push keeps
     that line alone. It reaches the others when that member logs in again
-    (the push after a pull, 7.3). The delay can be lowered on the "Sync" page.
+    (the push after a pull, 7.3).
 - **Record.** One chat line is one record that is written once and never
   changed or deleted. Payload: `{ s = sender name, t = text }`.
   - `t` is the text as the `CHAT_MSG_GUILD` event gives it, with item links
@@ -394,28 +394,23 @@ ns.sync:RegisterTable({
     pull. It never stores a late line with a hole before it.
   - An own line or a witness line raises only the clock entry of the own
     origin, and a replica holds all records of its own origin.
-  - `floor` only cuts what a responder sends; the requester sets it from
-    `keepDays`, never from the records that it holds.
 - **Secret values.** The sender and the text of a chat event can be secret
   (AGENTS.md). A line with a secret sender or text is not recorded. Whether
   guild chat is secret in combat or in an instance is not known; step 10.2
   checks it.
-- **Retention.** The setting `keepDays` (1 to 30, default 1) is a slider on the
-  "Sync" page. It is stored in `db.global`, beside the data, because the data
-  is account-wide and two profiles must not fight over it.
-  - `maxAge` is a new, optional field of a table definition: a function that
-    returns seconds. The engine uses it in two places. On receive, a record
-    older than that age is not stored but still raises the clock (the verdict
+- **Retention.** Every replica keeps the last 14 days. The length is the
+  constant `KEEP_DAYS` in `SyncGuildChat.lua`, the same for everybody; it is
+  not a setting.
+  - `maxAge` is a new, optional field of a table definition: a number of
+    seconds. The engine uses it in two places. On receive, a record older
+    than that age is not stored but still raises the clock (the verdict
     `"seen"`, as in the roster rule of section 8). At login and then once per
     hour, the stored records older than that age are removed (4.4).
-  - A lower setting removes records at the next cleanup. A higher setting holds
-    from then on; it does not bring back lines that the clock already covers.
-  - A pull request gets an optional field `floor`: an id, and the responder
-    sends no record below it. A replica that keeps 1 day then does not receive
-    30 days from a replica that keeps more. The clock rest still brings the
-    requester's clock to the responder's.
-  - A member who was away for longer than `keepDays` gets only the last
-    `keepDays` days.
+  - All replicas keep the same length, so a pull request needs no lower limit
+    (an earlier design had the field `floor` in `Q` for replicas with
+    different lengths). A responder can still hold lines of up to an hour
+    over the age, until its next cleanup; the requester counts them as seen.
+  - A member who was away for longer than 14 days gets only the last 14 days.
 - **Trust.** `writers = "anyone"` is needed for the witness, so a member with a
   modified addon can write a line under any sender name. A reader can tell the
   sender's own write from a witness write: the origin in the id belongs to the
@@ -423,8 +418,11 @@ ns.sync:RegisterTable({
   the lines may mark the second kind.
 - **Size.** Assumed, not measured: 1000 lines per day at about 90 bytes on the
   wire (22 bytes of key and id, the name, the text) is about 90 KB per day. A
-  first pull of 1 day takes about 6 minutes at the measured speed (section 6);
-  30 days would be near 3 MB and 3 hours. This is why the default is 1 day.
+  first pull of 1 day takes about 6 minutes at the measured speed (section 6).
+  The 14 days that are kept are then about 1.3 MB, and the first pull of a
+  new member about 80 minutes of background traffic; a pull that is cut goes
+  on where it stopped (4.2). If this proves too slow, LibDeflate and a
+  shorter key are the first savings.
   The key repeats the id; sending it once is a later saving, like LibDeflate.
 
 ## 6. Transport
@@ -476,7 +474,7 @@ ns.sync:RegisterTable({
 | --- | --- | --- | --- |
 | `H` hello | GUILD | `{ table -> tableVersion }` | Sent once after login. Asks peers to answer. |
 | `S` summary | GUILD | `{ table -> tableVersion }` | Answer to hello, and notice after a merge. |
-| `Q` pull request | WHISPER | table, schema, nonce, digest, floor | Digest is the clock as one string of 11-char ids. `floor` is optional (5.3). |
+| `Q` pull request | WHISPER | table, schema, nonce, digest | Digest is the clock as one string of 11-char ids. |
 | `D` delta | WHISPER | table, nonce, batch number, last flag, records, clock rest, wants | Records the requester lacks, ascending. |
 | `P` push | GUILD | table, schema, table version, version before, own flag, base, records, clock rest | New records for everybody. |
 | `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal: busy, unknown table, or other schema. |
@@ -616,8 +614,14 @@ Per table, with defaults from the table definition and overrides in
   current batch. The receiver's timeout (7.2 step 6) handles the rest.
 - Receiving is always allowed: applying a batch is cheap and has no protected
   calls.
-- The options window gets a "Sync" page (AceConfig) with these fields per table
+- The options window has a "Sync" page (AceConfig) with these fields per table
   and a status line per table: record count, last sync time, current source.
+  The page is for developers: it is shown only in the developer mode
+  (`/oooo sync debug on`, section 8), and the overrides apply only in that
+  mode. Every other user runs each table with the preset of its definition
+  and has no setting of the shared database at all. An override that was
+  stored in the developer mode stays in the saved data and has no effect
+  while the mode is off.
 
 ## 8. Trust and validation
 
@@ -653,9 +657,11 @@ Per table, with defaults from the table definition and overrides in
   its text, 4 per table; AceSerializer writes the same, without its escapes).
   `Put` refuses a record over `maxRecordBytes` of its table with
   `"too large"`; a received one is dropped like any bad record.
-- The table `debug` (`writers = "anyone"`) is registered only while the
-  setting `db.global.debugTable` is on (`/oooo sync debug on`). It is off by
-  default, so a release has no table that every member can fill with text.
+- The developer mode is the setting `db.global.debugTable`, turned on with
+  `/oooo sync debug on` and off by default. Only in it is the table `debug`
+  (`writers = "anyone"`) registered, so a release has no table that every
+  member can fill with text; and only in it is the "Sync" page shown and do
+  its send settings apply (7.4).
 - Accepted risk for owner tables: a member with a modified addon can write wrong
   data under any key. The addon cannot prove who owns a character. The damage is
   limited to wrong shared data, which a later correct write replaces; a future
@@ -769,6 +775,18 @@ The code of both steps is finished; see `00-finished.md`. One check is open:
       number covers offline members when they are hidden was not checked.
     - `/oooo sync debug on` and a `/reload` bring the `debug` table back, on
       both accounts; `put` on one arrives on the other.
+  - Seen so far (2026-11-18, accounts with the origins `>/qs` and `p:i<`,
+    right after a login):
+    - `/oooo sync status` prints the bytes: `character` 155 bytes and `debug`
+      50 bytes, the same on both accounts, with equal table versions.
+    - The `debug` table is registered on both accounts, so
+      `/oooo sync debug on` and the reload work.
+    - Each account listed the other as peer 10 to 20 seconds after the
+      status showed "waiting to send the hello".
+  - Still open: the hour without an error, a `put` that arrives on the other
+    account after this change, and the records of offline members after the
+    cleanup. The status above was printed before discovery had ended, so the
+    cleanup had not run yet.
   - Done when: the result is recorded here and in `00-finished.md`.
 
 ### Stage 9. First real table
@@ -788,31 +806,27 @@ The code of both steps is finished; see `00-finished.md`. One check is open:
 
 Design in 5.3. It does not depend on stage 9.
 
-- **10.1 Engine: `Append`, `maxAge`, and `floor`**
+- **10.1 Engine: `Append` and `maxAge`**
   - Substeps
     - `ns.sync:Append(tableName, payload)`: makes a new id, stores the record
       under that id as key, marks the table dirty, and returns the id.
-    - `maxAge` in the table definition (optional function that returns
-      seconds), checked in `RegisterTable`.
+    - `maxAge` in the table definition (optional number of seconds), checked
+      in `RegisterTable`.
     - On receive (pull and push): a record of a table with `maxAge` whose id
       time is older than the age gets the verdict `"seen"`.
     - `ns.sync:Expire(tableName)`: removes the stored records older than the
       age, without a change to the clock, `maxId`, or `fp`. The work is cut
       across frames for a large table. Called at login and once per hour with
       `C_Timer`.
-    - `Q` gets the optional field `floor`; the requester sets it for a table
-      with `maxAge`, and the responder leaves out the records below it. Check
-      whether a decoder of the current protocol version accepts a `Q` with one
-      more field. If not, raise the protocol version.
-  - Checkpoint: on the host, a replica that keeps 1 day pulls from one that
-    holds 30 days and receives only the records of the last day.
+  - Checkpoint: on the host, a fresh replica pulls from one that still holds
+    lines of 15 days ago and stores only the lines of the last 14 days.
   - Host tests (`Tests/sync_maxage.lua`, fake clock)
     - `Append` twice in one second gives two records in id order.
     - A received record older than the age is not stored, and the clock rises.
     - `Expire` removes the old records; the table version is the same before
       and after.
-    - A pull with `floor` transfers no record below it, and both replicas end
-      with the same table version.
+    - A pull from a replica that holds records over the age stores none of
+      them, and both replicas end with the same table version.
     - A table without `maxAge` behaves as before (the whole host suite passes).
   - Done when: the roster rule and the age rule share one place that gives the
     verdict `"seen"`.
@@ -824,8 +838,7 @@ Design in 5.3. It does not depend on stage 9.
       `in`. Check the event with `C_EventUtils.IsEventValid` first.
     - Guard the sender and the text with `issecretvalue`. Write with `Append`
       when the sender is the own character.
-    - `keepDays` in `db.global` with a migration step, and the slider (1 to 30)
-      on the "Sync" page.
+    - The constant `KEEP_DAYS = 14`; no setting and no migration step.
     - `ns.guildChat:Lines(sinceTime)`: the lines in id order, with the double
       records of one line joined (5.3). It keeps a sorted list of the keys,
       built once and updated from `OnRecordChanged`.
@@ -844,7 +857,7 @@ Design in 5.3. It does not depend on stage 9.
       two records with the same sender and text 2 minutes apart, but not 4
       minutes apart. Two records with the same sender and different texts 2
       seconds apart stay two lines.
-    - With `keepDays` 1, a line of 25 hours ago is gone after `Expire`.
+    - A line of 15 days ago is gone after `Expire`; one of 13 days stays.
     - A replica that joins the fake network 2 hours after three lines were
       written holds them after its pull.
     - The race after login: a replica that was away while A wrote 50 lines
@@ -927,7 +940,7 @@ Design:
   - The list follows the table: a `guildchat` record that arrives or is
     written (`OnRecordChanged`) and has an `@` word gets an entry; an entry
     whose record is gone is removed, so the list lives as long as the chat
-    age setting `keepDays` (5.3). At login the list is checked against the
+    copy, 14 days (5.3). At login the list is checked against the
     table: entries without a record go, and missing ones are added.
   - Whether an entry concerns the user is not stored. It is decided when it
     is needed, from the watch list of that moment, so a nickname that the
@@ -976,8 +989,7 @@ Design:
   - The link is a custom hyperlink. Whether Forever passes an `addon:` link
     to addons was not checked: step 11.4 probes it. Without it the notice
     names `/oooo chat`.
-- **Limit.** The history and the mentions reach back `keepDays` days (5.3,
-  default 1). A line that no replica wrote (5.3, witness) is in neither.
+- **Limit.** The history and the mentions reach back 14 days (5.3). A line that no replica wrote (5.3, witness) is in neither.
 - **Warning for the writer.** When the user sends a guild chat line with a
   word that starts with `@`, and the session knows no online peer after its
   discovery, the addon prints: "No other player with the addon is online.
@@ -1041,7 +1053,7 @@ Design:
       account was online are added as read.
     - A line from before the login and after `lastOnline` is added as
       unread; `MarkRead` makes it read, and it stays read over a new login.
-    - With `keepDays` 1, an entry of 25 hours ago is gone after `Expire`.
+    - An entry of 15 days ago is gone after `Expire`.
     - Entries without a record are dropped at login, and a record with an
       `@` word and no entry gets one.
   - Done when: the full host suite passes.
@@ -1142,10 +1154,13 @@ Design:
 - `profession_id`, `profession_skills`, `equipment`, and `attunement` are
   written by each player for their own characters only, and anyone may pass them
   on (5.2).
-- `guildchat` holds the guild chat of the last `keepDays` days (1 to 30,
-  default 1), with the original text. It is not real time: it serves the
+- `guildchat` holds the guild chat of the last 14 days, with the original
+  text. The length is fixed, not a setting. It is not real time: it serves the
   member who was offline. The sender's addon writes a line; a witness writes
   the lines of members without the addon (5.3).
 - There is no `guildbank` table: the guild bank is expected as a standard
   feature of the game. With it go the officer-only tables, member relay, and
   the trust flag; no table restricts writing by guild rank for now.
+- Members have no settings of the shared database. The "Sync" page with the
+  send settings per table is shown, and applies, only in the developer mode;
+  everybody else runs the presets of the table definitions.

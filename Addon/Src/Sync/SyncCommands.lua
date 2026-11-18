@@ -1,8 +1,12 @@
 local addonName, ns = ...
 
 -- The table `debug` and the commands `/oooo sync put|get|del|status|debug`, for testing the shared database
--- by hand (.agents/00-plan.md, step 3.4). The table exists only while the setting `db.global.debugTable` is
--- on, which it is not by default: a release has no table that every member can fill with text.
+-- by hand (.agents/00-plan.md, step 3.4), and the developer mode that they belong to.
+--
+-- The developer mode is the setting `db.global.debugTable`, off by default and turned on with
+-- `/oooo sync debug on`. Only with it does the table `debug` exist (a release has no table that every member
+-- can fill with text), is the Sync page of the settings shown, and do the send settings of that page apply.
+-- Other users run every table with the preset of its definition.
 --
 -- This file uses no WoW API, so the host tests load it (Tests/sync_alts.lua).
 
@@ -32,6 +36,28 @@ function commands.EnableDebugTable()
     writers = "anyone",
     policy = { when = "nocombat", pushDelay = 10, minInterval = 30 },
   })
+end
+
+---Tells whether the developer mode is on.
+---@return boolean
+function commands.isDeveloper()
+  local global = ns.db and ns.db.global
+  return global ~= nil and global.debugTable == true
+end
+
+---Nothing changed: what `policyOverrides` gives outside the developer mode
+local NO_OVERRIDES = {}
+
+---Returns the changes to the send policy of the tables that apply now: those of the Sync page in the
+---developer mode, none otherwise. A change that was made in the developer mode stays stored and has no
+---effect while the mode is off, so no user is left with a setting that they cannot see.
+---@return table<string, OOOOSyncPolicyOverride>
+function commands.policyOverrides()
+  if not commands.isDeveloper() then
+    return NO_OVERRIDES
+  end
+  local settings = ns.db.profile and ns.db.profile.sync
+  return type(settings) == "table" and type(settings.tables) == "table" and settings.tables or NO_OVERRIDES
 end
 
 ---Tells whether the table `debug` is registered; prints how to turn it on when it is not.
@@ -133,7 +159,7 @@ ns.syncSlash:Register("del", "del <key> - delete a record of the debug table", f
   end
 end)
 
-ns.syncSlash:Register("debug", "debug on|off - turn the debug table of put, get, and del on or off", function(rest)
+ns.syncSlash:Register("debug", "debug on|off - developer mode: the debug table and the Sync settings", function(rest)
   local word = rest:match("^(%S+)$")
   local global = ns.db and ns.db.global
   if (word ~= "on" and word ~= "off") or not global then
@@ -143,8 +169,15 @@ ns.syncSlash:Register("debug", "debug on|off - turn the debug table of put, get,
   global.debugTable = word == "on"
   if word == "on" then
     commands.EnableDebugTable()
-    ns.print("The debug table is on. It appears on the Sync page of the settings after /reload.")
+    ns.print("Developer mode is on: the debug table, and the Sync page of the settings with its send settings. "
+      .. "The debug table appears on that page after /reload.")
   else
-    ns.print("The debug table is off from the next /reload on. Its stored records stay in the saved data.")
+    ns.print("Developer mode is off: the Sync page is hidden and every table sends by its preset. "
+      .. "The debug table goes with the next /reload; its stored records stay in the saved data.")
+  end
+  -- The send settings that apply have changed: what waited for the old ones goes on
+  local current = ns.syncSession and ns.syncSession.current
+  if current then
+    current:OnConditionsChanged()
   end
 end)
