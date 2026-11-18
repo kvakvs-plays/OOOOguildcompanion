@@ -355,8 +355,7 @@ end
 ---@return boolean|"seen"
 function Session:CheckRecord(record, definition)
   if definition.keyKind == "character" then
-    -- A joined key starts with the name: "Nota Scam:171"
-    local name = record.key:match("^[^:]+")
+    local name = self.parts.sync.keyName(record.key)
     if not name or not self.parts.guild:GetMember(name) then
       return "seen"
     end

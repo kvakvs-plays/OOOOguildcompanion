@@ -109,15 +109,22 @@ end
 -- Through the API: two installs of one player, joined by the payload
 do
   local data = { origin = "XXXX", tables = {} }
-  sync:Initialize(data, function() return now end, random)
+  ---The character that is logged in: a record of the table is written by its own character only
+  local player
+  local function playerName() return player end
+  sync:Initialize(data, function() return now end, random, playerName)
   T.eq(sync:GetAlts("Nota Scam"), {}, "GetAlts of an empty table is empty")
+  player = "Nota Scam"
   sync:Put("character", "Nota Scam", character.buildPayload("SHAMAN", 20, "XXXX", sync:Get("character", "Nota Scam")))
+  player = "Nota Tall"
   sync:Put("character", "Nota Tall", character.buildPayload("WARRIOR", 60, "XXXX", sync:Get("character", "Nota Tall")))
   -- The second install has pulled the table and writes one of the characters again
   now = now + 100
   data.origin = "YYYY"
-  sync:Initialize(data, function() return now end, random)
+  sync:Initialize(data, function() return now end, random, playerName)
+  player = "Nota Scam"
   sync:Put("character", "Nota Scam", character.buildPayload("SHAMAN", 21, "YYYY", sync:Get("character", "Nota Scam")))
+  player = "Bank Alt"
   sync:Put("character", "Bank Alt", character.buildPayload("ROGUE", 1, "YYYY", sync:Get("character", "Bank Alt")))
   T.eq(sync:Get("character", "Nota Scam").origins, { "XXXX", "YYYY" }, "the record lists both installs")
   T.eq(sync:GetAlts("Bank Alt"), { "Nota Scam", "Nota Tall" }, "GetAlts joins the characters of both installs")

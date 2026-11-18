@@ -18,7 +18,8 @@ sync:RegisterTable({
     return type(payload) == "table" and type(payload.level) == "number" and payload.level >= 1 and payload.level <= 60
   end,
   maxRecordBytes = 2000,
-  writers = "owner",
+  -- The owner rule has its own test, Tests/sync_owner.lua
+  writers = "anyone",
 })
 
 -- Before Initialize nothing can be written or read

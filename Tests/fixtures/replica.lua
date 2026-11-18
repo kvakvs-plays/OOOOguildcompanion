@@ -66,7 +66,9 @@ return function(T)
     self.data = { origin = options.origin or ns.base94.encode(made, 4), tables = {} }
     ns.sync:Initialize(self.data, function()
       return math.floor(net:Now())
-    end, options.random)
+    end, options.random, function()
+      return name
+    end)
     self.endpoint = net:Join(name, options.rankIndex)
     self.transport = ns.syncComm.new({
       codec = ns.syncProtocol.new(serializer),

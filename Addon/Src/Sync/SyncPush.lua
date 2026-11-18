@@ -289,7 +289,8 @@ end
 
 ---Push: the sender gives new records to everybody. For each origin they are applied only when the clock
 ---of this table is at or beyond the base of that origin. Otherwise this replica has a gap before them: the
----records are ignored, and a pull is scheduled.
+---records are ignored, and a pull is scheduled. In a push of own writes (`own`), a record whose key does not
+---belong to the sender is dropped with the later records of its origin.
 ---@param self OOOOSyncSession
 ---@param sender string
 ---@param pushed OOOOSyncPush
@@ -318,6 +319,11 @@ function handlers.P(self, sender, pushed)
     end
   end
   local _, dropped = sync:ApplyRemote(pushed.table, accepted, function(record, recordDefinition)
+    -- Own new writes come from their writer, so the owner rule can be checked. Records that the sender
+    -- passes on after a pull cannot: any member may pass on the records of any other (plan section 5.2).
+    if pushed.own and not sync:MayWrite(recordDefinition, record.key, sender, true) then
+      return false
+    end
     return self:CheckRecord(record, recordDefinition)
   end)
   if dropped == 0 then

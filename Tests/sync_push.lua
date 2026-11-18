@@ -214,8 +214,8 @@ do
     versionId.make(now - 30, "XXXX", 0)
   local y1 = versionId.make(now - 20, "YYYY", 0)
   local other = versionId.make(now - 5, "RRRR", 0) .. "!!!!!"
-  local function send(schema, base, records, rest, tableName)
-    raw:Send(codec.encode("P", tableName or "debug", schema, other, other, true, base,
+  local function send(schema, base, records, rest, tableName, own)
+    raw:Send(codec.encode("P", tableName or "debug", schema, other, other, own ~= false, base,
       Replica.protocol.packRecords(records), rest), "GUILD")
     net:Advance(1)
   end
@@ -256,12 +256,13 @@ do
   send(1, { YYYY = y1 }, {}, { YYYY = versionId.make(now + 1000, "YYYY", 0) })
   T.eq(tbl.clock.YYYY, y1, "a clock rest from the future is not taken")
 
-  -- A record of a character outside the roster is counted as seen and not kept
+  -- A record of a character outside the roster is counted as seen and not kept. The push is one that
+  -- passes records on: in a push of own writes the owner rule would drop the foreign key first.
   local characters = b.sync:GetTable("character")
   local c1, c2 = versionId.make(now - 9, "XXXX", 0), versionId.make(now - 8, "XXXX", 0)
   local payload = { class = "MAGE", level = 10, origins = { "XXXX" } }
   send(1, { XXXX = zero }, { { key = "Left Guild", id = c1, payload = payload },
-    { key = "Nota Scam", id = c2, payload = payload } }, nil, "character")
+    { key = "Nota Scam", id = c2, payload = payload } }, nil, "character", false)
   T.eq(b.sync:Get("character", "Left Guild"), nil, "a pushed record of a name outside the roster is not kept")
   T.eq(b.sync:Get("character", "Nota Scam"), payload, "the record of a member is")
   T.eq(characters.clock, { XXXX = c2 }, "and the clock counts both as seen")

@@ -50,8 +50,8 @@ moved, or removed.
 | `Sync/Base94.lua` | `ns.base94`: `encode`, `decode`, `isValid`, the 32-bit `hash`, byte-wise `compare`. Host-testable, no WoW API. |
 | `Sync/VersionId.lua` | `ns.versionId`: `make`, `parse`, `originOf`, `isWellFormed`, `isValid`, `newOrigin`, `newGenerator`, `ZERO`. Host-testable, no WoW API. |
 | `Sync/SyncStore.lua` | `ns.syncStore`: one table of the shared database. `newTable`, `apply` (last writer wins, clock, `fp`, `maxId`), `tableVersion`, `parseTableVersion`, `rebuild`; for transfers `digest`, `parseDigest`, `selectDelta`, `splitBatches`, `applyBatch`, `clockRest`, `mergeClock`, `wants`, `estimateSize`, `versionOfClock`. Host-testable, no WoW API. |
-| `Sync/SyncTables.lua` | `ns.sync`: registry of table definitions (`RegisterTable`), `Initialize` with the stored database, `GetTable`, `GetOrigin`; the API `Put`, `Get`, `Delete`, `Iterate`, `Count`, the callback `OnRecordChanged`, and `dirtySince`; `ApplyRemote` merges received records with their checks. Needs LibStub and CallbackHandler-1.0; no WoW API. |
-| `Sync/SyncCharacter.lua` | `ns.syncCharacter`: the table `character` (class, level, origins), `validate`, `buildPayload`, `alts`, `playerName`, `WriteOwn` (called on `OnGuildStateChanged`); `ns.sync:GetAlts`. Host-loadable. |
+| `Sync/SyncTables.lua` | `ns.sync`: registry of table definitions (`RegisterTable`), `Initialize` with the stored database, `GetTable`, `GetOrigin`; the API `Put`, `Get`, `Delete`, `Iterate`, `Count`, the callback `OnRecordChanged`, and `dirtySince`; the owner rule `MayWrite` and `keyName`; `ApplyRemote` merges received records with their checks. Needs LibStub and CallbackHandler-1.0; no WoW API. |
+| `Sync/SyncCharacter.lua` | `ns.syncCharacter`: the table `character` (class, level, origins), `validate`, `buildPayload`, `alts`, `shareOrigin`, `playerName`, `WriteOwn` (called on `OnGuildStateChanged`); `ns.sync:GetAlts`, `ns.sync:IsAltOf`. Host-loadable. |
 | `Sync/SyncCommands.lua` | `ns.syncCommands`: the table `debug` and `/oooo sync put|get|del|status`; `statusLines` (tables, discovery, peers), `escape`. Host-loadable. |
 | `Sync/SyncProtocol.lua` | `ns.syncProtocol`: `new(serializer)` gives `encode` and `decode` of the messages (`H`, `S`, `Q`, `D`, `B`, `P`) with the checks of every field; `packRecords`, `VERSION`, `CHANNELS`, `NEWER`, the limits, the refusal reasons. Host-testable, no WoW API. |
 | `Sync/SyncComm.lua` | `ns.syncComm`: `new(parts)` gives a transport (`Send`, `Receive` with the sender checks, `SetActive`, `onMessage`, `drops`); `Start()` builds the transport of the game on AceComm-3.0 with the prefix `OOOO` (`ns.syncComm.transport`) and hides the system line of a whisper to an offline name (`offlineNoticeName`). Host-loadable. |
@@ -80,6 +80,7 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `sync_migrate.lua` | Tests of `Database.lua`: migration and origin. |
 | `sync_protocol.lua` | Tests of `Sync/SyncProtocol.lua`, with the stub serializer and with AceSerializer-3.0. |
 | `sync_pull.lua` | Tests of `Sync/SyncPull.lua`, with replicas and hand-made messages on the fake network. |
+| `sync_owner.lua` | Tests of the owner rule: `Put` and `Delete` in `Sync/SyncTables.lua`, and the receiver of a push. |
 | `sync_policy.lua` | Tests of `Sync/SyncPolicy.lua` and of what the session does with the conditions. |
 | `sync_push.lua` | Tests of `Sync/SyncPush.lua`: push timer, conditions, gaps, chained pushes. |
 | `sync_probe.lua` | Tests of `Slash.lua` and of the computing parts of `Sync/SyncProbe.lua`. |

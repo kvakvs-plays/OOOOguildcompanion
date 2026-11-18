@@ -133,7 +133,10 @@ function addon:OnInitialize()
   ns.db = LibStub("AceDB-3.0"):New("OOOOguildcompanionDB", defaults, true)
   -- The layout version and the migration steps are in Database.lua
   if ns.database.migrate(ns.db, math.random) then
-    ns.sync:Initialize(ns.db.global.sync, GetServerTime, math.random)
+    -- SyncCharacter.lua loads after this file, so its function is looked up at the call
+    ns.sync:Initialize(ns.db.global.sync, GetServerTime, math.random, function()
+      return ns.syncCharacter.playerName()
+    end)
   else
     ns.dbIsNewer = true
     self:Print("The saved data is from a newer version of the addon. Update the addon; the shared database is off.")

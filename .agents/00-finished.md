@@ -222,3 +222,14 @@
   did not propagate and the status showed `needs resting`, and it propagated
   when the character entered a rest area. Not seen in the client: the
   periodic summary repairing a lost message, and a push of several messages.
+
+## Stage 7. Write rules
+
+- **7.1 Owner tables**: `ns.sync:MayWrite(definition, key, writer, withAlts)`
+  in `Src/Sync/SyncTables.lua` is the owner rule for `Put`, `Delete` (the
+  logged-in character only; refusal `"not the owner"`), and the receiver of a
+  push with the own flag (the sender or an alt: `ns.sync:IsAltOf`,
+  `character.shareOrigin` in `SyncCharacter.lua`). `sync.keyName` gives the
+  name part of a joined key. `Initialize` takes the name function of the
+  character as fourth parameter. The own flag was already in `P` (step 6.2).
+  `Tests/sync_owner.lua`. Host only by design.

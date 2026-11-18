@@ -166,6 +166,36 @@ function ns.sync:GetAlts(name)
   return tbl and character.alts(tbl, name) or {}
 end
 
+---Tells whether two characters have records in a stored `character` table that share an origin: the
+---writer of the record or an origin in its payload. Unlike `alts` it follows no chain over a third character.
+---@param tbl OOOOSyncTable
+---@param name string Character name
+---@param other string Character name
+---@return boolean
+function character.shareOrigin(tbl, name, other)
+  local first, second = tbl.records[name], tbl.records[other]
+  if not first or first.x or not second or second.x then
+    return false
+  end
+  local origins = originsOf(second)
+  for origin in pairs(originsOf(first)) do
+    if origins[origin] then
+      return true
+    end
+  end
+  return false
+end
+
+---Tells whether the table `character` lists `name` under an origin of the record of `other`. The owner
+---rule of `ns.sync:MayWrite` asks this for the keys of a received push.
+---@param name string Character name
+---@param other string Character name
+---@return boolean
+function ns.sync:IsAltOf(name, other)
+  local tbl = self:GetTable(character.TABLE)
+  return tbl ~= nil and character.shareOrigin(tbl, name, other)
+end
+
 ---Name of the logged-in character as the roster and message senders give it; nil when it is hidden.
 ---`UnitName("player")` returns the first and the last name as two values on Forever.
 ---@return string|nil

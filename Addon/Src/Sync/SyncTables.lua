@@ -27,6 +27,8 @@ local addonName, ns = ...
 ---@field data OOOOSyncData|nil The stored database; nil until `Initialize`
 ---@field timeFn (fun(): integer)|nil Server time in seconds
 ---@field nextId (fun(maxId: string?): string)|nil Id source of this install
+---@field playerNameFn (fun(): string|nil)|nil Gives the name of the logged-in character, for the owner rule
+---@field IsAltOf (fun(self: OOOOSync, name: string, other: string): boolean)|nil Added by SyncCharacter.lua
 ---@field callbacks table CallbackHandler registry; fires "OnRecordChanged"
 ---@field RegisterCallback fun(owner: any, event: string, handler: function|string, ...: any)
 ---@field UnregisterCallback fun(owner: any, event: string)
@@ -158,9 +160,12 @@ end
 ---@param data OOOOSyncData `db.global.sync`
 ---@param timeFn fun(): integer Server time in seconds
 ---@param randomFn fun(m: integer, n: integer): integer Like math.random(m, n)
-function sync:Initialize(data, timeFn, randomFn)
+---@param playerNameFn (fun(): string|nil)? Name of the logged-in character as the roster shows it; without
+---it nothing can be written into a table with `writers = "owner"`
+function sync:Initialize(data, timeFn, randomFn, playerNameFn)
   self.data = data
   self.timeFn = timeFn
+  self.playerNameFn = playerNameFn
   self.nextId = versionId.newGenerator(data.origin, timeFn, randomFn)
   for _, name in ipairs(self.names) do
     prepareStorage(name)
@@ -207,6 +212,37 @@ sync.dirtySince = {}
 ---@return boolean
 local function isKey(key)
   return type(key) == "string" and #key >= 1 and #key <= sync.MAX_KEY_LENGTH
+end
+
+---Returns the character name that a key starts with: the whole key, or the part before the first `:` of a
+---joined key (`"Nota Scam:171"`). A name has a space, so the key is never split on whitespace.
+---@param key string
+---@return string|nil name nil when the key starts with `:`
+function sync.keyName(key)
+  return key:match("^[^:]+")
+end
+
+---The owner rule (plan section 5.2), in one place for `Put`, `Delete`, and the receiver of a push: in a
+---table with `writers = "owner"`, a key may be written only by the character that it names. For a received
+---push the alts of the sender count as well, because a push carries all unsent writes of the player.
+---@param definition OOOOSyncTableDefinition
+---@param key string
+---@param writer string|nil Character name: the logged-in character, or the sender of a push
+---@param withAlts boolean? true: also accept a key of a character that the table `character` lists under
+---an origin of the writer's own record
+---@return boolean
+function sync:MayWrite(definition, key, writer, withAlts)
+  if definition.writers ~= "owner" then
+    return true
+  end
+  local name = sync.keyName(key)
+  if not name or not writer then
+    return false
+  end
+  if name == writer then
+    return true
+  end
+  return withAlts == true and self.IsAltOf ~= nil and self:IsAltOf(name, writer)
 end
 
 ---Tells whether a value can travel in a message and be stored: strings, booleans, finite numbers, and
@@ -283,8 +319,10 @@ end
 ---@param tableName string
 ---@param key string 1 to 64 bytes
 ---@param payload any Strings, booleans, numbers, and tables of these; it must pass the table's `validate`
+---In a table with `writers = "owner"` the key must start with the name of the logged-in character.
 ---@return boolean|nil written true: written; false: equal to the stored payload; nil: refused
----@return string|nil reason Why the write was refused
+---@return string|nil reason Why the write was refused: "unknown table", "not ready", "bad key",
+---"not the owner", or "bad payload"
 function sync:Put(tableName, key, payload)
   local tbl, definition, reason = self:GetTable(tableName)
   if not tbl or not definition then
@@ -292,6 +330,9 @@ function sync:Put(tableName, key, payload)
   end
   if not isKey(key) then
     return nil, "bad key"
+  end
+  if not self:MayWrite(definition, key, self.playerNameFn and self.playerNameFn()) then
+    return nil, "not the owner"
   end
   if payload == nil or not isPlainData(payload) or not definition.validate(key, payload) then
     return nil, "bad payload"
@@ -320,6 +361,9 @@ function sync:Delete(tableName, key)
   end
   if not isKey(key) then
     return nil, "bad key"
+  end
+  if not self:MayWrite(definition, key, self.playerNameFn and self.playerNameFn()) then
+    return nil, "not the owner"
   end
   local record = tbl.records[key]
   if not record or record.x then

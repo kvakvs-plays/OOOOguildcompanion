@@ -4,7 +4,7 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: stages 0 to 6 are finished (`00-finished.md`). The probes of stage 1
+Status: stages 0 to 6 and step 7.1 are finished (`00-finished.md`). The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -288,6 +288,12 @@ Rules for `writers = "owner"`:
 - Check on receive: in a push of local changes, each key must name the sender or
   a character that the `character` table lists under the same origin. A record
   that fails is dropped by the rule in section 8.
+  - A push can carry an unsent write of an alt (written, then logged out
+    before the push). A receiver that does not yet hold the `character`
+    records of both characters drops it; its versions then still differ, and
+    the pull that follows brings the record.
+  - The first `character` record of a name is therefore accepted in a push
+    only from that name itself.
 - Records that arrive through a third member (pull, or the push after a pull)
   cannot be checked this way. This is the accepted risk in section 8.
 
@@ -700,24 +706,8 @@ Finished; see `00-finished.md`.
 
 ### Stage 7. Write rules
 
-- **7.1 Owner tables**
-  - Substeps
-    - `Put` and `Delete` on a table with `writers = "owner"` fail when the key
-      does not start with the name of the logged-in character.
-    - On a push of local changes: each key must name the sender or a character
-      that the `character` table lists under the origin of the sender's own
-      record. A record that fails goes through the drop rule of section 8.
-    - Mark in the `P` message whether it holds local changes or follows a pull,
-      because only the first kind can be checked (5.2).
-  - Checkpoint: on the host, a push with a foreign key is dropped.
-  - Host tests (`Tests/sync_owner.lua`)
-    - A Put for the own character works; one for another name fails without a
-      new id.
-    - A push from A with A's key is applied; with A's alt, applied; with B's
-      key, dropped together with the later records of that origin.
-    - A joined key (`"Name:id"`) is checked by its name part.
-  - Done when: the owner rule is in one function that `Put`, `Delete`, and the
-    receiver share.
+Step 7.1 is finished; see `00-finished.md`.
+
 - **7.2 Remove the officer option**
   - Substeps
     - `SyncTables.lua`: `writers` accepts only `"owner"` and `"anyone"`; remove
