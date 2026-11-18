@@ -621,18 +621,18 @@ Finished; see `00-finished.md`.
     `Options\OptionsWindow.lua`. Open: the client checkpoint below. It is also
     the first run in the client of the push (6.2, 6.3), of the conditions
     (6.1), and of the periodic summary.
-  - To check in the client, with two accounts:
+  - Checked in the client on 2026-11-18, with two accounts:
+    - `/oooo sync put` on one account and `/oooo sync get` on the other: the
+      text arrived. The push works through AceComm on `GUILD`.
+    - In a fight, `/oooo sync status` showed `may send: no, needs nocombat`
+      for both tables: the conditions follow the combat events.
+    - The peer line showed a difference in `debug` only, so `character` was
+      equal on both accounts.
+  - Still to check in the client:
     - `/oooo opt` has a tab "Sync" with one group per table, and no Lua error.
-    - `/oooo sync put <key> <text>` on one account: about 10 seconds later
-      `/oooo sync get <key>` prints the text on the other, and
-      `/oooo sync status` shows equal `debug` versions on both.
-    - After a login both accounts end with equal `character` versions within
-      about two minutes (the push after the pull, or the push of the own
-      record).
     - The checkpoint below: set `debug` to "Only in a city or an inn"; a put
       outside a city stays local (`may send: no, needs resting`), and goes out
       in a city.
-    - In a fight, `/oooo sync status` shows `may send: no, needs nocombat`.
   - An override is stored only where it differs from the table definition.
   - Substeps
     - `Src\Sync\SyncOptions.lua`: an AceConfig page "Sync" with `enabled`,
