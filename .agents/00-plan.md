@@ -793,10 +793,22 @@ The code of both steps is finished; see `00-finished.md`. One check is open:
       `/oooo sync debug on` and the reload work.
     - Each account listed the other as peer 10 to 20 seconds after the
       status showed "waiting to send the hello".
-  - Still open: the hour without an error, a `put` that arrives on the other
-    account after this change, and the records of offline members after the
-    cleanup. The status above was printed before discovery had ended, so the
-    cleanup had not run yet.
+    - `/oooo sync probe roster` on `p:i<`, with "Show offline members" on
+      (`GetGuildRosterShowOffline()` exists and gave `true`), after
+      discovery and with the roster cleanup started:
+      `GetNumGuildMembers()` gave `46, 9` (two values); the indexes 1 to 46
+      gave 46 readable entries, 9 online and 37 offline, and none at index
+      47; the roster cache had 46 members and was complete. Result: `safe`.
+      The two `character` records were both of online members and stayed.
+    - `/oooo sync put a ...` on one account arrived on the other about 10
+      seconds later (the `pushDelay` of the `debug` table).
+  - Still open:
+    - The hour without a Lua error or an "Interface action failed" entry.
+    - The same probe with "Show offline members" off.
+    - A `character` record of an offline member that stays after the
+      cleanup: so far both records were of online members. Log one account
+      out, log the other in, and run the probe after discovery; it must
+      show "1 of offline members".
   - Done when: the result is recorded here and in `00-finished.md`.
 
 ### Stage 9. First real table
