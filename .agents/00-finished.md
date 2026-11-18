@@ -358,11 +358,12 @@
     sender 'nil'; witness".
 - **10, left to daily play** (closed on 2026-11-18 by decision of the user,
   who plays with the addon on and reports what goes wrong):
-  - Whether a guild chat line written inside a dungeon is secret: the
-    count "secret" in the last line of `/oooo sync chat`. In combat it is
-    not: two own lines written in a fight were stored on the sender at
-    once and were on the second account a good minute later (2026-11-18;
-    whether the fight was in an instance was not recorded).
+  - Seen later on 2026-11-18, so no longer open: a guild chat line is not
+    secret in combat (two own lines written in a fight were stored at once
+    and reached the second account) nor inside a dungeon (stored at once).
+    After the dungeon check the push of `guildchat` was shortened from
+    `pushDelay = 300`, `minInterval = 600` to 60 and 60 seconds, by
+    decision of the user: 5 to 10 minutes looked like a lost line.
   - Whether the whisper `A` arrives: about 40 seconds after a `/reload`,
     `/oooo sync status` lists the other account under the peers.
   - Whether a line is written twice: the record count of `guildchat` in

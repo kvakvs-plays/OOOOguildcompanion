@@ -92,8 +92,10 @@ ns.sync:RegisterTable({
   -- A line can be written by a member who is not its sender (the witness, plan section 5.3)
   writers = "anyone",
   maxAge = guildChat.KEEP_DAYS * 86400,
-  -- An online member reads the chat in the game: the lines of 5 minutes go out in one push
-  policy = { when = "nocombat", pushDelay = 300, minInterval = 600 },
+  -- An online member reads the chat in the game, so the table need not follow it closely: the lines of a
+  -- minute go out in one push. A longer wait saved little traffic and made a line that its writer could
+  -- see in `/oooo sync chat` look lost on the other accounts (client check of step 10.2).
+  policy = { when = "nocombat", pushDelay = 60, minInterval = 60 },
 })
 
 --------------------------------------------------------------------------------

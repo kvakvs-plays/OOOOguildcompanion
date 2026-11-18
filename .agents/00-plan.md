@@ -336,13 +336,15 @@ ns.sync:RegisterTable({
   maxRecordBytes = 400,
   writers = "anyone",
   maxAge = KEEP_DAYS * 86400,         -- new field, see below; KEEP_DAYS = 14
-  policy = { when = "nocombat", pushDelay = 300, minInterval = 600 },
+  policy = { when = "nocombat", pushDelay = 60, minInterval = 60 },
 })
 ```
 
 - **Not real time.** An online member reads the chat in the game, so the table
-  does not have to follow the chat closely. A writer collects its lines for 5
-  minutes and sends them in one push, at most once in 10 minutes. The member
+  does not have to follow the chat closely. A writer collects its lines for 1
+  minute and sends them in one push, at most once per minute (first 5 and
+  10 minutes; shortened after the client check, where the wait looked like
+  a lost line). The member
   who logs in pulls what is missing (7.2); that is the path that matters.
   - Known gap: a member who writes a line and logs out before the push keeps
     that line alone. It reaches the others when that member logs in again
