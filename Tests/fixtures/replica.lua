@@ -25,6 +25,7 @@ local FILES = {
   "Addon/Src/Sync/SyncOptions.lua",
   "Addon/Src/Sync/SyncGuildChat.lua",
   "Addon/Src/Chat/Mentions.lua",
+  "Addon/Src/Chat/ChatHistory.lua",
 }
 
 ---@param T TestHarness

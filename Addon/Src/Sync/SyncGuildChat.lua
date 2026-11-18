@@ -334,6 +334,88 @@ function guildChat:Lines(sinceTime)
   return lines
 end
 
+---Returns one page of the stored guild chat for a reader that goes back in time: up to `count` lines older
+---than `beforeId`, in the order of time, with double records joined as in `Lines`. It reads only the end of
+---the sorted keys that it needs, so its cost does not grow with the table.
+---@param beforeId string|nil Id of the oldest line that the reader holds; nil gives the newest lines
+---@param count integer
+---@return OOOOGuildChatLine[] lines New tables, oldest first
+---@return boolean hasOlder true when the table holds lines before the first one of the page
+function guildChat:Page(beforeId, count)
+  local lines = {} ---@type OOOOGuildChatLine[]
+  local tbl = ns.sync:GetTable(guildChat.TABLE)
+  if not tbl then
+    return lines, false
+  end
+  local keys = self:Keys()
+  local window = guildChat.DUPLICATE_WINDOW
+  ---Index of a key -> whether its record repeats an earlier line, or is no line
+  ---@type table<integer, boolean>
+  local repeats = {}
+
+  ---Tells whether the record at an index is not a line of its own: a line with its sender and text is
+  ---shown at most `DUPLICATE_WINDOW` before it. This is the rule of `Lines`, read backwards.
+  ---@param index integer
+  ---@return boolean
+  local function isRepeat(index)
+    local known = repeats[index]
+    if known ~= nil then
+      return known
+    end
+    local payload = lineOf(tbl, keys[index])
+    local result = payload == nil
+    if payload then
+      local time = versionId.parse(keys[index])
+      for other = index - 1, 1, -1 do
+        if time - versionId.parse(keys[other]) > window then
+          break
+        end
+        local earlier = lineOf(tbl, keys[other])
+        if earlier and earlier.s == payload.s and earlier.t == payload.t and not isRepeat(other) then
+          result = true
+          break
+        end
+      end
+    end
+    repeats[index] = result
+    return result
+  end
+
+  local index = beforeId and lowerBound(keys, beforeId) - 1 or #keys
+  while index >= 1 and #lines < count do
+    if not isRepeat(index) then
+      local key = keys[index]
+      local payload = lineOf(tbl, key) --[[@as OOOOGuildChatPayload]]
+      local time = versionId.parse(key) --[[@as integer]]
+      local hasOrigins = ns.sync.IsOriginOf ~= nil
+      local bySender = hasOrigins and ns.sync:IsOriginOf(payload.s, versionId.originOf(key))
+      -- The sender's own record vouches for the line, also when a witness wrote it a moment earlier
+      for later = index + 1, #keys do
+        if bySender or not hasOrigins or versionId.parse(keys[later]) - time > window then
+          break
+        end
+        local other = lineOf(tbl, keys[later])
+        if other and other.s == payload.s and other.t == payload.t then
+          bySender = ns.sync:IsOriginOf(payload.s, versionId.originOf(keys[later]))
+        end
+      end
+      lines[#lines + 1] = { id = key, time = time, sender = payload.s, text = payload.t, bySender = bySender }
+    end
+    index = index - 1
+  end
+  -- Collected newest first
+  for position = 1, math.floor(#lines / 2) do
+    lines[position], lines[#lines + 1 - position] = lines[#lines + 1 - position], lines[position]
+  end
+  -- The earliest record of the table is never a repeat, so any line that is left is an older one
+  local hasOlder = false
+  while index >= 1 and not hasOlder do
+    hasOlder = lineOf(tbl, keys[index]) ~= nil
+    index = index - 1
+  end
+  return lines, hasOlder
+end
+
 ---Builds the lines that `/oooo sync chat` prints: the last lines, oldest first, each with its age. A line
 ---that the sender's own addon did not write is marked.
 ---@param count integer Number of lines

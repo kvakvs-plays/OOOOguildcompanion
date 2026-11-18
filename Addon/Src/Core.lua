@@ -19,6 +19,7 @@ local addonName, ns = ...
 ---@field emoji OOOOEmojiSettings
 ---@field sync OOOOSyncSettings
 ---@field mentions OOOOMentionSettings
+---@field chatHistory OOOOChatHistorySettings
 
 ---@class OOOOGlobalSettings
 ---@field schemaVersion integer|nil Version of the saved variables layout, for migrations
@@ -63,6 +64,8 @@ local addonName, ns = ...
 ---@field syncOptions OOOOSyncOptions
 ---@field guildChat OOOOGuildChat
 ---@field mentions OOOOMentions
+---@field chatHistory OOOOChatHistory
+---@field chatHistoryWindow OOOOChatHistoryWindow
 ---@field dbIsNewer boolean|nil true when the saved variables are from a newer addon version and were left alone
 
 local defaults = {
@@ -81,6 +84,7 @@ local defaults = {
       watch = "",
       notifyOnLogin = true,
     },
+    chatHistory = {},
   },
 }
 

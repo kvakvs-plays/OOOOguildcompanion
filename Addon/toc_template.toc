@@ -44,3 +44,5 @@ Src\Sync\SyncOptions.lua
 Src\Sync\SyncGuildChat.lua
 
 Src\Chat\Mentions.lua
+Src\Chat\ChatHistory.lua
+Src\Chat\ChatHistoryWindow.lua
