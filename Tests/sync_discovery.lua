@@ -114,8 +114,91 @@ do
   T.eq(a:PeerNames(), { "Other One" }, "the replica that heard the hello knows the sender")
   T.eq(a.session:StatusLines()[3]:match("^  Other One: last message %d+ s ago, (.+)$"), "no newer data known",
     "the status shows the peer without a difference")
-  T.eq(b:PeerNames(), {}, "the new replica got no answer, so it knows no peer")
-  T.eq(b.session.discovered, true, "its discovery still ends")
+  T.eq(Replica.count(net, "A", "Nota Scam", since), 1, "the replica that heard the hello whispers that it is here")
+  T.eq(b:PeerNames(), { "Nota Scam" }, "so the new replica knows it, although no table differs")
+  T.eq(b.session.peers["Nota Scam"].versions, {}, "without a version of any table")
+  T.eq(b.session.discovered, true, "its discovery ends")
+  T.eq(b.session.pull, nil, "and it pulls nothing")
+end
+
+-- The whisper "here": one per hello, not again within a moment, held back in combat
+do
+  local net, a = setup({ "Nota Scam" })
+  a:Login()
+  net:Advance(100)
+  local raw = net:Join("Raw One")
+  local heard = 0
+  raw.receive = function(text, distribution)
+    if distribution == "WHISPER" and Replica.codec.decode(text) == "A" then
+      heard = heard + 1
+    end
+  end
+  local hello = Replica.codec.encode("H", {})
+  raw:Send(hello, "GUILD")
+  net:Advance(0.5)
+  T.eq(heard, 0, "the whisper waits a random time, like an answer")
+  net:Advance(10)
+  T.eq(heard, 1, "a hello gets one whisper")
+  T.ok(a.session.whisperedAt["Raw One"], "the time of the whisper is noted")
+  raw:Send(hello, "GUILD")
+  net:Advance(10)
+  T.eq(heard, 1, "a second hello a moment after the whisper gets none")
+  net:Advance(a.ns.syncSession.PRESENCE_INTERVAL)
+  raw:Send(hello, "GUILD")
+  raw:Send(hello, "GUILD")
+  net:Advance(10)
+  T.eq(heard, 2, "a later hello gets one again, and two hellos at once get one between them")
+
+  -- In combat nothing is sent; the whisper goes when the fight is over
+  net:Advance(100)
+  a:SetState({ inCombat = true })
+  raw:Send(hello, "GUILD")
+  net:Advance(100)
+  T.eq(heard, 2, "a replica in combat does not whisper")
+  a:SetState({ inCombat = false })
+  net:Advance(1)
+  T.eq(heard, 3, "it whispers when the fight is over")
+
+  -- A member who went offline before the whisper gets none, and nothing stays owed
+  net:Advance(100)
+  raw:Send(hello, "GUILD")
+  net:Advance(0.5)
+  net:SetOnline("Raw One", false)
+  net:Advance(100)
+  T.eq(next(a.session.presenceOwed), nil, "nothing stays owed to a member who has gone offline")
+
+  -- A whisper "here" from a member makes that member a peer
+  net:SetOnline("Raw One", true)
+  a.session.peers["Raw One"] = nil
+  raw:Send(Replica.codec.encode("A"), "WHISPER", "Nota Scam")
+  net:Advance(1)
+  T.eq(a:PeerNames(), { "Raw One" }, "the sender of a whisper \"here\" is a peer")
+  a.session.peers["Raw One"] = nil
+  raw:Send(Replica.codec.encode("A"), "GUILD")
+  net:Advance(1)
+  T.eq(a:PeerNames(), {}, "the type is dropped on the guild channel")
+end
+
+-- 30 equal replicas are online; one more logs in and knows them all after its discovery
+do
+  local names = {}
+  for index = 1, 30 do
+    names[index] = string.format("Member %02d", index)
+  end
+  local net = Fakenet.new({ random = random })
+  local replicas = {}
+  for index, name in ipairs(names) do
+    replicas[index] = Replica.new(net, name, { random = random })
+    replicas[index]:Login()
+  end
+  net:Advance(100)
+  local since = net:Now()
+  local fresh = Replica.new(net, "Aaa First", { random = random })
+  fresh:Login()
+  net:Advance(100)
+  T.eq(Replica.count(net, "A", nil, since), 30, "every peer whispers once")
+  T.eq(Replica.count(net, "S", nil, since), 0, "and nobody sends a summary")
+  T.eq(#fresh:PeerNames(), 30, "the new replica knows all 30 peers")
 end
 
 -- Two replicas that differ: one summary with the table that differs
@@ -199,7 +282,9 @@ for seed = 1, 3 do
   local summaries = Replica.count(net, "S")
   T.ok(summaries >= 1, "at least one replica answers the new one (seed " .. seed .. ")")
   T.ok(summaries <= 5, "at most 5 of 50 replicas answer, got " .. summaries .. " (seed " .. seed .. ")")
-  T.eq(#new:PeerNames(), summaries, "the new replica knows each peer that answered")
+  T.eq(#new:PeerNames(), 50, "the new replica knows all 50 peers")
+  T.eq(Replica.count(net, "A", nil, net:Now() - 100), 50 - summaries,
+    "a peer that answered with a summary sends no whisper; every other one whispers once")
   T.eq(new.session:DifferingTables(new.session:PeerList()[1]), {}, "and has pulled what the peer holds")
   T.eq(old[1].sync:Count("debug"), 0, "the old replicas hold no record")
   for index = 1, 50 do

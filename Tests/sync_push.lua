@@ -42,7 +42,13 @@ end
 -- 10 Puts within the push delay give one P; a Put on one replica reaches four others without a pull
 do
   local net, a, b, c, d, e = setup({ "Nota Scam", "Other One", "Third One", "Fourth One", "Fifth One" })
-  T.eq(net:Count(), 5, "five equal replicas send five hellos and nothing else")
+  local hellos, whispers = Replica.count(net, "H"), Replica.count(net, "A")
+  T.eq({ hellos, net:Count() - whispers }, { 5, 5 }, "five equal replicas send five hellos and no table data")
+  -- A replica that sends its own hello after it has heard another one whispers nothing: the hello tells
+  T.ok(whispers <= 20, "and at most four whispers \"here\" per hello, got " .. whispers)
+  for _, replica in ipairs({ a, b, c, d, e }) do
+    T.eq(#replica:PeerNames(), 4, replica.name .. " knows the four others")
+  end
   local zero = a.ns.versionId.ZERO
   local origin = a.sync:GetOrigin()
   local start = net:Now()

@@ -314,5 +314,21 @@
   `ns.sync:IsOriginOf`, `character.hasOrigin` in `SyncCharacter.lua`), and
   `/oooo sync chat` marks the others `(witness)`. Found by a host test: a
   replica whose hello got no answer knows no peer and writes the lines of
-  members with the addon too, until it hears their push (plan 5.3, "A peer
-  list with a hole", and step 10.4). Tests in `Tests/sync_guildchat.lua`.
+  members with the addon too, until it hears their push; step 10.4 closes
+  that. Tests in `Tests/sync_guildchat.lua`.
+- **10.4 A peer list without holes** (decision of the user, 2026-11-18;
+  first run in the client comes with the check of 10.3): the message type
+  `A` "here" (WHISPER, no fields) in `SyncProtocol.lua`. In
+  `SyncSession.lua` every peer whispers it to the sender of a hello after 1
+  to 8 s (`OwePresence`, `SendPresence`), unless it whispered that member
+  within `PRESENCE_INTERVAL = 15` s (`whisperedAt`, filled by
+  `Session:Whisper`, through which `Q`, `D`, and `B` go too) or sends a
+  guild message meanwhile (`ToldGuild`; a pending summary is waited for). In
+  combat it waits. The receiver adds the sender as a peer without versions.
+  The interval is below the 20 s between a login and its hello on purpose:
+  a `/reload` empties the peer list, so a longer one would leave the hole.
+  Tests in `sync_discovery.lua` (throttle, combat, 30 peers) and
+  `sync_guildchat.lua`. In `sync_converge.lua` the bound "3 pulls per
+  responder and state" for 10 fixed seeds became "at most 7, and over 3 in
+  at most a quarter of 20 runs": 400 seeds gave the same distribution with
+  and without the whisper, so the old bound held by the choice of seeds.

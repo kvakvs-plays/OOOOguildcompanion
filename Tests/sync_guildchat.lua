@@ -408,16 +408,32 @@ do
   T.eq({ lines[3].text, lines[3].bySender }, { "forged in my name", false }, "a line of a foreign origin is marked")
 end
 
+-- A replica whose tables equal those of the others still learns who has the addon: the whisper "here"
+do
+  local net, replicas = guildOfThree()
+  local fresh = Replica.new(net, "Zzz Last", { random = random })
+  fresh:Login()
+  net:Advance(100)
+  T.eq(#fresh:PeerNames(), 3, "the new replica knows the three others, although no table differs")
+  local all = { replicas[1], replicas[2], replicas[3], fresh }
+  T.eq(say(all, "from outside", "No Addon"), { "Nota Scam" }, "so it does not take itself for the witness")
+  T.eq(say(all, "from inside", "Other One"), { "Other One" }, "nor a member with the addon for one without")
+end
+
 -- Two replicas that do not know each other yet both write; Lines shows one line
 do
   local net = Fakenet.new({ random = random })
+  -- The whisper that tells B about A is lost
+  net.dropIf = function(entry)
+    return codec.decode(entry.text) == "A"
+  end
   local a = Replica.new(net, "Nota Scam", { random = random })
   local b = Replica.new(net, "Other One", { random = random })
   net:SetOnline("Other One", false)
   writeCharacter(a)
   a:Login()
   net:Advance(100)
-  -- B has the same tables as A, so nobody answers its hello and it knows no peer
+  -- B has the same tables as A, so no summary answers its hello, and the whisper is lost: it knows no peer
   for name, tbl in pairs(a.data.tables) do
     local copy = b.data.tables[name]
     for key, record in pairs(tbl.records) do

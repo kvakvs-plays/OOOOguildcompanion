@@ -52,6 +52,9 @@ local addonName, ns = ...
 ---@field heardOwn table<string, string> Table name -> the own version, when a peer has announced it since the
 ---last periodic summary
 ---@field announced table<string, string> Table name -> the version that this replica has told the guild last
+---@field whisperedAt table<string, number> Character name -> server time of the last whisper to that member
+---@field presenceOwed table<string, boolean> Set of members whose hello still gets the whisper "here"
+---@field presenceTimer OOOOSyncTimer|nil Runs until the whispers "here" are sent
 local Session = {}
 Session.__index = Session
 
@@ -71,6 +74,10 @@ session.HELLO_DELAY_MIN, session.HELLO_DELAY_MAX = 20, 40
 ---Seconds between a hello of another member and the answer: a random value in this range. A peer that
 ---hears the same answer from another peer in that time stays silent.
 session.ANSWER_DELAY_MIN, session.ANSWER_DELAY_MAX = 1, 8
+---Seconds after a whisper to a member in which a hello of that member gets no whisper "here". It must stay
+---below `HELLO_DELAY_MIN`: a member sends a hello once per login, and a login or a `/reload` empties its peer
+---list, so a hello that comes later than this is from a replica that has forgotten the earlier whisper.
+session.PRESENCE_INTERVAL = 15
 ---Seconds for which the answers to the own hello are collected, from the moment at which it has left
 session.COLLECT_SECONDS = 10
 ---Seconds after which the collecting starts also when the send queue has not reported the hello as sent
@@ -92,6 +99,8 @@ function session.new(parts)
     lastPushAt = {},
     heardOwn = {},
     announced = {},
+    whisperedAt = {},
+    presenceOwed = {},
   }, Session)
   -- A local write starts the push timer of its table (SyncPush.lua)
   parts.sync.RegisterCallback(self, "OnRecordChanged", function(_event, tableName, _key, _payload, isRemote)
@@ -162,7 +171,77 @@ function Session:Announce(messageType, versions, onProgress)
   for name, version in pairs(versions) do
     self.announced[name] = version
   end
+  self:ToldGuild()
   return true
+end
+
+---Notes that this replica has sent a message to the guild. Every member who waits for a whisper "here" has
+---heard it and knows this replica from it, so the whispers are not needed any more.
+function Session:ToldGuild()
+  if next(self.presenceOwed) ~= nil then
+    self.presenceOwed = {}
+  end
+end
+
+---Whispers a message to one member and notes the time in the last-whispered map.
+---@param messageType string A type that travels on `WHISPER`
+---@param target string Character name
+---@param priority OOOOSyncPriority
+---@param onProgress (fun(sent: integer, total: integer))|nil
+---@param ... any Fields of the type
+---@return boolean queued
+function Session:Whisper(messageType, target, priority, onProgress, ...)
+  if not self.parts.transport:Send(messageType, target, priority, onProgress, ...) then
+    return false
+  end
+  self.whisperedAt[target] = self.parts.now()
+  return true
+end
+
+---Notes that the sender of a hello must learn that this replica has the addon. The summary does not do
+---that: it is sent only for a table that differs, and by one peer of many. So every peer whispers "here",
+---after the random wait of an answer, unless it has whispered that member a moment ago or sends a message
+---to the guild in that time (`ToldGuild`).
+---@param sender string
+function Session:OwePresence(sender)
+  local last = self.whisperedAt[sender]
+  if last and self.parts.now() - last < session.PRESENCE_INTERVAL then
+    return
+  end
+  self.presenceOwed[sender] = true
+  if not self.presenceTimer then
+    self.presenceTimer = self.parts.after(self:RandomDelay(session.ANSWER_DELAY_MIN, session.ANSWER_DELAY_MAX),
+      function()
+        self.presenceTimer = nil
+        self:SendPresence()
+      end)
+  end
+end
+
+---Seconds after which `SendPresence` looks again while a summary of this replica is pending
+local PRESENCE_RECHECK = 1
+
+---Whispers "here" to the members that are owed it. In combat they stay owed, and `OnConditionsChanged`
+---sends them afterwards.
+function Session:SendPresence()
+  if self.presenceTimer or not self:MaySend() then
+    return
+  end
+  if self.answerTimer and next(self.presenceOwed) ~= nil then
+    -- A summary of this replica is about to go to the guild and tells the same. If another peer's summary
+    -- makes it needless, the whispers go after all.
+    self.presenceTimer = self.parts.after(PRESENCE_RECHECK, function()
+      self.presenceTimer = nil
+      self:SendPresence()
+    end)
+    return
+  end
+  local owed = self.presenceOwed
+  self.presenceOwed = {}
+  for name in pairs(owed) do
+    -- A member who has gone offline meanwhile gets nothing: the transport refuses the whisper
+    self:Whisper("A", name, "NORMAL", nil)
+  end
 end
 
 ---Follows the conditions of the game: what was held back while they forbade sending goes on.
@@ -170,6 +249,7 @@ function Session:OnConditionsChanged()
   if self.helloHeld then
     self:SendHello()
   end
+  self:SendPresence()
   self:PumpPulls()
   self:SchedulePushes()
 end
@@ -197,7 +277,9 @@ function Session:Stop()
   cancel(self.helloTimer)
   cancel(self.collectTimer)
   cancel(self.answerTimer)
+  cancel(self.presenceTimer)
   self.helloTimer, self.collectTimer, self.answerTimer, self.answerTables = nil, nil, nil, nil
+  self.presenceTimer, self.presenceOwed, self.whisperedAt = nil, {}, {}
   self.helloSent, self.helloHeld, self.discovered = false, false, false
   self.peers = {}
   self:StopPull()
@@ -318,6 +400,7 @@ session.handlers = handlers
 function handlers.H(self, sender, versions)
   local own = self:LocalVersions()
   self:NoteVersions(sender, versions, true)
+  self:OwePresence(sender)
   local tables = self.answerTables
   for name, version in pairs(own) do
     -- A table that the sender does not list is one that its addon version does not have
@@ -341,6 +424,13 @@ end
 ---@param versions table<string, string>
 function handlers.S(self, sender, versions)
   self:NoteVersions(sender, versions, false)
+end
+
+---Here: the sender has heard the hello of this replica and has the addon. It tells nothing about tables.
+---@param self OOOOSyncSession
+---@param sender string
+function handlers.A(self, sender)
+  self:TouchPeer(sender, {}, false)
 end
 
 ---Takes a checked message from the transport.

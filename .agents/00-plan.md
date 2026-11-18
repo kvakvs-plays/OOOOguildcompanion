@@ -7,7 +7,7 @@ in the background, when the game is quiet.
 Status: stages 0 to 7 are finished, and stage 8 except for the hour-long
 client session, which is postponed to step 10.2 (`00-finished.md`). Stage 9
 is postponed. The code of stage 10 is finished; its client checks (10.2,
-10.3) and the question of step 10.4 are open. The probes of stage 1
+10.3) are open. The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -383,19 +383,15 @@ ns.sync:RegisterTable({
   - A replica is not a witness before its first discovery is complete (7.1
     step 5). Until then it knows no peers and would write every line that it
     hears, also the lines of members who have the addon.
-  - **A peer list with a hole** (found in step 10.3, shown by a host test).
-    "A short time" above is too kind. A replica whose tables equal those of
-    the others, the normal case after a `/reload` or a short absence, gets
-    no answer to its hello (7.1 step 4) and knows no peer after its
-    discovery. It then takes itself for the witness, and takes every sender
-    for a member without the addon: it writes each line that it hears, also
-    the lines that the sender's own addon writes. For each sender this ends
-    when the replica hears a message of that sender, in practice the push of
-    the sender's lines 5 to 10 minutes later. The data stays correct:
-    `Lines` joins the records, and the sender's own record keeps the line
-    marked as written by its sender. The cost is storage and traffic: about
-    the first 10 minutes of chat after each login are stored twice. Step
-    10.4 decides whether to change this.
+  - **A peer list without holes.** The witness rule needs to know who has
+    the addon, and the summaries do not tell: a replica whose tables equal
+    those of the others, the normal case after a `/reload` or a short
+    absence, gets no summary as answer to its hello. Without more it would
+    know no peer, take itself for the witness, and write every line that it
+    hears, also the lines of members with the addon (found in step 10.3).
+    So every peer answers a hello with the whisper `A` "here" (6.1, 7.1
+    step 4). A whisper that is lost still leaves a hole; then a line is
+    written twice until the replica hears another message of that peer.
   - Every other replica gets the line through the push and the pull. It does
     not store what it hears itself.
 - **No gap after login.** A member who logs in can hear a push, write an own
@@ -495,6 +491,7 @@ ns.sync:RegisterTable({
 | `D` delta | WHISPER | table, nonce, batch number, last flag, records, clock rest, wants | Records the requester lacks, ascending. |
 | `P` push | GUILD | table, schema, table version, version before, own flag, base, records, clock rest | New records for everybody. |
 | `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal: busy, unknown table, or other schema. |
+| `A` here | WHISPER | none | Answer to a hello: the sender has the addon. Tells nothing about tables. |
 
 - A record on the wire is `key, id, payload` (or `key, id` with a tombstone
   marker).
@@ -544,6 +541,20 @@ ns.sync:RegisterTable({
    a table from its answer when another peer has already announced the same
    table version in that time. A hundred peers in the same state give one
    answer.
+   - Every peer also whispers `A` "here" to the sender of the hello, after a
+     random 1 to 8 seconds, so that the sender knows all peers and not only
+     the one that sent a summary (5.3). The whisper is left out when
+     - the peer sends a message to the guild in that time (its summary, its
+       own hello, a push): the sender hears that;
+     - the peer has whispered that member within the last 15 seconds
+       (`whisperedAt`, the time of the last whisper of any type per member,
+       and `PRESENCE_INTERVAL`).
+   - The interval must stay below 20 seconds, the shortest time between a
+     login and its hello: a login or a `/reload` empties the peer list of a
+     replica, so a hello always comes from a replica that has forgotten every
+     earlier whisper. A longer interval would bring the hole back.
+   - In combat the whisper waits, like a hello, and goes afterwards.
+   - Cost: one message of about 10 bytes per peer and login.
 5. The new member collects answers for 10 seconds, counted from the moment at
    which its hello has left the send queue (at most 60 seconds after it was
    queued). The roster alone cannot tell who has the addon; the answers can.
@@ -836,23 +847,13 @@ finished and checked on the host; the two client checks need two accounts.
     appears once on both accounts, marked `(witness)` in `/oooo sync chat`.
     Also record how many records `/oooo sync status` counts for `guildchat`
     after a `/reload` of one account and some lines of the other: more
-    records than lines is the double writing of 5.3 ("A peer list with a
-    hole").
+    records than lines means that the whisper `A` of step 10.4 did not
+    arrive (5.3). `/oooo sync status` on the reloaded account must list the
+    other one as a peer about 40 seconds after the reload.
   - Done when: the client checkpoint is recorded.
-- **10.4 Decide: a peer list without holes** (open question, found in step
-  10.3; no code yet)
-  - The witness rule needs to know who has the addon, and discovery does not
-    tell: a replica whose tables equal those of the others gets no answer to
-    its hello (7.1 step 4) and knows no peer. See 5.3, "A peer list with a
-    hole", for what that costs.
-  - Options: (a) accept the double records, which `Lines` joins; (b) every
-    peer answers a hello with a short whisper to its sender, also when no
-    table differs: one small message per peer and login, and a new message
-    type; (c) a replica is no witness for the first 15 minutes after its
-    discovery, and the others do not count it as one for that time: no new
-    message, but the lines of members without the addon are lost while the
-    only replica online is that new.
-  - Done when: the user has chosen, and the choice is in 5.3.
+- **10.4 A peer list without holes**: finished; see `00-finished.md`. The
+  whisper `A` travels in the client for the first time with the check of
+  step 10.3.
 
 ### Stage 11. Chat history and mentions
 

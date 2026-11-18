@@ -72,7 +72,7 @@ end
 ---@param reason string A `protocol.REASON_*` value
 ---@param retry number Seconds after which the requester may ask again
 function Session:Refuse(sender, request, reason, retry)
-  self.parts.transport:Send("B", sender, "BULK", nil, request.table, request.nonce, reason, retry)
+  self:Whisper("B", sender, "BULK", nil, request.table, request.nonce, reason, retry)
 end
 
 ---Pull request: the sender asks for the records of one table that its clock does not cover.
@@ -150,7 +150,7 @@ function Session:SendBatch(serving)
   local isLast = index == #serving.batches
   serving.sent = index
   serving.activeAt = self.parts.now()
-  local queued = self.parts.transport:Send("D", serving.peer, "BULK", function(sent, total)
+  local queued = self:Whisper("D", serving.peer, "BULK", function(sent, total)
     if sent < total or self.serving ~= serving or serving.left >= index then
       return
     end
@@ -307,7 +307,7 @@ function Session:StartPull(tableName, source)
   -- A table that was away for longer than tombstones live starts again from nothing (SyncCleanup.lua)
   self:ResetIfStale(tableName)
   local nonce =math.floor(self.parts.random() * (protocol.MAX_NONCE - 1)) + 1
-  if not self.parts.transport:Send("Q", source.name, "BULK", nil, tableName, definition.schema, nonce,
+  if not self:Whisper("Q", source.name, "BULK", nil, tableName, definition.schema, nonce,
     store.digest(tbl)) then
     self:DeferPeer(source.name, tableName, pull.RETRY_AFTER_TIMEOUT)
     return false

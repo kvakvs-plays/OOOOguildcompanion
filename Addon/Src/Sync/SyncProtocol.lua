@@ -61,6 +61,7 @@ protocol.CHANNELS = {
   D = "WHISPER", -- delta: one batch of the answer to a pull request
   B = "WHISPER", -- busy: the peer refuses a pull request
   P = "GUILD", -- push: new records for everybody
+  A = "WHISPER", -- here: tells the sender of a hello that this member has the addon; no fields
 }
 
 ---@class OOOOSyncPullRequest Checked fields of a `Q`
@@ -230,6 +231,12 @@ local checks = {
   H = checkVersions,
   S = checkVersions,
 }
+
+---Here: no fields. The message itself is the news: its sender is a peer.
+---@return table fields Empty
+function checks.A()
+  return {}
+end
 
 ---Pull request: table, schema, nonce, digest. The digest is the clock as one string of ids.
 ---@return OOOOSyncPullRequest|nil

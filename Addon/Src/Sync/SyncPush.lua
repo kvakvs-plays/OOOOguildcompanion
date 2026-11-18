@@ -107,6 +107,7 @@ function Session:SendPush(tableName, records, base, tops, isOwn)
       return false
     end
     self.announced[tableName] = version
+    self:ToldGuild()
   end
   return true
 end
