@@ -843,6 +843,11 @@ finished and checked on the host; the two client checks need two accounts.
       stays 0.
     - Whether guild chat is secret in combat or in a dungeon: "secret"
       counts the lines that were not recorded for that reason.
+  - First result (2026-11-18, one account, screenshot of `/oooo sync chat`):
+    the event is valid and the sender is the roster name, see step 10.3.
+    Still to see: an own line stored without the mark `(witness)`, the three
+    lines on account B after its pull, a line with a link, the count
+    "secret" after a line in combat and one in a dungeon, and the hour.
   - Done when: the client checkpoint and the hour of step 8.2 are recorded.
 - **10.3 Witness for members without the addon** (**CLIENT**, two accounts and
   a member without the addon). The code and the host tests are finished; see
@@ -854,6 +859,15 @@ finished and checked on the host; the two client checks need two accounts.
     records than lines means that the whisper `A` of step 10.4 did not
     arrive (5.3). `/oooo sync status` on the reloaded account must list the
     other one as a peer about 40 seconds after the reload.
+  - First result (2026-11-18, one account, screenshot of `/oooo sync chat`):
+    "5 lines stored", all five marked `(witness)`: four of `Nixia Ameldus`
+    and one of `Æz Clap`, 40 and 41 minutes old, in order, each once. So
+    `CHAT_MSG_GUILD` is valid, its sender is the roster name, and the lines
+    of members without the addon are written by a witness and marked.
+    Still to see: the same five lines, once each, on the second account;
+    the record count of `guildchat` in `/oooo sync status` (5 when no line
+    was written twice); the peer in the status after a `/reload`. The
+    screenshot did not show the line "capture: ...".
   - Done when: the client checkpoint is recorded.
 - **10.4 A peer list without holes**: finished; see `00-finished.md`. The
   whisper `A` travels in the client for the first time with the check of

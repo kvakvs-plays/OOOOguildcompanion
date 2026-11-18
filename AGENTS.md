@@ -199,6 +199,11 @@ may be fixed there. Test a claim on the release client before relying on it.
     the global `Ambiguate` on every addon message, so that global exists.
     `WHISPER` through AceComm works too: a pull between two accounts
     completed. Multipart messages (over 255 bytes) are not yet checked.
+  - `CHAT_MSG_GUILD` is a valid event (November 18, 2026). Its second
+    argument, the sender, is the roster name with the first and the last
+    name and no realm suffix (`Nixia Ameldus`, also with a UTF-8 letter:
+    `Æz Clap`). The text and the sender of five lines were not secret; where
+    the listener was (combat, instance) was not recorded.
   - Not yet checked: addon messages in a raid group and in a raid instance
     (the raids unlock on December 9, 2026), and during a boss encounter.
 - If you are not sure that an API exists on Forever, say so and write a
