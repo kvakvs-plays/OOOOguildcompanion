@@ -804,7 +804,14 @@ The code of both steps is finished; see `00-finished.md`. One check is open:
       seconds later (the `pushDelay` of the `debug` table).
   - Still open:
     - The hour without a Lua error or an "Interface action failed" entry.
-    - The same probe with "Show offline members" off.
+    - The roster read with `GetGuildRosterShowOffline()` false. The probe
+      was run again with "Show offline members" unticked in the guild
+      window and gave the same lines, also `GetGuildRosterShowOffline():
+      true`: the box of the guild window does not change that flag, and
+      the roster read is the same with it ticked or not (46 entries, 37
+      offline, `safe`). So the box cannot harm the cleanup. Not yet seen:
+      the read after `/run SetGuildRosterShowOffline(false)`, which another
+      addon could call.
     - A `character` record of an offline member that stays after the
       cleanup: so far both records were of online members. Log one account
       out, log the other in, and run the probe after discovery; it must
