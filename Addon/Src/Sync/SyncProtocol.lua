@@ -86,7 +86,8 @@ protocol.CHANNELS = {
 ---@class OOOOSyncPush Checked fields of a `P`
 ---@field table string
 ---@field schema integer Payload layout version of the table on the sender's side
----@field version string Table version of the sender when it sent the push
+---@field version string Table version of the sender with the records of this push
+---@field was string Table version of the sender without them: what a receiver must hold to end equal
 ---@field own boolean true: the sender's own new writes; false: records passed on after a pull
 ---@field base table<string, string> Origin -> the id before the first pushed record of that origin; the zero
 ---id when the sender pushed nothing of that origin before
@@ -285,17 +286,24 @@ function checks.D(tableName, nonce, batch, last, packed, rest, wants)
     wants = checkedWants }
 end
 
----Push: table, schema, table version, own flag, base, records, clock rest.
+---Tells whether a value has the form of a table version.
+---@param version any
+---@return boolean
+local function isTableVersion(version)
+  return type(version) == "string" and #version == protocol.TABLE_VERSION_LENGTH and base94.isValid(version)
+end
+
+---Push: table, schema, table version, version before, own flag, base, records, clock rest.
 ---@return OOOOSyncPush|nil
 ---@return string|nil reason
-function checks.P(tableName, schema, version, own, base, packed, rest)
+function checks.P(tableName, schema, version, was, own, base, packed, rest)
   if not isTableName(tableName) then
     return nil, "bad table name"
   end
   if not isInteger(schema, 1, protocol.MAX_SCHEMA) then
     return nil, "bad schema"
   end
-  if type(version) ~= "string" or #version ~= protocol.TABLE_VERSION_LENGTH or not base94.isValid(version) then
+  if not isTableVersion(version) or not isTableVersion(was) then
     return nil, "bad table version"
   end
   if type(own) ~= "boolean" then
@@ -319,8 +327,8 @@ function checks.P(tableName, schema, version, own, base, packed, rest)
   if not checkedRest then
     return nil, "bad clock rest"
   end
-  return { table = tableName, schema = schema, version = version, own = own, base = checkedBase, records = records,
-    rest = checkedRest }
+  return { table = tableName, schema = schema, version = version, was = was, own = own, base = checkedBase,
+    records = records, rest = checkedRest }
 end
 
 ---Busy: table, nonce, reason, retry seconds.

@@ -114,6 +114,10 @@ return function(T)
       local function nothing() end
       self.session.SchedulePush, self.session.MarkUnpushed, self.session.ScheduleDelayedPull = nothing, nothing,
         nothing
+      self.session.ScheduleSummary = nothing
+      self.session.PushWanted = function()
+        return false
+      end
     end
     return self
   end

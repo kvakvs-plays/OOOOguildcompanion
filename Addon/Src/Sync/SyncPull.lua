@@ -88,6 +88,13 @@ function handlers.Q(self, sender, request)
   if definition.schema ~= request.schema then
     return self:Refuse(sender, request, protocol.REASON_SCHEMA, pull.RETRY_REFUSED)
   end
+  -- The version of this table has changed since the guild heard it last, through records that others
+  -- sent. The peers still list the old one, and this request may be the first of many that it causes:
+  -- one summary lets the others see that they need not ask.
+  local version = store.tableVersion(tbl)
+  if self.announced[request.table] ~= version and self:MaySend() then
+    self:Announce("S", { [request.table] = version })
+  end
   local serving = self.serving
   -- A new request of the same peer replaces its old one, and a pull without a step for a long time is dead:
   -- the progress callback of its last batch never came
@@ -251,6 +258,24 @@ function Session:PumpPulls()
       self:PumpPulls()
     end)
   end
+  -- No pull is left to run: the pushes that waited for one go on (SyncPush.lua)
+  self:SchedulePushes()
+end
+
+---Tells whether a pull of a table runs or will start as soon as the running one has ended.
+---@param tableName string
+---@return boolean
+function Session:IsPullPending(tableName)
+  local active = self.pull
+  if active and active.table == tableName then
+    return true
+  end
+  local tbl = self.parts.sync:GetTable(tableName)
+  if not tbl or not self.discovered or not self:IsRosterReady() or not self:MayTransfer(tableName) then
+    return false
+  end
+  return pull.chooseSource(self:PeerList(), tableName, store.tableVersion(tbl), self.merged[tableName],
+    self.parts.now()) ~= nil
 end
 
 ---Makes a peer wait before it is asked again for a table.
@@ -379,6 +404,7 @@ function Session:FinishPull(active, delta)
       isComplete = false
     end
   end
+  local hasPushed = false
   if isComplete then
     store.mergeClock(tbl, delta.rest)
     tbl.syncedAt = now
@@ -390,13 +416,16 @@ function Session:FinishPull(active, delta)
       peer.versions[active.table] = version
     end
     self:ClosePull(nil)
+    -- What the responder lacks goes to the whole guild (SyncPush.lua)
+    hasPushed = self:PushWanted(active.table, delta.wants)
   else
     -- The peer would send the same bad record again
     self:ClosePull(pull.RETRY_AFTER_DROP)
   end
   local version = store.tableVersion(tbl)
-  if version ~= active.startVersion then
-    self.parts.transport:Send("S", nil, "NORMAL", nil, { [active.table] = version })
+  -- A push carries the new version already
+  if version ~= active.startVersion and not hasPushed then
+    self:Announce("S", { [active.table] = version })
   end
   self:PumpPulls()
 end

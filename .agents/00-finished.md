@@ -193,3 +193,17 @@
   merged, so a peer with an out-of-date entry is not asked.
   `Tests/sync_push.lua`; the older session tests run with
   `Replica.withoutPush`. Host only by design.
+- **6.3 Push after a pull, and the delayed pull**: `PushWanted` in
+  `SyncPush.lua` sends, after a complete pull, the records of the origins in
+  `wants` with the responder's clock values as base; the summary after the
+  pull is then left out. The delayed pull came with 6.2. Beyond the plan, all
+  found by the convergence test: the periodic summary every 600 to 900 s
+  (`SendSummary`, suppressed by `heardOwn`), which repairs a lost message
+  when no push follows; the field `was` in `P` (version before the push); a
+  responder announces a version that the guild has not heard when a `Q`
+  arrives (`Session:Announce`, `announced`); a local push waits for a pull of
+  its table (`IsPullPending`). `Tests/sync_converge.lua`: A returns and 20
+  replicas get its records from one `P` without a `Q`; 10 replicas with 5%
+  loss and offline periods end equal with 20 seeds; without offline periods
+  no responder gets more than 3 pulls in one state (the plan's "for one
+  change", measured per responder and table version). Host only by design.

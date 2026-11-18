@@ -345,33 +345,36 @@ for label, serializer in pairs(serializers) do
   end
   local records = { { key = "one", id = ID_A, payload = "text" }, { key = "gone", id = ID_C, tombstone = true } }
   ---The fields of a valid push, in the order of the wire
-  local valid = { "debug", 1, VERSION_A, true, { ["aB3$"] = ZERO, ["cD4~"] = ID_B }, protocol.packRecords(records),
-    { ["cD4~"] = ID_B } }
+  local valid = { "debug", 1, VERSION_A, VERSION_B, true, { ["aB3$"] = ZERO, ["cD4~"] = ID_B },
+    protocol.packRecords(records), { ["cD4~"] = ID_B } }
   T.eq({ codec.decode(codec.encode("P", table.unpack(valid))) }, { "P", {
-    table = "debug", schema = 1, version = VERSION_A, own = true, base = { ["aB3$"] = ZERO, ["cD4~"] = ID_B },
-    records = records, rest = { ["cD4~"] = ID_B },
+    table = "debug", schema = 1, version = VERSION_A, was = VERSION_B, own = true,
+    base = { ["aB3$"] = ZERO, ["cD4~"] = ID_B }, records = records, rest = { ["cD4~"] = ID_B },
   } }, name("a push comes back"))
-  T.eq({ codec.decode(codec.encode("P", "debug", 1, VERSION_A, false, {}, {})) }, { "P", {
-    table = "debug", schema = 1, version = VERSION_A, own = false, base = {}, records = {}, rest = {},
+  T.eq({ codec.decode(codec.encode("P", "debug", 1, VERSION_A, VERSION_A, false, {}, {})) }, { "P", {
+    table = "debug", schema = 1, version = VERSION_A, was = VERSION_A, own = false, base = {}, records = {},
+    rest = {},
   } }, name("a push without records and without a clock rest is valid"))
   for _, case in ipairs({
     { 1, "De bug", "a bad table name" },
     { 2, 0, "schema 0" },
     { 3, VERSION_A:sub(1, 15), "a version of 15 characters" },
     { 3, 5, "a version that is a number" },
-    { 4, 1, "an own flag that is a number" },
-    { 4, REMOVE, "a message cut before the own flag" },
-    { 5, REMOVE, "a message cut before the base" },
-    { 5, "base", "a base that is a string" },
-    { 5, { ["aB3"] = ZERO }, "a base with an origin of 3 characters" },
-    { 5, { ["aB3$"] = "short" }, "a base with a short id" },
-    { 5, { ["aB3$"] = ID_B }, "a base with an id of another origin" },
-    { 6, REMOVE, "a message cut before the records" },
-    { 6, { { "key", ID_A } }, "a record without a payload" },
-    { 6, { { "", ID_A, 1 } }, "an empty key" },
-    { 7, { ["aB3$"] = ID_B }, "a clock rest with an id of another origin" },
-    { 7, { ["aB3$"] = ZERO }, "a clock rest with the zero id" },
-    { 7, 5, "a clock rest that is a number" },
+    { 4, VERSION_A .. "!", "a version before of 17 characters" },
+    { 4, true, "a missing version before" },
+    { 5, 1, "an own flag that is a number" },
+    { 5, REMOVE, "a message cut before the own flag" },
+    { 6, REMOVE, "a message cut before the base" },
+    { 6, "base", "a base that is a string" },
+    { 6, { ["aB3"] = ZERO }, "a base with an origin of 3 characters" },
+    { 6, { ["aB3$"] = "short" }, "a base with a short id" },
+    { 6, { ["aB3$"] = ID_B }, "a base with an id of another origin" },
+    { 7, REMOVE, "a message cut before the records" },
+    { 7, { { "key", ID_A } }, "a record without a payload" },
+    { 7, { { "", ID_A, 1 } }, "an empty key" },
+    { 8, { ["aB3$"] = ID_B }, "a clock rest with an id of another origin" },
+    { 8, { ["aB3$"] = ZERO }, "a clock rest with the zero id" },
+    { 8, 5, "a clock rest that is a number" },
   }) do
     local fields, count = with(valid, case[1], case[2])
     local succeeded, decodedType, reason = pcall(codec.decode,

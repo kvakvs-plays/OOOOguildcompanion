@@ -67,7 +67,7 @@ do
     T.eq(replica:Version("debug"), a:Version("debug"), replica.name .. " has the records")
     T.eq(replica.sync:Get("debug", "key10"), "text 10", replica.name .. " has the payload")
   end
-  net:Advance(600)
+  net:Advance(300)
   T.eq(Replica.count(net, "Q"), 0, "no pull was needed")
   T.eq(Replica.count(net, "S"), 0, "and no summary")
 
@@ -102,6 +102,28 @@ do
   a.sync:Put("debug", "key1", "changed")
   net:Advance(60)
   T.eq(#pushes(net), 4, "a Put of the stored payload sends nothing")
+end
+
+-- Two replicas push at the same moment: everybody ends equal, and nobody pulls
+do
+  local net, a, b, c = setup({ "Nota Scam", "Other One", "Third One" })
+  a.sync:Put("debug", "from a", "text")
+  b.sync:Put("debug", "from b", "text")
+  net:Advance(15)
+  local sent = pushes(net)
+  T.eq(#sent, 2, "both push")
+  T.eq(sent[1].was, sent[2].was, "both name the same version before their push")
+  T.ok(sent[1].version ~= sent[2].version, "and each its own version after it")
+  for _, replica in ipairs({ a, b }) do
+    T.eq(replica:Version("debug"), c:Version("debug"), replica.name .. " ends equal to the third replica")
+  end
+  T.ok(c:Version("debug") ~= sent[1].version and c:Version("debug") ~= sent[2].version,
+    "the common version is neither of the two that were announced")
+  for _, message in ipairs(sent) do
+    T.eq(c.session.merged.debug[message.version], true, "the third replica knows that it holds an announced version")
+  end
+  net:Advance(300)
+  T.eq(Replica.count(net, "Q"), 0, "nobody pulls from a peer whose announced version is only out of date")
 end
 
 -- A push while in combat is held and goes out after the state changes
@@ -188,8 +210,8 @@ do
   local y1 = versionId.make(now - 20, "YYYY", 0)
   local other = versionId.make(now - 5, "RRRR", 0) .. "!!!!!"
   local function send(schema, base, records, rest, tableName)
-    raw:Send(codec.encode("P", tableName or "debug", schema, other, true, base, Replica.protocol.packRecords(records),
-      rest), "GUILD")
+    raw:Send(codec.encode("P", tableName or "debug", schema, other, other, true, base,
+      Replica.protocol.packRecords(records), rest), "GUILD")
     net:Advance(1)
   end
 

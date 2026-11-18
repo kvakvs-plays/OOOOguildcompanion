@@ -212,9 +212,9 @@ do
   net:Advance(100)
   local got = {}
   local raw = net:Join("Other One")
-  raw.receive = function(text, _, sender)
+  raw.receive = function(text, distribution)
     local messageType, fields = codec.decode(text)
-    if sender ~= "Other One" then
+    if distribution == "WHISPER" then
       got[#got + 1] = { messageType, fields.reason or (fields.records and #fields.records), fields.retry }
     end
   end

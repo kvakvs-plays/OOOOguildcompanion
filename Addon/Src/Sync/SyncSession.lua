@@ -48,6 +48,10 @@ local addonName, ns = ...
 ---@field pushTimers table<string, OOOOSyncTimer> Table name -> timer that runs until the table is pushed
 ---@field lastPushAt table<string, number> Table name -> server time of the last push of local changes
 ---@field delayedPullTimer OOOOSyncTimer|nil Runs until the pull that a differing version has asked for
+---@field summaryTimer OOOOSyncTimer|nil Runs until the next periodic summary
+---@field heardOwn table<string, string> Table name -> the own version, when a peer has announced it since the
+---last periodic summary
+---@field announced table<string, string> Table name -> the version that this replica has told the guild last
 local Session = {}
 Session.__index = Session
 
@@ -86,6 +90,8 @@ function session.new(parts)
     merged = {},
     pushTimers = {},
     lastPushAt = {},
+    heardOwn = {},
+    announced = {},
   }, Session)
   -- A local write starts the push timer of its table (SyncPush.lua)
   parts.sync.RegisterCallback(self, "OnRecordChanged", function(_event, tableName, _key, _payload, isRemote)
@@ -143,6 +149,22 @@ function Session:LocalVersions()
   return versions
 end
 
+---Sends table versions to the guild in a message of the given type, hello or summary, and remembers
+---them as announced.
+---@param messageType "H"|"S"
+---@param versions table<string, string>
+---@param onProgress (fun(sent: integer, total: integer))|nil
+---@return boolean queued
+function Session:Announce(messageType, versions, onProgress)
+  if not self.parts.transport:Send(messageType, nil, "NORMAL", onProgress, versions) then
+    return false
+  end
+  for name, version in pairs(versions) do
+    self.announced[name] = version
+  end
+  return true
+end
+
 ---Follows the conditions of the game: what was held back while they forbade sending goes on.
 function Session:OnConditionsChanged()
   if self.helloHeld then
@@ -198,12 +220,12 @@ function Session:SendHello()
   -- queue can hold it back for some seconds. The first timer covers a queue that never reports.
   local timer = self.parts.after(session.HELLO_SEND_LIMIT + session.COLLECT_SECONDS, done)
   self.collectTimer = timer
-  local queued = self.parts.transport:Send("H", nil, "NORMAL", function(sent, total)
+  local queued = self:Announce("H", self:LocalVersions(), function(sent, total)
     if sent >= total and self.collectTimer == timer then
       timer:Cancel()
       self.collectTimer = self.parts.after(session.COLLECT_SECONDS, done)
     end
-  end, self:LocalVersions())
+  end)
   if not queued then
     timer:Cancel()
     self.collectTimer = nil
@@ -217,6 +239,7 @@ function Session:OnDiscoveryDone()
   self.discovered = true
   self:PumpPulls()
   self:MarkUnpushed()
+  self:ScheduleSummary()
 end
 
 ---Adds the sender to the peer list, or renews its entry.
@@ -274,7 +297,7 @@ function Session:SendAnswer()
     answer[name] = own[name]
   end
   if next(answer) ~= nil then
-    self.parts.transport:Send("S", nil, "NORMAL", nil, answer)
+    self:Announce("S", answer)
   end
 end
 

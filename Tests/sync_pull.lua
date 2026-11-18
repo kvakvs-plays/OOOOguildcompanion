@@ -15,10 +15,10 @@ local codec = Replica.codec
 ---@return table member { endpoint, got = { { type, fields, sender } }, Send(type, target, ...) }
 local function joinRaw(net, name)
   local member = { endpoint = net:Join(name), got = {} }
-  member.endpoint.receive = function(text, _, sender)
+  member.endpoint.receive = function(text, distribution, sender)
     local messageType, fields = codec.decode(text)
-    -- A guild message also comes back to its sender
-    if sender ~= name then
+    -- Only the answers to its own requests: the whispers
+    if distribution == "WHISPER" then
       member.got[#member.got + 1] = { type = messageType, fields = fields, sender = sender }
     end
   end
@@ -113,8 +113,9 @@ do
   T.eq(batches[#batches].wants, {}, "no wants when the requester has nothing")
   T.eq(a.session.serving, nil, "the responder is free after the last batch")
   T.eq(net:Count(function(entry)
-    return entry.from == "Nota Scam" and entry.distribution ~= "WHISPER"
-  end), 1, "the batches travel as whispers; only the hello went to the guild")
+    return codec.decode(entry.text) == "D" and entry.distribution ~= "WHISPER"
+  end), 0, "the batches travel as whispers")
+  T.eq(Replica.count(net, "S", "Nota Scam"), 1, "the responder tells the guild the version that its writes have made")
 end
 
 -- The digest limits the delta; an empty delta is one last batch; wants and clock rest

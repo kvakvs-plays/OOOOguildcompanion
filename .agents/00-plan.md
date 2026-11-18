@@ -330,7 +330,7 @@ Rules for `writers = "owner"`:
 | `S` summary | GUILD | `{ table -> tableVersion }` | Answer to hello, and notice after a merge. |
 | `Q` pull request | WHISPER | table, schema, nonce, digest | Digest is the clock as one string of 11-char ids. |
 | `D` delta | WHISPER | table, nonce, batch number, last flag, records, clock rest, wants | Records the requester lacks, ascending. |
-| `P` push | GUILD | table, schema, table version, own flag, base, records, clock rest | New records for everybody. |
+| `P` push | GUILD | table, schema, table version, version before, own flag, base, records, clock rest | New records for everybody. |
 | `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal: busy, unknown table, or other schema. |
 
 - A record on the wire is `key, id, payload` (or `key, id` with a tombstone
@@ -356,6 +356,11 @@ Rules for `writers = "owner"`:
   records that it passes on after a pull (needed by step 7.1).
 - The `table version` in a push is the sender's. A receiver whose version
   still differs after it has applied the push schedules a pull (7.3).
+- The `version before` in a push is the sender's table version without the
+  pushed records. A receiver that holds it, now or earlier in the session,
+  and takes the whole push then holds the sender's version, and does not ask
+  the sender when a second push of another member has made its own version a
+  third one.
 - A table with a different `schema` on the two sides is not synchronized.
   Unknown table names are ignored.
 
@@ -416,11 +421,31 @@ Two sources of a push, one message type:
   with the responder's clock values as base. All peers in the same state as the
   responder can apply them at once.
 
-A peer that hears `S` or `P` with a table version that differs from its own, and
-that could not apply the push, schedules a pull after a random 30 to 120 seconds
-and checks again before it sends: in most cases a push has closed the difference
-by then. This delay is what prevents many peers from pulling from one member at
-the same moment.
+A peer that hears `H`, `S`, or `P` with a table version that differs from its
+own, and that could not apply the push, schedules a pull after a random 30 to
+120 seconds and checks again before it sends: in most cases a push has closed
+the difference by then. This delay is what prevents many peers from pulling
+from one member at the same moment.
+
+Three rules keep the peer list from causing pulls that transfer nothing:
+
+- Every table version that a replica has had itself counts as merged. A peer
+  whose last announced version is one of them is only out of date.
+- A push names the version before it (6.1), so a receiver knows that it holds
+  the announced version also after other pushes.
+- A responder whose table version has changed since it last told the guild
+  sends `S` when a pull request arrives. The request shows that a peer acts
+  on the old version; the summary stops the others before they ask too.
+
+**Periodic summary.** Every 600 to 900 seconds a replica sends `S` with the
+versions of the tables whose version no peer has announced since its last
+periodic summary. Replicas in one state send one summary between them, more
+or less. This is what repairs a lost message when no later push follows: a
+replica in another state hears the summary and pulls. It also lets a replica
+whose only known source went offline during a pull find another source.
+
+A push of local changes waits while a pull of the same table runs or is about
+to start: the push after that pull carries the same records.
 
 ### 7.4 Conditions and policy
 
@@ -585,31 +610,11 @@ Finished; see `00-finished.md`.
 
 ### Stage 5. Pull
 
-Finished; see `00-finished.md`. One gap is left for step 6.3: a replica
-learns of a peer only from a hello or a summary. When its only known source
-goes offline during a pull, it keeps the part that it has until another peer
-announces a version.
+Finished; see `00-finished.md`.
 
 ### Stage 6. Push and policy
 
-- 6.1 and 6.2 are finished; see `00-finished.md`.
-- **6.3 Push after a pull, and the delayed pull**
-  - Substeps
-    - After the last `D`, push the records named by `wants`, with the
-      responder's clock values as base.
-    - On `S` or `P` with a version that differs and could not be applied:
-      schedule a pull after a random 30 to 120 seconds, and compare again before
-      sending `Q`.
-  - Checkpoint: the fake network converges from any start state.
-  - Host tests (`Tests/sync_converge.lua`, fake network)
-    - A returns after a time offline with its own new records and pulls from B:
-      the 20 other replicas in B's state get A's records from one `P` and send
-      no `Q`.
-    - 10 replicas, random Puts, random offline periods, 5% message loss, 20
-      seeds: after the writes stop and the timers run out, all table versions
-      are equal.
-    - In the test above, no responder gets more than 3 pulls for one change.
-  - Done when: the convergence test passes with all seeds.
+- 6.1, 6.2, and 6.3 are finished; see `00-finished.md`.
 - **6.4 Options page** (**CLIENT**)
   - Substeps
     - `Src\Sync\SyncOptions.lua`: an AceConfig page "Sync" with `enabled`,
