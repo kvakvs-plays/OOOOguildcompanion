@@ -10,10 +10,15 @@ local addonName, ns = ...
 ---@class OOOOSyncSettings
 ---@field tables table<string, OOOOSyncPolicyOverride> Table name -> what the user changed of its send policy
 
+---@class OOOOMentionSettings
+---@field watch string Nicknames and keywords that the user watches, separated by commas, as typed
+---@field notifyOnLogin boolean true: a notice after login when an unread mention waits
+
 ---@class OOOOProfile
 ---@field general OOOOGeneralSettings
 ---@field emoji OOOOEmojiSettings
 ---@field sync OOOOSyncSettings
+---@field mentions OOOOMentionSettings
 
 ---@class OOOOGlobalSettings
 ---@field schemaVersion integer|nil Version of the saved variables layout, for migrations
@@ -56,6 +61,7 @@ local addonName, ns = ...
 ---@field syncPush OOOOSyncPushModule
 ---@field syncOptions OOOOSyncOptions
 ---@field guildChat OOOOGuildChat
+---@field mentions OOOOMentions
 ---@field dbIsNewer boolean|nil true when the saved variables are from a newer addon version and were left alone
 
 local defaults = {
@@ -69,6 +75,10 @@ local defaults = {
     },
     sync = {
       tables = {},
+    },
+    mentions = {
+      watch = "",
+      notifyOnLogin = true,
     },
   },
 }

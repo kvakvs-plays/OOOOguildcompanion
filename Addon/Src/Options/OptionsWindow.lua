@@ -83,6 +83,39 @@ local function buildGeneralTab()
           ns.emojiChat:SetSize(value)
         end,
       },
+      mentionsHeader = {
+        type = "header",
+        order = 10,
+        name = "Mentions",
+      },
+      mentionsWatch = {
+        type = "input",
+        order = 11,
+        width = "full",
+        name = "Nicknames and keywords to watch (comma separated)",
+        desc = "A guild chat line that has @ directly before one of these, like @nickname, is listed as a "
+          .. "mention of you in the chat history (/oooo chat). The letter case does not matter.",
+        get = function()
+          return ns.db.profile.mentions.watch
+        end,
+        set = function(_, value)
+          ns.db.profile.mentions.watch = value
+        end,
+      },
+      mentionsNotifyOnLogin = {
+        type = "toggle",
+        order = 12,
+        width = "full",
+        name = "Tell me after login about unread mentions",
+        desc = "Prints one line some seconds after login when the list holds a mention of you that you have "
+          .. "not opened. Mentions that the sync brings later are announced in any case.",
+        get = function()
+          return ns.db.profile.mentions.notifyOnLogin
+        end,
+        set = function(_, value)
+          ns.db.profile.mentions.notifyOnLogin = value
+        end,
+      },
     },
   }
 end
