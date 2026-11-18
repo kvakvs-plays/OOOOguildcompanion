@@ -237,6 +237,15 @@ local function lineOf(tbl, key)
   return payload
 end
 
+---Returns the payload of the stored chat line with an id; nil when no line is stored under it. The table
+---that is returned is the stored one: do not change it.
+---@param id string
+---@return OOOOGuildChatPayload|nil
+function guildChat:Payload(id)
+  local tbl = ns.sync:GetTable(guildChat.TABLE)
+  return tbl and lineOf(tbl, id) or nil
+end
+
 ---Returns the keys of the chat lines in id order, which is the order of time. The list is built once, with
 ---one pass over the table, and then kept current by `OnRecordChanged`. Do not change it.
 ---@return string[] keys Empty while the database is not ready

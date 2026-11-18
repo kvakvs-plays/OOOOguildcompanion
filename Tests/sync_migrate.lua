@@ -19,7 +19,7 @@ local function copy(value)
   return result
 end
 
-T.eq(database.SCHEMA_VERSION, 2, "the layout version is 2")
+T.eq(database.SCHEMA_VERSION, 3, "the layout version is 3")
 
 -- A version 1 database with emoji settings
 do
@@ -31,8 +31,9 @@ do
   T.eq(database.migrate(db, random), true, "a version 1 database is usable")
   T.eq(db.profile, before.profile, "the emoji settings are unchanged")
   T.eq(db.global.probeResults, before.global.probeResults, "other global data is unchanged")
-  T.eq(db.global.schemaVersion, 2, "the layout version is raised to 2")
+  T.eq(db.global.schemaVersion, 3, "the layout version is raised to 3")
   T.eq(db.global.sync.tables, {}, "the sync structure exists and has no tables")
+  T.eq(db.global.mentions, { lines = {} }, "the mention list exists and is empty")
   local origin = db.global.sync.origin
   T.ok(type(origin) == "string" and #origin == 4 and ns.base94.isValid(origin), "the origin is 4 base-94 characters")
 
@@ -47,7 +48,7 @@ end
 do
   local db = { profile = {}, global = {} }
   T.eq(database.migrate(db, random), true, "a database without a version is usable")
-  T.eq(db.global.schemaVersion, 2, "it gets the current layout version")
+  T.eq(db.global.schemaVersion, 3, "it gets the current layout version")
   T.ok(db.global.sync.origin, "it gets an origin")
 end
 
@@ -57,14 +58,23 @@ do
   local db = { profile = {}, global = { schemaVersion = 2, sync = { origin = "aB3$", tables = tables } } }
   local before = copy(db)
   T.eq(database.migrate(db, random), true, "a version 2 database is usable")
-  T.eq(db, before, "a version 2 database is unchanged")
+  T.eq(db.global.sync, before.global.sync, "the sync data of a version 2 database is unchanged")
   T.ok(db.global.sync.tables == tables, "the stored tables are the same object")
+  T.eq({ db.global.schemaVersion, db.global.mentions }, { 3, { lines = {} } }, "it gets the mention list of version 3")
+
+  -- A version 3 database keeps its mention list
+  local lines = { ["some id"] = true }
+  db.global.mentions = { lines = lines, lastOnline = 1700000000 }
+  before = copy(db)
+  T.eq(database.migrate(db, random), true, "a version 3 database is usable")
+  T.eq(db, before, "a version 3 database is unchanged")
+  T.ok(db.global.mentions.lines == lines, "the stored mention list is the same object")
 end
 
 -- An origin that cannot be used is the only case in which one is made for an existing database
 for name, bad in pairs({ ["a missing origin"] = false, ["a short origin"] = "abc", ["an origin with a space"] = "a cd",
   ["a number"] = 1234 }) do
-  local db = { profile = {}, global = { schemaVersion = 2, sync = { origin = bad or nil, tables = {} } } }
+  local db = { profile = {}, global = { schemaVersion = 3, sync = { origin = bad or nil, tables = {} } } }
   database.migrate(db, random)
   local origin = db.global.sync.origin
   T.ok(type(origin) == "string" and #origin == 4 and ns.base94.isValid(origin), name .. " is replaced by a new one")
@@ -79,7 +89,7 @@ do
 end
 
 -- A database of a newer addon version is left alone
-for name, version in pairs({ ["a greater version"] = 3, ["a version that is not a number"] = "2" }) do
+for name, version in pairs({ ["a greater version"] = 4, ["a version that is not a number"] = "3" }) do
   local db = { profile = { emoji = { disabled = {} } }, global = { schemaVersion = version, future = { 1, 2 } } }
   local before = copy(db)
   T.eq(database.migrate(db, random), false, name .. " is not usable")

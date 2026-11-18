@@ -14,7 +14,7 @@ local database = {}
 ns.database = database
 
 ---Version of the saved variables layout. Raise it together with a new entry in `steps`.
-database.SCHEMA_VERSION = 2
+database.SCHEMA_VERSION = 3
 
 ---Migration steps: `steps[n]` brings layout n - 1 to layout n. A step adds what is missing and leaves
 ---the rest of the user's data alone.
@@ -29,6 +29,15 @@ local steps = {
     end
     if type(db.global.sync.tables) ~= "table" then
       db.global.sync.tables = {}
+    end
+  end,
+  -- Version 3 adds the list of mentions in the guild chat (Chat/Mentions.lua)
+  [3] = function(db)
+    if type(db.global.mentions) ~= "table" then
+      db.global.mentions = {}
+    end
+    if type(db.global.mentions.lines) ~= "table" then
+      db.global.mentions.lines = {}
     end
   end,
 }

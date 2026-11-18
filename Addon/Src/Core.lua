@@ -24,6 +24,7 @@ local addonName, ns = ...
 ---@field schemaVersion integer|nil Version of the saved variables layout, for migrations
 ---@field probeResults table<string, OOOOProbeResult>|nil Probe name -> last result, written by SyncProbe.lua
 ---@field sync OOOOSyncData|nil The shared database; created by the migration to layout 2 (Database.lua)
+---@field mentions OOOOMentionStore|nil The list of mentions; created by the migration to layout 3
 ---@field debugTable boolean|nil true in the developer mode (`/oooo sync debug on`): the table `debug`, the
 ---Sync page of the settings, and its send settings; off when absent
 
@@ -170,6 +171,8 @@ end
 function addon:OnEnable()
   -- Without a usable database nothing is sent or taken
   if not ns.dbIsNewer then
+    -- Before the session: the mention list follows the records that the session brings
+    ns.mentions.Start()
     ns.syncSession.Start()
   end
   ns.guildState:Start()

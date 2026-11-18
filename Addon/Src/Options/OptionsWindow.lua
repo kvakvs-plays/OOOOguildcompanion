@@ -100,6 +100,7 @@ local function buildGeneralTab()
         end,
         set = function(_, value)
           ns.db.profile.mentions.watch = value
+          ns.mentions:WatchChanged()
         end,
       },
       mentionsNotifyOnLogin = {

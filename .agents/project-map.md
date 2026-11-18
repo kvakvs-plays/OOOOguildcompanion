@@ -38,7 +38,7 @@ moved, or removed.
 | Path | Contents |
 | --- | --- |
 | `Slash.lua` | `ns.newDispatcher`: command dispatch by first word; `ns.slash` (`/oooo`) and `ns.syncSlash` (`/oooo sync`); `ns.print`. No WoW API. Loads before `Core.lua`. |
-| `Database.lua` | `ns.database`: `SCHEMA_VERSION`, the migration steps, `migrate(db, randomFn)`, creation of the sync origin. Host-testable, no WoW API. Loads after `Sync/VersionId.lua`. |
+| `Database.lua` | `ns.database`: `SCHEMA_VERSION` (3: the mention list), the migration steps, `migrate(db, randomFn)`, creation of the sync origin. Host-testable, no WoW API. Loads after `Sync/VersionId.lua`. |
 | `Core.lua` | AceAddon object, AceDB setup and the call of `ns.database.migrate`, the start of the sync session and of the guild state on `PLAYER_LOGIN`, registration of `/oooo` and of the `/opt` alias (`addon:SetOptAliasEnabled`), LuaLS classes of the saved variables. |
 | `Emoji/EmojiIndex.lua` | Generated list of emoji names per Discord guild (`ns.emojiIndex`). |
 | `Emoji/EmojiAliases.lua` | Hand-edited aliases per emoji (`ns.emojiAliases`). |
@@ -62,7 +62,7 @@ moved, or removed.
 | `Sync/SyncCleanup.lua` | `ns.syncCleanup`: the local cleanup, added to the session class. `CleanUp` (old tombstones, once per stay in the guild), `CleanRoster` (records of characters who left), `ExpireTables` (records over the `maxAge` of their table, at the start and every hour), `IsStale`, `MarkFresh`, `ResetIfStale`. Host-loadable. |
 | `Sync/SyncOptions.lua` | `ns.syncOptions`: the "Sync" tab of the settings window, shown only in the developer mode (`buildTab`), `statusText`, `ago`, `setOverride`, `getValue`. Host-loadable. |
 | `Sync/SyncGuildChat.lua` | `ns.guildChat`: the table `guildchat` (the guild chat of the last `KEEP_DAYS` days, one record per line under its own id), `validate`, the capture `OnChatLine` with `ShouldWrite` and the witness rule `IsWitness`, the event frame (`SetListening`, `handlers`), the ordered reading `Lines(sinceTime)` with `Keys`, `DUPLICATE_WINDOW`, and the flag `bySender`, `PrintLines`, `CaptureStatus` (the counts of the session), and `/oooo sync chat`. Host-loadable. Loads after `Sync/SyncOptions.lua`. |
-| `Chat/Mentions.lua` | `ns.mentions`: `@` words in guild chat (plan stage 11). `parseWatchList`, `hasMention`, `fragments` (the watched `@text` parts of a line), `sanitize` (the text of an untrusted line for the window). Host-testable. Loads after `Sync/SyncGuildChat.lua`. |
+| `Chat/Mentions.lua` | `ns.mentions`: `@` words in guild chat (plan stage 11). `parseWatchList`, `hasMention`, `fragments` (the watched `@text` parts of a line), `sanitize` (the text of an untrusted line for the window). The mention list in `db.global.mentions` (`lines`: record id -> read, `lastOnline`): `Attach(parts)`, `Reconcile`, `OnRecordChanged`, `StartsRead`, `List`, `UnreadCount`, `MarkRead`, `NoteOnline`, `WatchChanged`, the callback `OnMentionsChanged`, and `Start` for the game. Host-loadable. Loads after `Sync/SyncGuildChat.lua`. |
 | `Sync/SyncProbe.lua` | `ns.syncProbe`: `/oooo sync probe <name>`, the probe registry, reports stored in `db.global.probeResults`, and the computing helpers of the probes (`rosterVerdict` of the probe `roster` for plan step 8.2). Host-loadable. |
 
 ## `Tests/` (host only, Lua 5.4, not packaged)
@@ -76,7 +76,7 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `run_all.lua` | Runs every `Tests/sync_*.lua` in its own process and prints one summary line. |
 | `sync_harness.lua` | Tests of the harness itself. |
 | `sync_guildchat.lua` | Tests of `Sync/SyncGuildChat.lua`: capture, `validate`, `Lines`, retention, the member who was offline (the race after login, a cut pull), and the witness. |
-| `sync_mentions.lua` | Tests of `Chat/Mentions.lua`: the watch list, `hasMention`, `fragments`, `sanitize`. |
+| `sync_mentions.lua` | Tests of `Chat/Mentions.lua`: the watch list, `hasMention`, `fragments`, `sanitize`; the mention list with replicas (read and unread at arrival, `MarkRead`, expiry, the check at login). |
 | `sync_guildstate.lua` | Tests of `Guild/GuildState.lua`, with stubbed guild and roster functions. |
 | `sync_alts.lua` | Tests of `Sync/SyncCharacter.lua` and `Sync/SyncCommands.lua`. |
 | `sync_api.lua` | Tests of `Put`, `Get`, `Delete`, `Iterate`, and the callback in `Sync/SyncTables.lua`. |
@@ -97,4 +97,4 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `sync_store.lua` | Tests of `Sync/SyncStore.lua`: merge, clock, fingerprint, table version. |
 | `sync_tables.lua` | Tests of the registry in `Sync/SyncTables.lua`. |
 | `sync_versionid.lua` | Tests of `Sync/VersionId.lua`. |
-| `fixtures/` | Helper files of the tests; not matched by `run_all.lua`. `stub_serializer.lua`: a serializer with the interface of AceSerializer-3.0. `replica.lua`: builds a full replica (own namespace, database, transport, policy with `state` and `overrides`, session) on a `fakenet` network; `Replica:Hear` plays a line of guild chat; `Replica.withoutPush` turns the push and the periodic summary off for tests of discovery and pull alone. |
+| `fixtures/` | Helper files of the tests; not matched by `run_all.lua`. `stub_serializer.lua`: a serializer with the interface of AceSerializer-3.0. `replica.lua`: builds a full replica (own namespace, database, transport, policy with `state` and `overrides`, session) on a `fakenet` network; `Replica:Hear` plays a line of guild chat; `Login` connects the mention list (`mentionStore`, `watch`); `Replica.withoutPush` turns the push and the periodic summary off for tests of discovery and pull alone. |

@@ -24,6 +24,7 @@ local FILES = {
   "Addon/Src/Sync/SyncCleanup.lua",
   "Addon/Src/Sync/SyncOptions.lua",
   "Addon/Src/Sync/SyncGuildChat.lua",
+  "Addon/Src/Chat/Mentions.lua",
 }
 
 ---@param T TestHarness
@@ -45,6 +46,8 @@ return function(T)
   ---@field notices string[] Lines that the replica printed for its user
   ---@field state table The conditions of the game for this replica; change them with `SetState`
   ---@field overrides table Table name -> policy override of this replica's user
+  ---@field mentionStore table The mention list of this replica's account, as `db.global.mentions`
+  ---@field watch string The setting with the watched nicknames of this replica's user
   ---@field net Fakenet
   local Replica = {}
   Replica.__index = Replica
@@ -68,6 +71,8 @@ return function(T)
     end
     self.state = { inCombat = false, inRaid = false, inInstance = false, resting = false }
     self.overrides = {}
+    self.mentionStore = { lines = {} }
+    self.watch = ""
     self.data = { origin = options.origin or ns.base94.encode(made, 4), tables = {} }
     ns.sync:Initialize(self.data, function()
       return math.floor(net:Now())
@@ -139,15 +144,29 @@ return function(T)
   ---pull for a version that they hear, so every message in the log belongs to what the test looks at.
   Replica.withoutPush = false
 
-  ---The guild check passes: the transport listens and the session starts.
+  ---The character logs in and the guild check passes: the mention list is read, the transport listens, and
+  ---the session starts.
   function Replica:Login()
     self.net:SetOnline(self.name, true)
+    self.ns.mentions:Attach({
+      store = self.mentionStore,
+      watch = function()
+        return self.watch
+      end,
+      now = function()
+        return math.floor(self.net:Now())
+      end,
+      playerName = function()
+        return self.name
+      end,
+    })
     self.transport:SetActive(true)
     self.session:OnGuildStateChanged(true)
   end
 
   ---The character logs out: the roster shows it offline and its session ends.
   function Replica:Logout()
+    self.ns.mentions:NoteOnline()
     self.session:Stop()
     self.transport:SetActive(false)
     self.net:SetOnline(self.name, false)
