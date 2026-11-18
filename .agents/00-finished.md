@@ -364,8 +364,11 @@
     After the dungeon check the push of `guildchat` was shortened from
     `pushDelay = 300`, `minInterval = 600` to 60 and 60 seconds, by
     decision of the user: 5 to 10 minutes looked like a lost line.
-  - Whether the whisper `A` arrives: about 40 seconds after a `/reload`,
-    `/oooo sync status` lists the other account under the peers.
+  - Seen later on 2026-11-18, reported by the user without the output:
+    after a relog the two accounts list each other as peers, and the data
+    is synced. Whether the peer came from the whisper `A` or from a summary
+    was not told apart: a relog can leave the tables different, and then a
+    summary answers the hello too.
   - Whether a line is written twice: the record count of `guildchat` in
     `/oooo sync status` is then greater than the number of lines in
     `/oooo sync chat`.

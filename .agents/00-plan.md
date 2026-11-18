@@ -808,9 +808,9 @@ Postponed (2026-11-18): the guild has no use for equipment data yet. Stages
 
 ### Stage 10. Guild chat table
 
-Finished; see `00-finished.md`. Three observations were not made in the
-client checks and are left to daily play; they are listed there under
-"10, left to daily play".
+Finished; see `00-finished.md`. One observation was not made in the client
+checks and is left to daily play (a line written twice); it is listed there
+under "10, left to daily play".
 
 ### Stage 11. Chat history and mentions
 
