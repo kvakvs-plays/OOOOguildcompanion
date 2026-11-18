@@ -777,6 +777,9 @@ were run all passed; see `00-finished.md`. One check is postponed:
 
 ### Stage 9. First real table
 
+Postponed (2026-11-18): the guild has no use for equipment data yet. Stages
+10 and 11 do not depend on it.
+
 - **9.1 Plan for `equipment`**
   - Substeps
     - Write `.agents/01-equipment-plan.md`: the payload layout, the scan events,
