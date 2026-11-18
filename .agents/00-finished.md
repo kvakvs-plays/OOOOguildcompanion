@@ -279,6 +279,10 @@
     `character` record of the offline member stayed (2 records, 155 bytes).
   - Not seen: the read after `SetGuildRosterShowOffline(false)`. Closed in
     code instead: `ReadRoster` takes such a read as incomplete.
+- **8.2, the hour in the client**: not run. Closed on 2026-11-18 by decision
+  of the user. No Lua error and no "Interface action failed" entry was
+  reported in the two-account sessions of stages 4 to 10, which were
+  shorter and ran without the taint log.
 
 ## Stage 10. Guild chat table
 

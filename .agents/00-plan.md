@@ -4,8 +4,7 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: stages 0 to 7 are finished, and stage 8 except for the hour-long
-client session, which is postponed to step 10.2 (`00-finished.md`). Stage 9
+Status: stages 0 to 8 are finished (`00-finished.md`). Stage 9
 is postponed. The code of stage 10 is finished; its client checks (10.2,
 10.3) are open. The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
@@ -788,18 +787,7 @@ Finished; see `00-finished.md`.
 
 ### Stage 8. Cleanup
 
-The code of both steps is finished, and the client checks of step 8.2 that
-were run all passed; see `00-finished.md`. One check is postponed:
-
-- **8.2 Roster cleanup and size limits: the hour in the client** (**CLIENT**,
-  two accounts). Postponed to step 10.2: until the table `guildchat` exists,
-  a session has almost no writes, so an hour of it shows little.
-  - Run a session of two accounts for an hour, with guild chat lines written
-    in it, without a Lua error or an "Interface action failed" entry. Turn
-    on `/console scriptErrors 1` and `/console taintLog 1` first; the second
-    writes `Logs	aint.log`, which shows a blocked action of the addon after
-    the session.
-  - Done when: the result is recorded in `00-finished.md`.
+Finished; see `00-finished.md`.
 
 ### Stage 9. First real table
 
@@ -830,8 +818,7 @@ finished and checked on the host; the two client checks need two accounts.
     in guild chat, one of them with an emoji name and one with an item link.
     Account B logs in; after its pull, `/oooo sync chat` shows the three lines
     in order with the original text (the command doubles every `|`, so a
-    link shows as its escape sequence). Run the postponed hour of step 8.2
-    (stage 8) in this session. Record whether a line written in combat
+    link shows as its escape sequence). Record whether a line written in combat
     and one written inside a dungeon are stored, or are secret.
   - Not known before this check. The last line of `/oooo sync chat`
     ("capture: ...") shows each of them:
@@ -858,8 +845,8 @@ finished and checked on the host; the two client checks need two accounts.
     "listening; this session 0 lines heard, 0 secret, 0 written; own name
     'Nota Scam', last sender 'nil'; witness".
   - Still to see: the count "secret" after a line in combat and one in a
-    dungeon, and the hour of step 8.2.
-  - Done when: the client checkpoint and the hour of step 8.2 are recorded.
+    dungeon.
+  - Done when: the client checkpoint is recorded.
 - **10.3 Witness for members without the addon** (**CLIENT**, two accounts and
   a member without the addon). The code and the host tests are finished; see
   `00-finished.md`. The client check is open:
