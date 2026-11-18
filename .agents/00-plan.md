@@ -812,10 +812,12 @@ The code of both steps is finished; see `00-finished.md`. One check is open:
       offline, `safe`). So the box cannot harm the cleanup. Not yet seen:
       the read after `/run SetGuildRosterShowOffline(false)`, which another
       addon could call.
-    - A `character` record of an offline member that stays after the
-      cleanup: so far both records were of online members. Log one account
-      out, log the other in, and run the probe after discovery; it must
-      show "1 of offline members".
+  - Seen as well (account `>/qs` alone, the other logged out, discovery
+    done with 0 peers and the roster cleanup started): the roster gave 46
+    entries, 8 online and 38 offline, and the probe showed "1 of online
+    members, 1 of offline members, 0 of names outside the roster cache".
+    The `character` table still had its 2 records at 155 bytes with the
+    same version: the record of the offline member stays after the cleanup.
   - Done when: the result is recorded here and in `00-finished.md`.
 
 ### Stage 9. First real table
