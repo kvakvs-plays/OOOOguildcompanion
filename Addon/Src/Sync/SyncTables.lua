@@ -17,8 +17,7 @@ local addonName, ns = ...
 ---@field keyKind "character"|"free" "character": the key starts with a character name
 ---@field validate fun(key: string, payload: any): boolean Rejects a payload with wrong types or ranges
 ---@field maxRecordBytes integer Largest record, by `syncStore.estimateSize`
----@field writers "owner"|"officer"|"anyone" Who may write: the owner of the key, officers, or every member
----@field memberRelay boolean|nil Officer tables: members may copy from members when no officer is online
+---@field writers "owner"|"anyone" Who may write a key: the character that it names, or every member
 ---@field policy OOOOSyncPolicy|nil Defaults of the send policy; omitted fields take `DEFAULT_POLICY`
 
 ---@class OOOOSync
@@ -47,7 +46,8 @@ sync.callbacks = LibStub("CallbackHandler-1.0"):New(sync)
 local NAME_PATTERN = "^[a-z][a-z0-9_]*$"
 local MAX_NAME_LENGTH = 32
 local KEY_KINDS = { character = true, free = true }
-local WRITERS = { owner = true, officer = true, anyone = true }
+---No value restricts writing by guild rank: a table registered with one would be open to every member
+local WRITERS = { owner = true, anyone = true }
 local WHEN = { nocombat = true, noraid = true, resting = true }
 ---Send policy of a table that names none (plan section 5)
 local DEFAULT_POLICY = { when = "nocombat", pushDelay = 300, minInterval = 600 }
@@ -77,16 +77,13 @@ local function definitionProblem(definition)
     return "keyKind must be \"character\" or \"free\""
   end
   if not WRITERS[definition.writers] then
-    return "writers must be \"owner\", \"officer\", or \"anyone\""
+    return "writers must be \"owner\" or \"anyone\""
   end
   if type(definition.validate) ~= "function" then
     return "validate must be a function"
   end
   if not isPositiveInteger(definition.maxRecordBytes) then
     return "maxRecordBytes must be a positive integer"
-  end
-  if definition.memberRelay ~= nil and type(definition.memberRelay) ~= "boolean" then
-    return "memberRelay must be a boolean"
   end
   local policy = definition.policy
   if policy ~= nil then
@@ -142,7 +139,6 @@ function sync:RegisterTable(definition)
     validate = definition.validate,
     maxRecordBytes = definition.maxRecordBytes,
     writers = definition.writers,
-    memberRelay = definition.memberRelay == true,
     policy = {
       when = policy.when or DEFAULT_POLICY.when,
       pushDelay = policy.pushDelay or DEFAULT_POLICY.pushDelay,

@@ -233,3 +233,7 @@
   name part of a joined key. `Initialize` takes the name function of the
   character as fourth parameter. The own flag was already in `P` (step 6.2).
   `Tests/sync_owner.lua`. Host only by design.
+- **7.2 Remove the officer option**: `writers` accepts only `"owner"` and
+  `"anyone"`; `memberRelay` is gone from the table definition and `trusted`
+  from the stored table. `Tests/sync_tables.lua` registers `notes` as second
+  table and expects `writers = "officer"` to raise. Host only by design.

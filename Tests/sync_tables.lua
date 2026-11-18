@@ -44,13 +44,13 @@ do
   local stored = sync.definitions.equipment
   T.eq(stored.policy, { when = "nocombat", pushDelay = 300, minInterval = 600 },
     "a table without a policy gets the defaults")
-  T.eq(stored.memberRelay, false, "memberRelay is false when it is omitted")
-  sync:RegisterTable(definition({ name = "guildbank", keyKind = "free", writers = "officer", memberRelay = true,
+  T.eq(stored.writers, "owner", "the writers are kept")
+  sync:RegisterTable(definition({ name = "notes", keyKind = "free", writers = "anyone",
     policy = { when = "resting", minInterval = 0 } }))
-  T.eq(sync.definitions.guildbank.policy, { when = "resting", pushDelay = 300, minInterval = 0 },
+  T.eq(sync.definitions.notes.policy, { when = "resting", pushDelay = 300, minInterval = 0 },
     "a policy replaces only the fields that it sets")
-  T.eq(sync.definitions.guildbank.memberRelay, true, "memberRelay is kept")
-  T.eq(sync.names, { "equipment", "guildbank" }, "the names are in the order of registration")
+  T.eq(sync.definitions.notes.writers, "anyone", "a table for every member is accepted")
+  T.eq(sync.names, { "equipment", "notes" }, "the names are in the order of registration")
   T.raises(function() sync:RegisterTable(definition()) end, "a repeated name raises", "registered twice")
 end
 
@@ -77,7 +77,8 @@ do
     ["a validate that is not a function"] = { { validate = true }, "validate" },
     ["a missing maxRecordBytes"] = { { maxRecordBytes = "nil" }, "maxRecordBytes" },
     ["maxRecordBytes 0"] = { { maxRecordBytes = 0 }, "maxRecordBytes" },
-    ["a memberRelay that is not a boolean"] = { { memberRelay = 1 }, "memberRelay" },
+    -- No code restricts writing by guild rank, so such a table would be open to every member
+    ["writers by guild rank"] = { { writers = "officer" }, "writers" },
     ["a policy that is not a table"] = { { policy = "resting" }, "policy must be a table" },
     ["an unknown policy.when"] = { { policy = { when = "always" } }, "policy.when" },
     ["a negative pushDelay"] = { { policy = { pushDelay = -1 } }, "policy.pushDelay" },

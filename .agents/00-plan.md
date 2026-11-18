@@ -4,7 +4,7 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: stages 0 to 6 and step 7.1 are finished (`00-finished.md`). The probes of stage 1
+Status: stages 0 to 7 are finished (`00-finished.md`). The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -706,22 +706,7 @@ Finished; see `00-finished.md`.
 
 ### Stage 7. Write rules
 
-Step 7.1 is finished; see `00-finished.md`.
-
-- **7.2 Remove the officer option**
-  - Substeps
-    - `SyncTables.lua`: `writers` accepts only `"owner"` and `"anyone"`; remove
-      `memberRelay` from the definition, its check, and its stored default.
-      No code enforces `"officer"`, so a table registered with it would be
-      open to every member.
-    - `SyncStore.lua`: remove the `trusted` field from the type annotation.
-    - `Tests/sync_tables.lua`: replace the `guildbank` definition with another
-      second table, drop the `memberRelay` cases, and add `"officer"` to the
-      rejected values of `writers`.
-  - Checkpoint: registering a table with `writers = "officer"` raises.
-  - Host tests (`Tests/sync_tables.lua`): as in the substeps.
-  - Done when: `officer`, `memberRelay`, and `trusted` no longer appear under
-    `Addon\Src\Sync` and `Tests`.
+Finished; see `00-finished.md`.
 
 ### Stage 8. Cleanup
 
