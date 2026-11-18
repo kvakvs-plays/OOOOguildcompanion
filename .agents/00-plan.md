@@ -4,8 +4,8 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: stages 0 to 7 are finished, and stage 8 except for its client check
-(`00-finished.md`). The probes of stage 1
+Status: stages 0 to 7 are finished, and stage 8 except for the hour-long
+client session, which is postponed to step 10.2 (`00-finished.md`). The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -762,73 +762,18 @@ Finished; see `00-finished.md`.
 
 ### Stage 8. Cleanup
 
-The code of both steps is finished; see `00-finished.md`. One check is open:
+The code of both steps is finished, and the client checks of step 8.2 that
+were run all passed; see `00-finished.md`. One check is postponed:
 
-- **8.2 Roster cleanup and size limits: the client check** (**CLIENT**, two
-  accounts)
-  - Run a session of two accounts in the client for an hour without a Lua
-    error or an "Interface action failed" entry.
-  - In that session, look at these, which the host tests cannot show:
-    - `/oooo sync status` prints the size of each table in bytes.
-    - With "Show offline members" off in the guild window, the records of
-      offline members stay after the cleanup (about a minute after login).
-      The cleanup trusts the roster cache when `GetNumGuildMembers()` equals
-      the number of entries that `GetGuildRosterInfo` gave; whether that
-      number covers offline members when they are hidden was not checked.
-      `/oooo sync probe roster` answers it: run it once with the box on and
-      once with it off, while a member with a `character` record is offline
-      and after `/oooo sync status` shows "discovery: done". It prints the
-      member counts, the online and offline entries, the `character` records
-      of online members, of offline members, and of names outside the roster,
-      whether the cleanup has started, and a `RESULT` line (`safe`, `UNSAFE`,
-      or `UNDECIDED`). Passed when both runs say `safe` and the count of
-      records of offline members is the same before and after the cleanup.
-      On `UNSAFE`, the cleanup must not trust `GetNumGuildMembers()` while
-      offline members are hidden.
-    - `/oooo sync debug on` and a `/reload` bring the `debug` table back, on
-      both accounts; `put` on one arrives on the other.
-  - Seen so far (2026-11-18, accounts with the origins `>/qs` and `p:i<`,
-    right after a login):
-    - `/oooo sync status` prints the bytes: `character` 155 bytes and `debug`
-      50 bytes, the same on both accounts, with equal table versions.
-    - The `debug` table is registered on both accounts, so
-      `/oooo sync debug on` and the reload work.
-    - Each account listed the other as peer 10 to 20 seconds after the
-      status showed "waiting to send the hello".
-    - `/oooo sync probe roster` on `p:i<`, with "Show offline members" on
-      (`GetGuildRosterShowOffline()` exists and gave `true`), after
-      discovery and with the roster cleanup started:
-      `GetNumGuildMembers()` gave `46, 9` (two values); the indexes 1 to 46
-      gave 46 readable entries, 9 online and 37 offline, and none at index
-      47; the roster cache had 46 members and was complete. Result: `safe`.
-      The two `character` records were both of online members and stayed.
-    - `/oooo sync put a ...` on one account arrived on the other about 10
-      seconds later (the `pushDelay` of the `debug` table).
-    - The probe was run again with "Show offline members" unticked in the
-      guild window and gave the same lines, also
-      `GetGuildRosterShowOffline(): true`: the box of the guild window does
-      not change that flag, and the roster read is the same with it ticked
-      or not (46 entries, 37 offline, `safe`). So the box cannot harm the
-      cleanup.
-  - Closed in code, not seen in the client: the roster read after
-    `/run SetGuildRosterShowOffline(false)`, which another addon could
-    call. `guildState:ReadRoster` now takes a read as incomplete unless
-    `GetGuildRosterShowOffline()` gives `true`, so the cleanup waits
-    whatever that read lists (`Tests/sync_guildstate.lua`). The probe after
-    that `/run` is no longer needed for the step; when it is run, it must
-    show "complete: false".
-  - Still open:
-    - The hour without a Lua error or an "Interface action failed" entry,
-      with two accounts. Turn on `/console scriptErrors 1` and
-      `/console taintLog 1` first; the second writes `Logs\taint.log`,
-      which shows a blocked action of the addon after the session.
-  - Seen as well (account `>/qs` alone, the other logged out, discovery
-    done with 0 peers and the roster cleanup started): the roster gave 46
-    entries, 8 online and 38 offline, and the probe showed "1 of online
-    members, 1 of offline members, 0 of names outside the roster cache".
-    The `character` table still had its 2 records at 155 bytes with the
-    same version: the record of the offline member stays after the cleanup.
-  - Done when: the result is recorded here and in `00-finished.md`.
+- **8.2 Roster cleanup and size limits: the hour in the client** (**CLIENT**,
+  two accounts). Postponed to step 10.2: until the table `guildchat` exists,
+  a session has almost no writes, so an hour of it shows little.
+  - Run a session of two accounts for an hour, with guild chat lines written
+    in it, without a Lua error or an "Interface action failed" entry. Turn
+    on `/console scriptErrors 1` and `/console taintLog 1` first; the second
+    writes `Logs	aint.log`, which shows a blocked action of the addon after
+    the session.
+  - Done when: the result is recorded in `00-finished.md`.
 
 ### Stage 9. First real table
 
@@ -887,7 +832,8 @@ Design in 5.3. It does not depend on stage 9.
   - Checkpoint (**CLIENT**): account B is offline. Account A writes three lines
     in guild chat, one of them with an emoji name and one with an item link.
     Account B logs in; after its pull, `/oooo sync chat` shows the three lines
-    in order with the original text. Record whether a line written in combat
+    in order with the original text. Run the postponed hour of step 8.2
+    (stage 8) in this session. Record whether a line written in combat
     and one written inside a dungeon are stored, or are secret.
   - Host tests (`Tests/sync_guildchat.lua`)
     - A line of the own character is stored; a line of another sender is not.
@@ -907,7 +853,7 @@ Design in 5.3. It does not depend on stage 9.
       the pull it holds all 52 lines of A and its own.
     - The same with the first pull cut after one batch: the next pull brings
       the rest.
-  - Done when: the client checkpoint is recorded.
+  - Done when: the client checkpoint and the hour of step 8.2 are recorded.
 - **10.3 Witness for members without the addon** (**CLIENT**, two accounts and
   a member without the addon)
   - Substeps

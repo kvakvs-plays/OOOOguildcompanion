@@ -264,4 +264,18 @@
   (`/oooo sync debug on|off`, `commands.EnableDebugTable`). `ns.sync:Size`
   and `/oooo sync status` give the bytes of each table. Tests in
   `Tests/sync_cleanup.lua`, `sync_alts.lua`, `sync_tables.lua`,
-  `sync_guildstate.lua`. Host only so far.
+  `sync_guildstate.lua`.
+- **8.2, client checks** (2026-11-18, two accounts, origins `>/qs` and
+  `p:i<`; the hour-long session is postponed to step 10.2):
+  - `/oooo sync status` prints the bytes (`character` 155, `debug` 50, equal
+    versions on both accounts). `/oooo sync debug on` and a reload register
+    `debug` on both; a `put` on one arrived on the other after about 10 s.
+  - `/oooo sync probe roster`: `GetGuildRosterShowOffline()` exists and gave
+    `true`; `GetNumGuildMembers()` gave `46, 9`; 46 readable entries (9
+    online, 37 offline), none at index 47; the cache was complete. Result:
+    `safe`. The "Show offline members" box of the guild window changes
+    neither the flag nor the read.
+  - With one account alone (the other offline, cleanup started), the
+    `character` record of the offline member stayed (2 records, 155 bytes).
+  - Not seen: the read after `SetGuildRosterShowOffline(false)`. Closed in
+    code instead: `ReadRoster` takes such a read as incomplete.
