@@ -208,6 +208,19 @@ may be fixed there. Test a claim on the release client before relying on it.
     as `|cnIQ1:|Hitem:4603::::::::45:1485:::::::::|h[Raw Spotted Yellowtail]|h|r`:
     the colour is the named form `|cn<name>:`, not `|cffRRGGBB`. Code that
     keeps or strips colour codes must know both forms.
+  - These globals exist (November 18, 2026, `/oooo sync probe chatframe`):
+    `SetItemRef`, `HandleModifiedItemClick`, `date` (functions),
+    `ItemRefTooltip`, `UISpecialFrames`, `EventRegistry` (tables).
+  - `CreateFrame("ScrollingMessageFrame")` works, and the frame has every
+    method that the chat history window uses. `SetScrollOffset(n)` counts
+    messages from the bottom (0 is the bottom) and clamps: with 40 messages,
+    `SetScrollOffset(1000)` gives offset 39 and `AtTop()` true.
+  - A click on a custom hyperlink `|Haddon:<addon name>:<data>|h[text]|h` in
+    the chat frame reaches
+    `EventRegistry:RegisterCallback("SetItemRef", fn, owner)`. The callback
+    gets the owner, the link data (`addon:OOOOguildcompanion:probe`), the
+    whole link text with its colour code, the button (`LeftButton`), and the
+    chat frame. Checked with `/oooo sync probe chatlink`.
   - Not yet checked: addon messages in a raid group and in a raid instance
     (the raids unlock on December 9, 2026), and during a boss encounter.
 - If you are not sure that an API exists on Forever, say so and write a

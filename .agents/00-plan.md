@@ -914,9 +914,9 @@ Design:
     seconds after login, for unread entries of an earlier session. The
     missed lines themselves arrive later: the first pull of `guildchat`
     starts 30 to 50 seconds after login and can take minutes (5.3, Size).
-  - The link is a custom hyperlink. Whether Forever passes an `addon:` link
-    to addons was not checked: step 11.4 probes it. Without it the notice
-    names `/oooo chat`.
+  - The link is a custom hyperlink. Forever passes a click on an `addon:`
+    link to addons through `EventRegistry` (probed on 2026-11-18, see
+    AGENTS.md). Without `EventRegistry` the notice names `/oooo chat`.
 - **Limit.** The history and the mentions reach back 14 days (5.3). A line that no replica wrote (5.3, witness) is in neither.
 - **Warning for the writer.** When the user sends a guild chat line with a
   word that starts with `@`, and the session knows no online peer after its
@@ -950,26 +950,21 @@ check in the client. What the code does differently from the design above:
   - Check: the section "Mentions" appears on the General tab, and the watch
     list and the checkbox keep their values over a `/reload`.
 - **11.3 Chat history window** (**CLIENT**, open)
-  - Run `/oooo sync probe chatframe` and record its lines in AGENTS.md: the
-    globals `SetItemRef`, `UISpecialFrames`, `date`, `EventRegistry`; the
-    missing methods of the `ScrollingMessageFrame`; what `SetScrollOffset`
-    does. The window calls every one of them only when it exists; without
-    `SetScrollOffset` it steps with `ScrollUp`. If the frame cannot be
-    scrolled to a message either way, build the list from own rows.
+  - Probe `chatframe`: run on 2026-11-18 and recorded in AGENTS.md. All
+    globals exist, the `ScrollingMessageFrame` misses no method, and
+    `SetScrollOffset` scrolls to a message, so the window works as written.
   - Checkpoint: after some hundred lines of guild chat with two accounts,
     `/oooo chat` shows the last 100 with times and senders; scrolling to the
     top loads older lines; an item link in a line shows its tooltip on click,
     without an "Interface action failed" entry; a new guild chat line appears
     at the bottom after its push; Escape closes the window; the position is
     kept over a `/reload`.
-  - Done when: the checkpoint and the probe results are recorded.
+  - Done when: the checkpoint is recorded.
 - **11.4 Mentions in the window, and the notice** (**CLIENT**, two accounts,
   open)
-  - Run `/oooo sync probe chatlink` and click its link. Record in AGENTS.md
-    whether the click arrives and with which arguments. The notice uses the
-    link whenever the client has `EventRegistry`; if the click does not
-    arrive, make `mentions.RegisterLink` return false, so that the notice
-    names `/oooo chat`.
+  - Probe `chatlink`: run on 2026-11-18 and recorded in AGENTS.md. The click
+    arrives with the owner, the link data, the text, and the button, which
+    is what `mentions.RegisterLink` expects, so the notice keeps its link.
   - Checkpoint: account B watches `tall` and is offline. Account A writes
     "@tall hello", "nothing here", and "look @Tall [item link]" in guild
     chat. Account B logs in; after its pull it sees one notice. The click
