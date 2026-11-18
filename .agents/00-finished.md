@@ -207,3 +207,18 @@
   loss and offline periods end equal with 20 seeds; without offline periods
   no responder gets more than 3 pulls in one state (the plan's "for one
   change", measured per responder and table version). Host only by design.
+- **6.4 Options page**: `Src/Sync/SyncOptions.lua` with `buildTab` (the tab
+  "Sync" of the settings window: per table Enabled, when to send, the wait
+  after a change, the time between sends, a status line), `statusText`, `ago`,
+  `setOverride` (an override is stored only where it differs from the table
+  definition), `getValue`. Tests in `Tests/sync_policy.lua`. The status of
+  `/oooo sync status` reads "has newer data in <tables>" or "no newer data
+  known" per peer, without versions that this replica holds, and
+  "has unsent changes" per table. Client check on 2026-11-18 with two
+  accounts, which was also the first run of the push, the conditions, and the
+  options page: a put on one account arrived on the other; in a fight the
+  status showed `may send: no, needs nocombat`; the Sync tab opened with both
+  tables; with `debug` on "Only in a city or an inn" a put outside a city
+  did not propagate and the status showed `needs resting`, and it propagated
+  when the character entered a rest area. Not seen in the client: the
+  periodic summary repairing a lost message, and a push of several messages.

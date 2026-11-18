@@ -4,7 +4,7 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: stages 0 to 5 are finished (`00-finished.md`). The probes of stage 1
+Status: stages 0 to 6 are finished (`00-finished.md`). The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -614,45 +614,7 @@ Finished; see `00-finished.md`.
 
 ### Stage 6. Push and policy
 
-- 6.1, 6.2, and 6.3 are finished; see `00-finished.md`.
-- **6.4 Options page** (**CLIENT**)
-  - Status: the code and the host tests are done, in
-    `Src\Sync\SyncOptions.lua` (`ns.syncOptions`); the tab is added in
-    `Options\OptionsWindow.lua`. Open: the client checkpoint below. It is also
-    the first run in the client of the push (6.2, 6.3), of the conditions
-    (6.1), and of the periodic summary.
-  - Checked in the client on 2026-11-18, with two accounts:
-    - `/oooo sync put` on one account and `/oooo sync get` on the other: the
-      text arrived. The push works through AceComm on `GUILD`.
-    - In a fight, `/oooo sync status` showed `may send: no, needs nocombat`
-      for both tables: the conditions follow the combat events.
-    - The peer line showed a difference in `debug` only, so `character` was
-      equal on both accounts.
-    - `/oooo opt` showed the tab "Sync" with the groups `character` and
-      `debug`, their status lines, and the four controls. With both tables set
-      to "Only in a city or an inn", outside a city `/oooo sync status` showed
-      `may send: no, needs resting`.
-  - Still to check in the client: the second half of the checkpoint below. A
-    put outside a city with `debug` on "Only in a city or an inn" shows
-    `has unsent changes` and reaches the other account only after the
-    character has entered a city or an inn.
-  - After that check the status was changed: the peer line reads
-    "has newer data in <tables>" or "no newer data known" and no longer counts
-    a version that this replica holds; the table line adds
-    "has unsent changes"; the label of the second slider is shorter.
-  - An override is stored only where it differs from the table definition.
-  - Substeps
-    - `Src\Sync\SyncOptions.lua`: an AceConfig page "Sync" with `enabled`,
-      `when`, `pushDelay`, and `minInterval` for each table.
-    - A status line per table: record count, last sync time, current source,
-      and transfer progress from the AceComm callback.
-    - Build the status text in a function that takes plain values.
-  - Checkpoint (**CLIENT**): a change of `when` to `resting` stops a push
-    outside a city and lets it go in one.
-  - Host tests (`Tests/sync_policy.lua`)
-    - The status text for: never synced, synced, pull in progress, disabled.
-    - The option setters write only into `db.profile.sync.tables`.
-  - Done when: the client checkpoint is recorded.
+Finished; see `00-finished.md`.
 
 ### Stage 7. Write rules
 
