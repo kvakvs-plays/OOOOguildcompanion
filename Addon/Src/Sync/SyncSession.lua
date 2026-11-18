@@ -359,6 +359,8 @@ function Session:OnRosterChanged()
       self.peers[name] = nil
     end
   end
+  -- The roster cleanup waits for a roster that lists every member (SyncCleanup.lua)
+  self:CleanRoster()
   self:OnPullRosterChanged()
 end
 

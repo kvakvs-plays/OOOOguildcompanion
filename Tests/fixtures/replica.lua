@@ -58,6 +58,8 @@ return function(T)
   function Replica.new(net, name, options)
     made = made + 1
     local ns = T.loadAll(FILES)
+    -- The tests write into the table `debug`, which is off in a release
+    ns.syncCommands.EnableDebugTable()
     local self = setmetatable({ name = name, ns = ns, sync = ns.sync, notices = {}, net = net }, Replica)
     function ns.print(text)
       self.notices[#self.notices + 1] = text

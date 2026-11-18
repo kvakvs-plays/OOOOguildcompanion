@@ -4,7 +4,8 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: stages 0 to 7 and step 8.1 are finished (`00-finished.md`). The probes of stage 1
+Status: stages 0 to 7 are finished, and stage 8 except for its client check
+(`00-finished.md`). The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -233,7 +234,11 @@ db.global.sync = {
     records that their features write again.
 - For tables keyed by character name, each replica also drops records of
   characters that are no longer in the guild roster. This is a local rule and
-  sends nothing.
+  sends nothing. It runs once per stay in the guild, after discovery, and only
+  when the roster cache lists every member (`guildState:IsRosterComplete`):
+  the roster read gave an entry for each index, and the own character is in
+  it. A roster entry that is secret makes the cache incomplete, and the
+  cleanup waits for a later roster update.
 - A table with `maxAge` (5.3) drops records whose id is older than that age.
   This is also a local rule: it sends nothing and leaves the clock and `fp` as
   they are. Two replicas with equal clocks can then hold different numbers of
@@ -629,6 +634,28 @@ Per table, with defaults from the table definition and overrides in
   as any replica still holds the record of a member who left.
 - One bad record drops that record and all later records of the same origin in
   the batch (to keep the invariant), not the whole session.
+- The limits, in `SyncStore.lua` (shared by the registry and the protocol) and
+  `SyncProtocol.lua`:
+
+  | Limit | Value |
+  | --- | --- |
+  | Key of a record | 64 bytes |
+  | Table name | 32 characters |
+  | Tables in the registry, and in one `H` or `S` | 64 |
+  | Records in one `D` or `P` | 500 |
+  | Origins in a digest, a clock rest, or the wants | 2000 (a digest of 22000 bytes) |
+  | Batch number of one pull | 100000 |
+  | Retry time of a `B` | 3600 s |
+  | Size of one batch | about 2000 bytes, by the estimate |
+
+- The size of a record is `syncStore.recordSize`: the key, the id, and the
+  payload by `estimateSize`, which needs no serializer (2 bytes per value plus
+  its text, 4 per table; AceSerializer writes the same, without its escapes).
+  `Put` refuses a record over `maxRecordBytes` of its table with
+  `"too large"`; a received one is dropped like any bad record.
+- The table `debug` (`writers = "anyone"`) is registered only while the
+  setting `db.global.debugTable` is on (`/oooo sync debug on`). It is off by
+  default, so a release has no table that every member can fill with text.
 - Accepted risk for owner tables: a member with a modified addon can write wrong
   data under any key. The addon cannot prove who owns a character. The damage is
   limited to wrong shared data, which a later correct write replaces; a future
@@ -727,31 +754,22 @@ Finished; see `00-finished.md`.
 
 ### Stage 8. Cleanup
 
-Step 8.1 is finished; see `00-finished.md`.
+The code of both steps is finished; see `00-finished.md`. One check is open:
 
-- **8.2 Roster cleanup and size limits**
-  - Substeps
-    - For `keyKind = "character"`: drop records of names that are not in the
-      roster. Run only after a roster update with at least one member, and never
-      while the guild state is unknown, so that an empty roster at login cannot
-      empty the database.
-    - Enforce `maxRecordBytes` in `Put` and on receive, with a size estimate
-      that needs no serializer.
-    - Constants for the key length, records per batch, digest length, and table
-      count, used by `SyncProtocol`; a note in section 8 with the values.
-    - Remove the `debug` table from release builds, or keep it behind a setting
-      that is off.
-  - Checkpoint: `/oooo sync status` shows the size of each table in bytes.
-  - Host tests (`Tests/sync_cleanup.lua`)
-    - A character that left the roster loses its records; one that stays keeps
-      them.
-    - An empty or unknown roster removes nothing.
-    - A payload over the limit is refused by `Put` and dropped on receive.
-    - The size estimate is within 20% of the stub serializer's output on 100
-      random payloads.
-  - Done when: the full host suite passes, and a session of two accounts in the
-    client runs for an hour without a Lua error or an "Interface action failed"
-    entry (**CLIENT**).
+- **8.2 Roster cleanup and size limits: the client check** (**CLIENT**, two
+  accounts)
+  - Run a session of two accounts in the client for an hour without a Lua
+    error or an "Interface action failed" entry.
+  - In that session, look at these, which the host tests cannot show:
+    - `/oooo sync status` prints the size of each table in bytes.
+    - With "Show offline members" off in the guild window, the records of
+      offline members stay after the cleanup (about a minute after login).
+      The cleanup trusts the roster cache when `GetNumGuildMembers()` equals
+      the number of entries that `GetGuildRosterInfo` gave; whether that
+      number covers offline members when they are hidden was not checked.
+    - `/oooo sync debug on` and a `/reload` bring the `debug` table back, on
+      both accounts; `put` on one arrives on the other.
+  - Done when: the result is recorded here and in `00-finished.md`.
 
 ### Stage 9. First real table
 

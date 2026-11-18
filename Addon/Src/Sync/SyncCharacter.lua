@@ -75,7 +75,8 @@ ns.sync:RegisterTable({
   schema = 1,
   keyKind = "character",
   validate = character.validate,
-  maxRecordBytes = 200,
+  -- A record with the longest key and 8 origins is about 220 bytes
+  maxRecordBytes = 300,
   writers = "owner",
   policy = { when = "nocombat", pushDelay = 60, minInterval = 600 },
 })

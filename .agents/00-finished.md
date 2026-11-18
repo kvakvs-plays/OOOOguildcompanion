@@ -250,3 +250,17 @@
   new field `freshAt` (plan 4.4), not by `syncedAt`, and a stale table
   refuses `Q` with `busy`. `Tests/sync_cleanup.lua` (59, 61, and 100 days
   away). Host only by design.
+- **8.2 Roster cleanup and size limits** (code; the client check is open in
+  the plan): `Session:CleanRoster` in `SyncCleanup.lua` removes, once per
+  stay in the guild, the records of names outside the roster from the tables
+  keyed by character; it waits for `guildState:IsRosterComplete` (new: the
+  roster read gave an entry for every member) and for the own character in
+  the roster. `Put` refuses a record over `maxRecordBytes` (`"too large"`),
+  and `ApplyRemote` drops one; `character` allows 300 bytes. The limits of
+  key length, table name, and table count are in `SyncStore.lua` for the
+  registry and the protocol; `RegisterTable` raises at the 65th table. The
+  table `debug` is registered only with `db.global.debugTable`
+  (`/oooo sync debug on|off`, `commands.EnableDebugTable`). `ns.sync:Size`
+  and `/oooo sync status` give the bytes of each table. Tests in
+  `Tests/sync_cleanup.lua`, `sync_alts.lua`, `sync_tables.lua`,
+  `sync_guildstate.lua`. Host only so far.

@@ -19,13 +19,14 @@ local addonName, ns = ...
 ---@field state OOOOGuildStateName
 ---@field roster table<string, OOOOGuildMember> Character name (`First Last`) -> member
 ---@field rosterCount integer Number of members in `roster`
+---@field rosterComplete boolean true when the last roster read gave an entry for every member
 ---@field frame table|nil The event frame; nil until `Start`
 ---@field handlers table<string, fun(...: any)> Event name -> handler
 ---@field callbacks table CallbackHandler registry; fires "OnGuildStateChanged" and "OnRosterChanged"
 ---@field RegisterCallback fun(owner: any, event: string, handler: function|string, ...: any)
 ---@field UnregisterCallback fun(owner: any, event: string)
 ---@field UnregisterAllCallbacks fun(owner: any)
-local guildState = { state = "unknown", roster = {}, rosterCount = 0 }
+local guildState = { state = "unknown", roster = {}, rosterCount = 0, rosterComplete = false }
 ns.guildState = guildState
 
 ---Name of the guild that the addon is for, as `GetGuildInfo` gives it
@@ -78,6 +79,14 @@ function guildState:IsOnline(name)
   return member ~= nil and member.online
 end
 
+---Tells whether the roster cache lists every member of the guild: the character is in the guild, and the
+---last read left no entry out. Only then does a name that is missing mean a member who left; the cleanup
+---of the shared database asks this before it removes records (SyncCleanup.lua).
+---@return boolean
+function guildState:IsRosterComplete()
+  return self.state == "in" and self.rosterComplete and self.rosterCount > 0
+end
+
 ---Asks the server for the roster; the answer arrives as GUILD_ROSTER_UPDATE.
 local function requestRoster()
   C_GuildInfo.GuildRoster()
@@ -109,7 +118,7 @@ function guildState:Update()
   else
     rosterRequested = false
     if state == "outside" and self.rosterCount > 0 then
-      self.roster, self.rosterCount = {}, 0
+      self.roster, self.rosterCount, self.rosterComplete = {}, 0, false
       self.callbacks:Fire("OnRosterChanged")
     end
   end
@@ -143,7 +152,12 @@ function guildState:ReadRoster()
       count = count + 1
     end
   end
-  self.roster, self.rosterCount = roster, count
+  local wasComplete = self.rosterComplete
+  -- An entry that was left out (secret, malformed, or a repeated name) makes the cache incomplete
+  self.roster, self.rosterCount, self.rosterComplete = roster, count, count == total
+  if self.rosterComplete ~= wasComplete then
+    changed = true
+  end
   -- The loop sees a member who joined or changed; one who left is only missing
   if changed or self:HasLeaver(old) then
     self.callbacks:Fire("OnRosterChanged")

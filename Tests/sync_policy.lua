@@ -198,7 +198,7 @@ do
   b.ns.syncSession.current = b.session
   local found = false
   for _, line in ipairs(b.ns.syncCommands.statusLines()) do
-    found = found or line:find("^debug: 1 records, 0 deleted, version .+, may send: yes$") ~= nil
+    found = found or line:find("^debug: 1 records, 0 deleted, %d+ bytes, version .+, may send: yes$") ~= nil
   end
   T.ok(found, "/oooo sync status shows for each table whether it may send")
 end

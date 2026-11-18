@@ -122,6 +122,7 @@ do
   fire("GUILD_ROSTER_UPDATE")
   T.eq(fired(), "roster", "the first roster fires OnRosterChanged")
   T.eq(guildState.rosterCount, 3, "secret entries are left out")
+  T.eq(guildState:IsRosterComplete(), false, "a roster with entries left out is not complete")
   T.eq(guildState:GetMember("Nota Scam"), { online = true, rankIndex = 0 }, "a member has its rank and online state")
   T.eq(guildState:GetMember("Third One"), { online = false, rankIndex = 5 }, "a realm suffix is cut off the key")
   T.eq(guildState:GetMember("Stranger"), nil, "an unknown name has no entry")
@@ -142,6 +143,16 @@ do
   T.eq(fired(), "roster", "a member who leaves fires OnRosterChanged")
   T.eq(guildState:GetMember("Other One"), nil, "the member who left is gone from the cache")
   T.eq(guildState.rosterCount, 2, "the count follows")
+  -- Without the two entries that cannot be read, the cache lists every member
+  local unreadable = { table.remove(client.roster), table.remove(client.roster) }
+  fire("GUILD_ROSTER_UPDATE")
+  T.eq(fired(), "roster", "a roster that becomes complete fires OnRosterChanged")
+  T.eq(guildState:IsRosterComplete(), true, "a roster with an entry for every member is complete")
+  client.roster[#client.roster + 1] = unreadable[2]
+  client.roster[#client.roster + 1] = unreadable[1]
+  fire("GUILD_ROSTER_UPDATE")
+  T.eq(fired(), "roster", "a roster that loses an entry fires OnRosterChanged")
+  T.eq(guildState:IsRosterComplete(), false, "and is no longer complete")
 
   client.roster[#client.roster + 1] = { "New One", 9, true }
   fire("GUILD_ROSTER_UPDATE")

@@ -35,6 +35,16 @@ local FP_WIDTH = 5
 ---Length of a table version: an id and the fingerprint
 store.TABLE_VERSION_LENGTH = versionId.LENGTH + FP_WIDTH
 
+-- Size limits that the registry (SyncTables.lua) and the message checks (SyncProtocol.lua) share. They are
+-- here because this file is the one that both load. The values are also in the plan, section 8.
+
+---Longest key of a record, in bytes
+store.MAX_KEY_LENGTH = 64
+---Longest name of a table
+store.MAX_TABLE_NAME_LENGTH = 32
+---Most tables of the database, and so in one hello or summary
+store.MAX_TABLES = 64
+
 ---Makes an empty table.
 ---@param schema integer Payload layout version
 ---@return OOOOSyncTable

@@ -11,6 +11,7 @@ local addonName, ns = ...
 ---@field GetMember fun(self: any, name: string): OOOOGuildMember|nil
 ---@field IsOnline fun(self: any, name: string): boolean
 ---@field NoteOnline fun(self: any, name: string)
+---@field IsRosterComplete fun(self: any): boolean true when a missing name means a member who left
 
 ---@alias OOOOSyncPriority "NORMAL"|"BULK"|"ALERT" Priority of ChatThrottleLib
 

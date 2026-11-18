@@ -91,6 +91,18 @@ do
   T.eq(sync.names, {}, "a bad definition registers nothing")
 end
 
+-- The registry takes as many tables as one hello can carry
+do
+  local ns = T.loadAll(FILES)
+  for index = 1, ns.syncStore.MAX_TABLES do
+    ns.sync:RegisterTable(definition({ name = "table" .. index }))
+  end
+  T.eq(#ns.sync.names, 64, "64 tables can be registered")
+  T.raises(function() ns.sync:RegisterTable(definition({ name = "onemore" })) end, "the 65th table raises",
+    "more than 64 tables")
+  T.eq(ns.syncStore.MAX_KEY_LENGTH, ns.sync.MAX_KEY_LENGTH, "the registry uses the shared limit of the key length")
+end
+
 -- Initialize creates the stored table of each definition
 do
   local sync = newSync()

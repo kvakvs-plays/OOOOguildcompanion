@@ -132,6 +132,32 @@ do
     "the table refuses a payload that fails validate")
 end
 
+-- The debug table is off until it is turned on
+do
+  T.eq(sync.definitions.debug, nil, "the debug table is not registered by default")
+  for _, command in ipairs({ "put greeting hello", "get greeting", "del greeting" }) do
+    ns.slash:Dispatch("sync " .. command)
+    T.eq(printed(), "The debug table is off. Turn it on with /oooo sync debug on.",
+      "'" .. command .. "' tells how to turn the table on")
+  end
+  ns.slash:Dispatch("sync debug on")
+  T.eq(printed(), "The shared database is not ready.", "the setting cannot be changed without saved variables")
+  ns.db = { global = {} }
+  ns.slash:Dispatch("sync debug")
+  T.eq(printed(), "Usage: /oooo sync debug on|off", "debug without a word prints its usage line")
+  ns.slash:Dispatch("sync debug on")
+  T.eq(ns.db.global.debugTable, true, "debug on stores the setting")
+  T.ok(sync.definitions.debug, "and registers the table at once")
+  T.ok(sync:GetTable("debug"), "with its storage")
+  T.ok(printed():find("^The debug table is on"), "and says so")
+  ns.slash:Dispatch("sync debug on")
+  T.ok(printed():find("^The debug table is on"), "a second debug on does not register the table twice")
+  ns.slash:Dispatch("sync debug off")
+  T.eq(ns.db.global.debugTable, false, "debug off stores the setting")
+  T.ok(printed():find("next /reload", 1, true), "and tells that it takes a reload")
+  T.ok(sync.definitions.debug, "the table stays registered until then")
+end
+
 -- The debug table and the commands
 do
   ns.slash:Dispatch("sync put greeting hello there")
@@ -177,8 +203,10 @@ do
   end
   local version = store.tableVersion(data.tables.debug)
   T.ok(version:find("|", 1, true), "the table version of this test holds a |")
-  T.eq(debugLine, "debug: 1 records, 1 deleted, version " .. version:gsub("|", "||"),
-    "the status line has the record count and the table version")
+  local bytes = store.recordSize({ key = "one", payload = "text" }) + store.recordSize({ key = "two" })
+  T.eq(sync:Size("debug"), bytes, "the size of a table is the sum of its records, the tombstones too")
+  T.eq(debugLine, "debug: 1 records, 1 deleted, " .. bytes .. " bytes, version " .. version:gsub("|", "||"),
+    "the status line has the record count, the size in bytes, and the table version")
   ns.slash:Dispatch("sync status")
   T.eq(printed(), table.concat(lines, "\n"), "the status command prints the lines")
 end

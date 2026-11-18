@@ -29,16 +29,17 @@ local store = ns.syncStore
 protocol.VERSION = 1
 ---Reason that `decode` gives for a message of a newer addon version
 protocol.NEWER = "newer"
----Most tables in one hello or summary
-protocol.MAX_TABLES = 64
----Longest table name, as in SyncTables.lua
-protocol.MAX_NAME_LENGTH = 32
+---Most tables in one hello or summary: the registry takes no more (SyncStore.lua)
+protocol.MAX_TABLES = store.MAX_TABLES
+---Longest table name, as in the registry
+protocol.MAX_NAME_LENGTH = store.MAX_TABLE_NAME_LENGTH
 ---Length of a table version: an id of 11 characters and a fingerprint of 5
-protocol.TABLE_VERSION_LENGTH = 16
+protocol.TABLE_VERSION_LENGTH = store.TABLE_VERSION_LENGTH
 
----Longest record key, as in SyncTables.lua
-protocol.MAX_KEY_LENGTH = 64
----Most origins in a digest, a clock rest, or a list of wants: far more than the guild has installs
+---Longest record key, as in the registry
+protocol.MAX_KEY_LENGTH = store.MAX_KEY_LENGTH
+---Most origins in a digest, a clock rest, or a list of wants: far more than the guild has installs.
+---A digest is therefore at most 2000 ids, 22000 bytes.
 protocol.MAX_ORIGINS = 2000
 ---Most records in one delta batch; a batch of 2 KB holds about 100 of the smallest records
 protocol.MAX_BATCH_RECORDS = 500

@@ -18,6 +18,7 @@ local addonName, ns = ...
 ---@field schemaVersion integer|nil Version of the saved variables layout, for migrations
 ---@field probeResults table<string, OOOOProbeResult>|nil Probe name -> last result, written by SyncProbe.lua
 ---@field sync OOOOSyncData|nil The shared database; created by the migration to layout 2 (Database.lua)
+---@field debugTable boolean|nil true when the table `debug` is on (`/oooo sync debug on`); off when absent
 
 ---@class OOOODatabase AceDB-3.0 database object
 ---@field profile OOOOProfile
@@ -137,6 +138,10 @@ function addon:OnInitialize()
     ns.sync:Initialize(ns.db.global.sync, GetServerTime, math.random, function()
       return ns.syncCharacter.playerName()
     end)
+    -- Before the settings window is built, so that the table has its entry on the Sync page
+    if ns.db.global.debugTable == true then
+      ns.syncCommands.EnableDebugTable()
+    end
   else
     ns.dbIsNewer = true
     self:Print("The saved data is from a newer version of the addon. Update the addon; the shared database is off.")

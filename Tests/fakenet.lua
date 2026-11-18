@@ -42,6 +42,7 @@
 ---@field dropIf (fun(entry: FakenetLogEntry, to: string): boolean)|nil Set by the test: true loses the message
 ---@field log FakenetLogEntry[] Every message that an endpoint sent, also the lost ones
 ---@field guild table The roster as every member sees it, with the query functions of `ns.guildState`
+---@field rosterIncomplete boolean|nil Set by the test: the roster then does not count as complete
 ---@field random fun(m: integer?, n: integer?): number
 ---@field timers FakenetTimer[] Timers that have not fired
 ---@field sequence integer Number of timers made
@@ -83,6 +84,10 @@ function Fakenet.new(options)
     end,
     -- The fake roster is never stale
     NoteOnline = function() end,
+    -- A test sets `net.rosterIncomplete` to play a roster read that left entries out
+    IsRosterComplete = function()
+      return not net.rosterIncomplete and next(net.members) ~= nil
+    end,
   }
   return net
 end

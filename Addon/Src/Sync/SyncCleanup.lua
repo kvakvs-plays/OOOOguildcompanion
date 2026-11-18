@@ -1,8 +1,8 @@
 local addonName, ns = ...
 
--- The local cleanup of the shared database (.agents/00-plan.md, section 4.4): old tombstones are removed
--- once per stay in the guild, and a table that was out of contact for too long is emptied before it is
--- pulled again. Nothing here sends a message.
+-- The local cleanup of the shared database (.agents/00-plan.md, section 4.4): old tombstones and the
+-- records of characters who left the guild are removed once per stay in the guild, and a table that was
+-- out of contact for too long is emptied before it is pulled again. Nothing here sends a message.
 --
 -- This file adds its methods to the session of SyncSession.lua. It uses no WoW API, so the host tests run
 -- it over the fake network (Tests/sync_cleanup.lua).
@@ -14,6 +14,7 @@ ns.syncCleanup = cleanup
 local store = ns.syncStore
 ---@class OOOOSyncSession
 ---@field cleanedUp boolean|nil true once the cleanup of this stay in the guild has started
+---@field rosterCleaned boolean|nil true once the roster cleanup of this stay in the guild has started
 local Session = ns.syncSession.Session
 
 ---Tells whether a table was out of contact for so long that it must be emptied before its next pull.
@@ -66,9 +67,42 @@ function Session:CleanUp()
     end
   end
   nextTable()
+  self:CleanRoster()
+end
+
+---Removes, once per stay in the guild, the records of characters who are no longer in the guild from the
+---tables that are keyed by character. A record of such a name that arrives later is not stored either
+---(`CheckRecord` in SyncPull.lua), so every replica ends without it and nothing has to be sent.
+---
+---It runs only when the roster cache lists every member: an empty roster after login, or one with entries
+---left out, must not empty the database. Until then every roster update tries again.
+function Session:CleanRoster()
+  local guild = self.parts.guild
+  if self.rosterCleaned or not self.discovered or not guild:IsRosterComplete() or not self:IsRosterReady() then
+    return
+  end
+  self.rosterCleaned = true
+  local sync = self.parts.sync
+  local index = 0
+  local function nextTable()
+    index = index + 1
+    local name = sync.names[index]
+    if not name then
+      return
+    end
+    if sync.definitions[name].keyKind ~= "character" then
+      return nextTable()
+    end
+    sync:Sweep(name, function(key)
+      local member = sync.keyName(key)
+      -- The roster can change between two steps: when it is no longer complete, nothing more is removed
+      return guild:IsRosterComplete() and not (member and guild:GetMember(member))
+    end, self.parts.after, nextTable)
+  end
+  nextTable()
 end
 
 ---Lets the cleanup run again after the next discovery. Called when the session stops.
 function Session:StopCleanup()
-  self.cleanedUp = false
+  self.cleanedUp, self.rosterCleaned = false, false
 end

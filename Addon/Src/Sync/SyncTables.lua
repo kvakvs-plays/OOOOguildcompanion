@@ -16,7 +16,8 @@ local addonName, ns = ...
 ---@field schema integer Payload layout version; a change empties the stored table
 ---@field keyKind "character"|"free" "character": the key starts with a character name
 ---@field validate fun(key: string, payload: any): boolean Rejects a payload with wrong types or ranges
----@field maxRecordBytes integer Largest record, by `syncStore.estimateSize`
+---@field maxRecordBytes integer Largest record, by `syncStore.recordSize`: `Put` refuses a larger one, and
+---a larger one that arrives is dropped
 ---@field writers "owner"|"anyone" Who may write a key: the character that it names, or every member
 ---@field policy OOOOSyncPolicy|nil Defaults of the send policy; omitted fields take `DEFAULT_POLICY`
 
@@ -44,7 +45,7 @@ local versionId = ns.versionId
 sync.callbacks = LibStub("CallbackHandler-1.0"):New(sync)
 
 local NAME_PATTERN = "^[a-z][a-z0-9_]*$"
-local MAX_NAME_LENGTH = 32
+local MAX_NAME_LENGTH = store.MAX_TABLE_NAME_LENGTH
 local KEY_KINDS = { character = true, free = true }
 ---No value restricts writing by guild rank: a table registered with one would be open to every member
 local WRITERS = { owner = true, anyone = true }
@@ -131,6 +132,10 @@ function sync:RegisterTable(definition)
   if self.definitions[name] then
     error("ns.sync:RegisterTable: table registered twice: " .. name, 2)
   end
+  -- A hello with more tables is refused by its receivers (SyncProtocol.lua)
+  if #self.names >= store.MAX_TABLES then
+    error("ns.sync:RegisterTable: more than " .. store.MAX_TABLES .. " tables", 2)
+  end
   local policy = definition.policy or {}
   self.definitions[name] = {
     name = name,
@@ -195,7 +200,7 @@ end
 --------------------------------------------------------------------------------
 
 ---Longest key of a record, in bytes
-sync.MAX_KEY_LENGTH = 64
+sync.MAX_KEY_LENGTH = store.MAX_KEY_LENGTH
 ---Deepest nesting of tables in a payload
 local MAX_PAYLOAD_DEPTH = 8
 
@@ -318,7 +323,7 @@ end
 ---In a table with `writers = "owner"` the key must start with the name of the logged-in character.
 ---@return boolean|nil written true: written; false: equal to the stored payload; nil: refused
 ---@return string|nil reason Why the write was refused: "unknown table", "not ready", "bad key",
----"not the owner", or "bad payload"
+---"not the owner", "bad payload", or "too large"
 function sync:Put(tableName, key, payload)
   local tbl, definition, reason = self:GetTable(tableName)
   if not tbl or not definition then
@@ -332,6 +337,9 @@ function sync:Put(tableName, key, payload)
   end
   if payload == nil or not isPlainData(payload) or not definition.validate(key, payload) then
     return nil, "bad payload"
+  end
+  if store.recordSize({ key = key, payload = payload }) > definition.maxRecordBytes then
+    return nil, "too large"
   end
   local record = tbl.records[key]
   if record and not record.x and isEqual(record.d, payload) then
@@ -373,7 +381,7 @@ end
 
 ---Merges records that another replica sent into a table, in their order, and fires "OnRecordChanged" for
 ---every record that changed. Each record is checked: the time of its id, and its payload against the table
----definition. A bad record is dropped with the later records of its origin (`syncStore.applyBatch`).
+---definition and its size limit. A bad record is dropped with the later records of its origin (`syncStore.applyBatch`).
 ---@param tableName string
 ---@param records OOOOSyncWireRecord[] From `syncProtocol`: keys and ids have the right form
 ---@param checkFn (fun(record: OOOOSyncWireRecord, definition: OOOOSyncTableDefinition): boolean|"seen")? A
@@ -397,6 +405,9 @@ function sync:ApplyRemote(tableName, records, checkFn)
       -- The payload is untrusted: a `validate` that raises on it counts as a refusal
       local called, valid = pcall(definition.validate, record.key, record.payload)
       if not called or not valid then
+        return false
+      end
+      if store.recordSize(record) > definition.maxRecordBytes then
         return false
       end
     end
@@ -527,6 +538,19 @@ function sync:Iterate(tableName)
     end
     return nil
   end
+end
+
+---Estimates the size of a table on the wire: the sum of `syncStore.recordSize` over its records, the
+---tombstones too. It is one pass over the table, for the status output.
+---@param tableName string
+---@return integer bytes 0 when the table cannot be used
+function sync:Size(tableName)
+  local tbl = self:GetTable(tableName)
+  local bytes = 0
+  for key, record in pairs(tbl and tbl.records or {}) do
+    bytes = bytes + store.recordSize({ key = key, payload = record.d })
+  end
+  return bytes
 end
 
 ---Counts the records of a table.

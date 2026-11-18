@@ -1,6 +1,6 @@
--- Host test of the local cleanup (.agents/00-plan.md, section 4.4): old tombstones and the reset of a table
--- that was out of contact for too long (Addon/Src/Sync/SyncCleanup.lua, `Sweep` and `Reset` in
--- SyncTables.lua).
+-- Host test of the local cleanup (.agents/00-plan.md, section 4.4): old tombstones, the reset of a table
+-- that was out of contact for too long, and the records of characters who left the guild
+-- (Addon/Src/Sync/SyncCleanup.lua, `Sweep` and `Reset` in SyncTables.lua); and of the size limit of a record.
 local T = dofile("Tests/harness.lua")
 local Fakenet = dofile("Tests/fakenet.lua")
 local Replica = dofile("Tests/fixtures/replica.lua")(T)
@@ -262,6 +262,182 @@ do
   T.eq(a.session:IsStale("debug"), true, "the time of the last pull counts when there is no other")
   tbl.syncedAt = now - 59 * DAY
   T.eq(a.session:IsStale("debug"), false, "59 days are not stale")
+end
+
+--------------------------------------------------------------------------------
+-- Roster cleanup
+--------------------------------------------------------------------------------
+
+---Makes a replica that holds records of a member, of a character who left, and of itself, in the table
+---`character`, in a table with joined keys, and in a table with free keys.
+---@return Fakenet net
+---@return TestReplica a Not logged in yet
+---@return string before Version of the table `gear`
+local function withLeaver()
+  local net = Fakenet.new({ random = random })
+  local a = Replica.new(net, "Nota Scam", { random = random })
+  a.sync:RegisterTable({ name = "gear", schema = 1, keyKind = "character", maxRecordBytes = 100, writers = "owner",
+    validate = function(_key, payload)
+      return type(payload) == "number"
+    end })
+  net:Join("Other One")
+  net:SetOnline("Other One", false)
+  local store, versionId = a.ns.syncStore, a.ns.versionId
+  local now = math.floor(net:Now())
+  local payload = { class = "MAGE", level = 10, origins = { "XXXX" } }
+  for index, name in ipairs({ "Nota Scam", "Other One", "Left Guild" }) do
+    store.apply(a.sync:GetTable("character"), name, versionId.make(now - 100, "XXXX", index), payload)
+    store.apply(a.sync:GetTable("gear"), name .. ":171", versionId.make(now - 90, "XXXX", index), index)
+    store.apply(a.sync:GetTable("debug"), name, versionId.make(now - 80, "XXXX", index), "text")
+  end
+  store.apply(a.sync:GetTable("gear"), "Left Guild:5", versionId.make(now - 70, "XXXX", 0), nil, true)
+  return net, a, a:Version("gear")
+end
+
+-- A character that left the roster loses its records; one that stays keeps them
+do
+  local net, a, before = withLeaver()
+  local removed = {}
+  a.sync.RegisterCallback(removed, "OnRecordChanged", function(_event, tableName, key, payload, isRemote)
+    removed[#removed + 1] = { tableName, key, payload == nil and "<nil>" or payload, isRemote }
+  end)
+  a:Login()
+  net:Advance(25)
+  T.ok(a.sync:Get("character", "Left Guild"), "nothing is removed before discovery has ended")
+  net:Advance(100)
+  T.eq(a.sync:Get("character", "Left Guild"), nil, "the record of a character who left is removed")
+  T.eq(a.sync:Get("gear", "Left Guild:171"), nil, "also under a joined key")
+  T.eq(a.sync:GetTable("gear").records["Left Guild:5"], nil, "and its tombstone")
+  T.ok(a.sync:Get("character", "Other One"), "the record of a member who is offline stays")
+  T.eq(a.sync:Get("gear", "Other One:171"), 2, "also under a joined key")
+  T.ok(a.sync:Get("character", "Nota Scam"), "the own record stays")
+  T.eq(a.sync:Get("debug", "Left Guild"), "text", "a table with free keys is not touched")
+  T.eq(a:Version("gear"), before, "the table version is unchanged")
+  table.sort(removed, function(x, y)
+    return x[1] < y[1]
+  end)
+  T.eq(removed, { { "character", "Left Guild", "<nil>", true }, { "gear", "Left Guild:171", "<nil>", true } },
+    "the callback fires for the removed records, not for the tombstone")
+end
+
+-- A roster that does not list every member removes nothing; the cleanup runs when it does
+do
+  local net, a = withLeaver()
+  net.rosterIncomplete = true
+  a:Login()
+  net:Advance(200)
+  T.ok(a.sync:Get("character", "Left Guild"), "an incomplete roster removes nothing")
+  net.rosterIncomplete = nil
+  net:Join("New One")
+  net:Advance(1)
+  T.eq(a.sync:Get("character", "Left Guild"), nil, "the next roster update with a complete roster cleans up")
+  T.ok(a.sync:Get("character", "Other One"), "and keeps the members")
+end
+
+-- An empty roster removes nothing
+do
+  local net, a = withLeaver()
+  a:Login()
+  -- A roster cache that is empty although the client calls it complete
+  a.session.parts.guild = {
+    GetMember = function() return nil end,
+    IsOnline = function() return false end,
+    NoteOnline = function() end,
+    IsRosterComplete = function() return true end,
+  }
+  net:Advance(200)
+  T.eq(a.session.discovered, true, "discovery has ended")
+  T.ok(a.sync:Get("character", "Left Guild"), "a roster without the own character removes nothing")
+  T.ok(a.sync:Get("character", "Nota Scam"), "not even the own record")
+end
+
+--------------------------------------------------------------------------------
+-- Size limit of a record
+--------------------------------------------------------------------------------
+
+-- A payload over the limit is refused by Put and dropped on receive
+do
+  local net = Fakenet.new({ random = random })
+  local a = Replica.new(net, "Nota Scam", { random = random })
+  a.sync:RegisterTable({ name = "small", schema = 1, keyKind = "free", maxRecordBytes = 60, writers = "anyone",
+    validate = function(_key, payload)
+      return type(payload) == "string"
+    end })
+  a:Login()
+  net:Advance(100)
+  local store, versionId = a.ns.syncStore, a.ns.versionId
+  local tbl = a.sync:GetTable("small")
+  -- A record costs its key, its id, and its payload, with 2 bytes each, and 2 more
+  local fits = string.rep("x", 60 - (#"key" + 2 + versionId.LENGTH + 2 + 2 + 2))
+  T.eq(store.recordSize({ key = "key", payload = fits }), 60, "the test payload is exactly at the limit")
+  T.eq(a.sync:Put("small", "key", fits), true, "a record at the limit is written")
+  local before = a:Version("small")
+  T.eq({ a.sync:Put("small", "key", fits .. "x") }, { nil, "too large" }, "a record over the limit is refused by Put")
+  T.eq({ a.sync:Put("small", "longer key", fits) }, { nil, "too large" }, "the key counts as well")
+  T.eq(a:Version("small"), before, "a refused Put makes no new id")
+
+  local raw = net:Join("Other One")
+  local now = math.floor(net:Now())
+  local other = versionId.make(now - 5, "RRRR", 0) .. "!!!!!"
+  local good, large, late = versionId.make(now - 3, "XXXX", 0), versionId.make(now - 2, "XXXX", 0),
+    versionId.make(now - 1, "XXXX", 0)
+  raw:Send(codec.encode("P", "small", 1, other, other, true, { XXXX = versionId.ZERO }, Replica.protocol.packRecords({
+    { key = "one", id = good, payload = fits },
+    { key = "two", id = large, payload = fits .. "x" },
+    { key = "six", id = late, payload = "short" },
+  }), nil), "GUILD")
+  net:Advance(1)
+  T.eq(a.sync:Get("small", "one"), fits, "a received record at the limit is applied")
+  T.eq(a.sync:Get("small", "two"), nil, "a received record over the limit is dropped")
+  T.eq(a.sync:Get("small", "six"), nil, "with the later records of its origin")
+  T.eq(tbl.clock.XXXX, good, "and the clock stays before it")
+end
+
+-- The size estimate needs no serializer and is close to one: within 20% on 100 random payloads
+do
+  local stub = dofile("Tests/fixtures/stub_serializer.lua")
+  local store = T.loadAll({ "Addon/Src/Sync/Base94.lua", "Addon/Src/Sync/VersionId.lua",
+    "Addon/Src/Sync/SyncStore.lua" }).syncStore
+  ---Makes a text of lower case letters.
+  local function text(low, high)
+    local chars = {}
+    for index = 1, random(low, high) do
+      chars[index] = string.char(random(97, 122))
+    end
+    return table.concat(chars)
+  end
+  ---Makes a value as a record payload holds it: mostly texts and whole numbers, some flags, lists, and tables.
+  local function value(depth)
+    local kind = random(1, depth < 2 and 10 or 8)
+    if kind <= 4 then
+      return text(0, 60)
+    elseif kind <= 7 then
+      return random(0, 1000000)
+    elseif kind == 8 then
+      return random(1, 2) == 1
+    end
+    local result = {}
+    if kind == 9 then
+      for index = 1, random(1, 8) do
+        result[index] = random(1, 30000)
+      end
+    else
+      for _ = 1, random(1, 5) do
+        result[text(3, 10)] = value(depth + 1)
+      end
+    end
+    return result
+  end
+  for _ = 1, 100 do
+    local payload = {}
+    for _ = 1, random(3, 8) do
+      payload[text(3, 10)] = value(0)
+    end
+    -- Without the 4 bytes with which the stub starts every message
+    local estimate, actual = store.estimateSize(payload), #stub:Serialize(payload) - 4
+    T.ok(math.abs(estimate - actual) <= 0.2 * actual,
+      "the estimate " .. estimate .. " is within 20% of the serialized size " .. actual)
+  end
 end
 
 T.finish()
