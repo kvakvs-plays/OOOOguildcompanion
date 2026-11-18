@@ -93,6 +93,9 @@ do
   T.eq(a:Hear(SECRET, "Nota Scam"), nil, "a secret text is not recorded")
   T.eq(a:Hear("text", SECRET), nil, "a secret sender is not recorded")
   T.ok(a:Hear("text", "Nota Scam"), "a plain line still is")
+  T.eq(a.ns.guildChat.counts, { heard = 3, secret = 2, written = 1 }, "the capture counts the secret lines")
+  T.ok(a.ns.guildChat:CaptureStatus():find("3 lines heard, 2 secret, 1 written", 1, true),
+    "and its status names them without touching a secret value")
   _G.issecretvalue = plain
   T.eq(stored(a), 1, "only the plain line is stored")
 end
@@ -179,8 +182,10 @@ do
   }, "the last lines with their age, every | doubled, and a mark on a line that its sender did not write")
   T.eq(#a.ns.guildChat:PrintLines(10, now), 4, "a count over the number of lines prints all")
   a.ns.syncSlash:Dispatch("chat 1")
-  T.eq(a.notices, { "guild chat: 3 lines stored, the last 1:", "  0 s ago Nota Scam: own line" },
-    "the slash command prints them")
+  T.eq(a.notices, { "guild chat: 3 lines stored, the last 1:", "  0 s ago Nota Scam: own line",
+    "capture: not listening (not in the guild); this session 1 lines heard, 0 secret, 1 written; "
+      .. "own name 'Nota Scam', last sender 'Nota Scam'; not the witness" },
+    "the slash command prints them, and what the capture has seen")
   a.ns.syncSlash:Dispatch("chat many")
   T.eq(a.notices[#a.notices], "Usage: /oooo sync chat [count]", "a count that is no number prints the usage")
 end

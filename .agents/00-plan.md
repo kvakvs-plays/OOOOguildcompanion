@@ -833,12 +833,16 @@ finished and checked on the host; the two client checks need two accounts.
     link shows as its escape sequence). Run the postponed hour of step 8.2
     (stage 8) in this session. Record whether a line written in combat
     and one written inside a dungeon are stored, or are secret.
-  - Not known before this check, and what it shows when it is wrong:
-    - Whether `CHAT_MSG_GUILD` is a valid event on Forever. If not, nothing
-      is recorded and `/oooo sync chat` stays at 0 lines.
+  - Not known before this check. The last line of `/oooo sync chat`
+    ("capture: ...") shows each of them:
+    - Whether `CHAT_MSG_GUILD` is a valid event on Forever. If not, the line
+      reads "the client has no event CHAT_MSG_GUILD".
     - Whether the sender of the event is the roster name (`Nota Scam`, no
-      realm suffix), as it is for an addon message. If not, the own lines
-      are not recognized and nothing is recorded.
+      realm suffix), as it is for an addon message. The line prints "own
+      name" and "last sender"; when they differ for an own line, "written"
+      stays 0.
+    - Whether guild chat is secret in combat or in a dungeon: "secret"
+      counts the lines that were not recorded for that reason.
   - Done when: the client checkpoint and the hour of step 8.2 are recorded.
 - **10.3 Witness for members without the addon** (**CLIENT**, two accounts and
   a member without the addon). The code and the host tests are finished; see

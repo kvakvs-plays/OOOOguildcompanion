@@ -303,7 +303,9 @@
   removal) and joins records with the same sender and text within
   `DUPLICATE_WINDOW = 180` s of the first. Beyond the plan: `validate` wants
   an id as key, and a record whose key is not its own id is no line.
-  `/oooo sync chat [count]` (`PrintLines`). The test replicas
+  `/oooo sync chat [count]` (`PrintLines`), which ends with the line of
+  `CaptureStatus`: listening or not, the lines heard, secret, and written
+  in this session, the own name, the last sender. The test replicas
   (`Tests/fixtures/replica.lua`) load the file, so every one has the table;
   `Replica:Hear`. `Tests/sync_guildchat.lua`.
 - **10.3 Witness for members without the addon** (code; the client check is

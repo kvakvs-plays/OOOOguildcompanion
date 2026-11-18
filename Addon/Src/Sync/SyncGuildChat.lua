@@ -28,10 +28,20 @@ local addonName, ns = ...
 ---@field keys string[]|nil The keys of the chat lines, sorted; nil until `Lines` builds it, and again after
 ---a record was removed
 ---@field frame table|nil The event frame; nil until the character is in the guild
+---@field listening boolean|nil true while the frame listens to the guild chat
+---@field eventMissing boolean|nil true when the client does not know the chat event
+---@field counts OOOOGuildChatCounts What the capture has seen in this session, for `/oooo sync chat`
+---@field lastSender string|nil The sender name of the last line that was heard, as the event gave it
 local guildChat = {}
 ns.guildChat = guildChat
 
 local versionId = ns.versionId
+
+---@class OOOOGuildChatCounts Numbers of chat lines in this session
+---@field heard integer Lines that the event gave
+---@field secret integer Lines whose sender or text was secret; they are not recorded
+---@field written integer Lines that this replica stored: own ones and those that it wrote as witness
+guildChat.counts = { heard = 0, secret = 0, written = 0 }
 
 ---Name of the table
 guildChat.TABLE = "guildchat"
@@ -146,16 +156,43 @@ end
 ---@param sender any The name of the sender
 ---@return string|nil id The id of the new record; nil when nothing was written
 function guildChat:OnChatLine(text, sender)
-  if issecretvalue(text) or issecretvalue(sender) or type(text) ~= "string" then
+  local counts = self.counts
+  counts.heard = counts.heard + 1
+  if issecretvalue(text) or issecretvalue(sender) then
+    counts.secret = counts.secret + 1
     return nil
   end
+  if type(text) ~= "string" then
+    return nil
+  end
+  self.lastSender = type(sender) == "string" and sender or nil
   local name = ns.guildState.normalizeName(sender)
   local own = ownName()
   if not name or not own or not self:ShouldWrite(name, own) then
     return nil
   end
   -- A text that the table refuses (empty, or over the length of a chat message) is not recorded
-  return (ns.sync:Append(guildChat.TABLE, { s = name, t = text }))
+  local id = ns.sync:Append(guildChat.TABLE, { s = name, t = text })
+  if id then
+    counts.written = counts.written + 1
+  end
+  return id
+end
+
+---Builds the line about the capture for `/oooo sync chat`: whether the replica listens, what it has heard
+---in this session, and the names that decide whether a line is an own one. It is what the client check of
+---the table reads when no line is stored.
+---@return string line Ready for chat: every `|` is doubled
+function guildChat:CaptureStatus()
+  local counts = self.counts
+  local state = self.eventMissing and "the client has no event CHAT_MSG_GUILD"
+    or (self.listening and "listening" or "not listening (not in the guild)")
+  local session = currentSession()
+  local own = ownName()
+  return ns.syncCommands.escape("capture: " .. state .. "; this session " .. counts.heard .. " lines heard, "
+    .. counts.secret .. " secret, " .. counts.written .. " written; own name '" .. tostring(own)
+    .. "', last sender '" .. tostring(self.lastSender) .. "'; "
+    .. (own and session and self:IsWitness(own) and "witness" or "not the witness"))
 end
 
 --------------------------------------------------------------------------------
@@ -315,6 +352,7 @@ ns.syncSlash:Register("chat", "chat [count] - the last lines of the stored guild
   for _, line in ipairs(guildChat:PrintLines(math.min(count or DEFAULT_PRINT, MAX_PRINT), ns.sync.timeFn())) do
     ns.print(line)
   end
+  ns.print(guildChat:CaptureStatus())
 end)
 
 --------------------------------------------------------------------------------
@@ -343,6 +381,7 @@ function guildChat:SetListening(listening)
       handlers[event](...)
     end)
   end
+  self.listening = listening
   for event in pairs(handlers) do
     -- Registering an event that the client does not know throws
     if C_EventUtils.IsEventValid(event) then
@@ -351,6 +390,8 @@ function guildChat:SetListening(listening)
       else
         self.frame:UnregisterEvent(event)
       end
+    else
+      self.eventMissing = true
     end
   end
 end
