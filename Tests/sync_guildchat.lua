@@ -45,6 +45,14 @@ local function receive(replica, time, origin, sender, text, counter)
   return id
 end
 
+---Writes the record of a replica's character into the table `character`, as the addon does at login. The
+---origin of the replica then belongs to that character.
+---@param replica TestReplica
+local function writeCharacter(replica)
+  T.eq(replica.sync:Put("character", replica.name,
+    replica.ns.syncCharacter.buildPayload("MAGE", 10, replica.sync:GetOrigin())), true, "the character is written")
+end
+
 -- A line of the own character is stored; a line of another sender is not
 do
   local net = Fakenet.new({ random = random })
@@ -160,14 +168,15 @@ do
   local a = Replica.new(net, "Nota Scam", { random = random })
   local now = math.floor(net:Now())
   local link = "look |cff0070dd|Hitem:4306::::::::60:::::|h[Silk Cloth]|h|r"
+  writeCharacter(a)
   receive(a, now - 7200, "XXXX", "Other One", "old line")
   receive(a, now - 90, "XXXX", "Other One", link)
   a:Hear("own line", "Nota Scam")
   T.eq(a.ns.guildChat:PrintLines(2, now), {
     "guild chat: 3 lines stored, the last 2:",
-    "  1 min ago Other One: look ||cff0070dd||Hitem:4306::::::::60:::::||h[Silk Cloth]||h||r",
+    "  1 min ago Other One (witness): look ||cff0070dd||Hitem:4306::::::::60:::::||h[Silk Cloth]||h||r",
     "  0 s ago Nota Scam: own line",
-  }, "the last lines with their age, every | doubled")
+  }, "the last lines with their age, every | doubled, and a mark on a line that its sender did not write")
   T.eq(#a.ns.guildChat:PrintLines(10, now), 4, "a count over the number of lines prints all")
   a.ns.syncSlash:Dispatch("chat 1")
   T.eq(a.notices, { "guild chat: 3 lines stored, the last 1:", "  0 s ago Nota Scam: own line" },
@@ -292,5 +301,147 @@ end
 
 raceAfterLogin(false)
 raceAfterLogin(true)
+
+--------------------------------------------------------------------------------
+-- The witness (step 10.3)
+--------------------------------------------------------------------------------
+
+---Makes a guild of three replicas that have completed discovery and know each other, and a member without
+---the addon.
+---@return Fakenet net
+---@return TestReplica[] replicas "Nota Scam", "Other One", "Third One"
+local function guildOfThree()
+  local net = Fakenet.new({ random = random })
+  local replicas = {}
+  for index, name in ipairs({ "Nota Scam", "Other One", "Third One" }) do
+    replicas[index] = Replica.new(net, name, { random = random })
+  end
+  for _, replica in ipairs(replicas) do
+    replica:Login()
+  end
+  net:Advance(100)
+  for _, replica in ipairs(replicas) do
+    T.eq(#replica:PeerNames(), 2, replica.name .. " knows the two others")
+  end
+  net:Join("No Addon")
+  return net, replicas
+end
+
+---Lets every replica hear one line of guild chat and counts those that wrote it.
+---@param replicas TestReplica[]
+---@param text string
+---@param sender string
+---@return string[] writers Names of the replicas that wrote the line
+local function say(replicas, text, sender)
+  local writers = {}
+  for _, replica in ipairs(replicas) do
+    if replica:Hear(text, sender) then
+      writers[#writers + 1] = replica.name
+    end
+  end
+  return writers
+end
+
+-- Three replicas hear a line of a member without the addon: one record exists after the push
+do
+  local net, replicas = guildOfThree()
+  T.eq(say(replicas, "hello from outside", "No Addon"), { "Nota Scam" },
+    "the replica with the first name in byte order writes the line")
+  net:Advance(1000)
+  for _, replica in ipairs(replicas) do
+    T.eq(stored(replica), 1, replica.name .. " holds one record")
+    T.eq(texts(replica), { "hello from outside" }, "with the line")
+    T.eq(replica.ns.guildChat:Lines()[1].sender, "No Addon", "under the name of its sender")
+  end
+  -- The witness goes offline: the next one in byte order takes over
+  replicas[1]:Logout()
+  net:Advance(5)
+  T.eq(say({ replicas[2], replicas[3] }, "second line", "No Addon"), { "Other One" },
+    "when the witness has gone offline, the next name writes")
+end
+
+-- The sender is a peer: no witness writes
+do
+  local net, replicas = guildOfThree()
+  T.eq(say(replicas, "from a member with the addon", "Third One"), { "Third One" },
+    "the line of a peer is written by its own addon alone")
+  net:Advance(1000)
+  for _, replica in ipairs(replicas) do
+    T.eq(stored(replica), 1, replica.name .. " holds one record")
+  end
+end
+
+-- A replica that has just joined and has not finished its discovery writes nothing
+do
+  local net, replicas = guildOfThree()
+  local fresh = Replica.new(net, "Aaa First", { random = random })
+  fresh:Login()
+  net:Advance(5)
+  T.eq(fresh.session.discovered, false, "the new replica has not finished its discovery")
+  local all = { replicas[1], replicas[2], replicas[3], fresh }
+  T.eq(say(all, "while one is joining", "No Addon"), { "Nota Scam" },
+    "the new replica writes nothing, although its name is the first; the old witness still writes")
+  net:Advance(100)
+  T.eq(fresh.session.discovered, true, "now it has")
+  T.eq(say(all, "after it has joined", "No Addon"), { "Aaa First" }, "and is the witness from then on")
+end
+
+-- The line of a witness and the line of the sender's own addon can be told apart
+do
+  local net, replicas = guildOfThree()
+  writeCharacter(replicas[2])
+  net:Advance(1000)
+  say(replicas, "from outside", "No Addon")
+  net:Advance(5)
+  say(replicas, "from inside", "Other One")
+  net:Advance(1000)
+  for _, replica in ipairs(replicas) do
+    local lines = replica.ns.guildChat:Lines()
+    T.eq({ lines[1].text, lines[1].bySender }, { "from outside", false },
+      replica.name .. ": the line of a witness is not by its sender")
+    T.eq({ lines[2].text, lines[2].bySender }, { "from inside", true }, "the line of the sender's addon is")
+  end
+  -- A modified addon writes a line under the name of a member: the origin does not belong to that member
+  local a = replicas[1]
+  receive(a, math.floor(net:Now()), "QQQQ", "Other One", "forged in my name")
+  local lines = a.ns.guildChat:Lines()
+  T.eq({ lines[3].text, lines[3].bySender }, { "forged in my name", false }, "a line of a foreign origin is marked")
+end
+
+-- Two replicas that do not know each other yet both write; Lines shows one line
+do
+  local net = Fakenet.new({ random = random })
+  local a = Replica.new(net, "Nota Scam", { random = random })
+  local b = Replica.new(net, "Other One", { random = random })
+  net:SetOnline("Other One", false)
+  writeCharacter(a)
+  a:Login()
+  net:Advance(100)
+  -- B has the same tables as A, so nobody answers its hello and it knows no peer
+  for name, tbl in pairs(a.data.tables) do
+    local copy = b.data.tables[name]
+    for key, record in pairs(tbl.records) do
+      b.ns.syncStore.apply(copy, key, record.v, record.d, record.x)
+    end
+  end
+  b:Login()
+  net:Advance(100)
+  T.eq(b.session.discovered, true, "B has finished its discovery")
+  T.eq({ a:PeerNames(), b:PeerNames() }, { { "Other One" }, {} }, "A has heard the hello of B; B knows nobody")
+  net:Join("No Addon")
+  T.eq(say({ a, b }, "written twice", "No Addon"), { "Nota Scam", "Other One" }, "both take themselves for the witness")
+  net:Advance(1000)
+  T.eq({ stored(a), stored(b) }, { 2, 2 }, "two records exist after the pushes")
+  T.eq({ texts(a), texts(b) }, { { "written twice" }, { "written twice" } }, "Lines shows one line on both")
+  T.eq(a:Version(TABLE), b:Version(TABLE), "the replicas are equal")
+
+  -- The push of A has shown B that A is a peer: a line of A is from then on written by A alone
+  T.eq(b:PeerNames(), { "Nota Scam" }, "B knows A from its push")
+  T.eq(say({ a, b }, "a line of A", "Nota Scam"), { "Nota Scam" }, "the line of a known peer is written once")
+  T.eq(say({ a, b }, "from outside again", "No Addon"), { "Nota Scam" }, "and there is one witness")
+  net:Advance(1000)
+  local lines = b.ns.guildChat:Lines()
+  T.eq({ #lines, lines[2].text, lines[2].bySender }, { 3, "a line of A", true }, "B holds the three lines")
+end
 
 T.finish()

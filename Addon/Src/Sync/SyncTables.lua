@@ -31,6 +31,7 @@ local addonName, ns = ...
 ---@field nextId (fun(maxId: string?): string)|nil Id source of this install
 ---@field playerNameFn (fun(): string|nil)|nil Gives the name of the logged-in character, for the owner rule
 ---@field IsAltOf (fun(self: OOOOSync, name: string, other: string): boolean)|nil Added by SyncCharacter.lua
+---@field IsOriginOf (fun(self: OOOOSync, name: string, origin: string): boolean)|nil Added by SyncCharacter.lua
 ---@field callbacks table CallbackHandler registry; fires "OnRecordChanged"
 ---@field RegisterCallback fun(owner: any, event: string, handler: function|string, ...: any)
 ---@field UnregisterCallback fun(owner: any, event: string)

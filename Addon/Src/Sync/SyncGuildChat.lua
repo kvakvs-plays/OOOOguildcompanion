@@ -2,8 +2,8 @@ local addonName, ns = ...
 
 -- The table `guildchat` of the shared database (.agents/00-plan.md, section 5.3): a copy of the guild chat
 -- of the last 14 days, for the member who was offline. One chat line is one record that is written once,
--- under its own version id as key, by the addon of the member who wrote the line. It is not real time: the
--- lines travel with the push and the pull of the engine.
+-- under its own version id as key, by the addon of the member who wrote the line, or by one witness when
+-- that member has no addon. It is not real time: the lines travel with the push and the pull of the engine.
 --
 -- Nothing at file scope uses the WoW API, so the host tests load this file (Tests/sync_guildchat.lua).
 
@@ -16,10 +16,15 @@ local addonName, ns = ...
 ---@field time integer Server time of the line: the timestamp of `id`
 ---@field sender string
 ---@field text string The original text: untrusted, escape it before it is shown
+---@field bySender boolean true when a record of the line was written by the sender's own addon: its origin
+---belongs to the sender in the table `character`. false for a line that only a witness wrote; any member
+---with a modified addon can write such a line under any sender name.
 
 ---@class OOOOGuildChat
 ---@field playerName (fun(): string|nil)|nil Gives the name of the logged-in character; set by a host test,
 ---in the game `ns.syncCharacter.playerName` is used
+---@field session OOOOSyncSession|nil The session that knows the peers; set by a host test, in the game
+---`ns.syncSession.current` is used
 ---@field keys string[]|nil The keys of the chat lines, sorted; nil until `Lines` builds it, and again after
 ---a record was removed
 ---@field frame table|nil The event frame; nil until the character is in the guild
@@ -91,14 +96,48 @@ local function ownName()
   return (guildChat.playerName or ns.syncCharacter.playerName)()
 end
 
+---Returns the session of the shared database, which knows the peers; nil when there is none.
+---@return OOOOSyncSession|nil
+local function currentSession()
+  return guildChat.session or (ns.syncSession and ns.syncSession.current)
+end
+
+---Tells whether this replica is the witness: the one that writes the lines of members without the addon.
+---It is the replica whose character name is the first in byte order among itself and its online peers.
+---Before the first discovery is complete it knows no peers and would take every line, so it is no witness.
+---
+---The peer list can lack a peer, mostly after a login whose hello nobody had to answer. Two replicas can
+---then both write a line; `Lines` joins the two records.
+---@param own string Name of the logged-in character
+---@return boolean
+function guildChat:IsWitness(own)
+  local session = currentSession()
+  if not session or not session.discovered then
+    return false
+  end
+  for name in pairs(session.peers) do
+    if name < own then
+      return false
+    end
+  end
+  return true
+end
+
 ---Tells whether this replica is the one that writes a line of guild chat. Every online member hears the
 ---line, and the game gives it no id that all clients share, so exactly one replica must store it: the
----addon of the sender.
+---addon of the sender, or the witness when the sender is no peer.
 ---@param sender string Character name of the sender
 ---@param own string Name of the logged-in character
 ---@return boolean
 function guildChat:ShouldWrite(sender, own)
-  return sender == own
+  if sender == own then
+    return true
+  end
+  local session = currentSession()
+  if not session or session.peers[sender] then
+    return false
+  end
+  return self:IsWitness(own)
 end
 
 ---Takes one line of guild chat, as the event CHAT_MSG_GUILD gives it, and stores it when this replica is
@@ -230,9 +269,13 @@ function guildChat:Lines(sinceTime)
     if payload then
       local time = versionId.parse(key) --[[@as integer]]
       local mark = payload.s .. "\0" .. payload.t
+      local bySender = ns.sync.IsOriginOf ~= nil and ns.sync:IsOriginOf(payload.s, versionId.originOf(key))
       local line = shown[mark]
-      if not line or time - line.time > guildChat.DUPLICATE_WINDOW then
-        line = { id = key, time = time, sender = payload.s, text = payload.t }
+      if line and time - line.time <= guildChat.DUPLICATE_WINDOW then
+        -- The sender's own record vouches for the line, also when a witness wrote it a moment earlier
+        line.bySender = line.bySender or bySender
+      else
+        line = { id = key, time = time, sender = payload.s, text = payload.t, bySender = bySender }
         shown[mark] = line
         if time >= since then
           lines[#lines + 1] = line
@@ -243,7 +286,8 @@ function guildChat:Lines(sinceTime)
   return lines
 end
 
----Builds the lines that `/oooo sync chat` prints: the last lines, oldest first, each with its age.
+---Builds the lines that `/oooo sync chat` prints: the last lines, oldest first, each with its age. A line
+---that the sender's own addon did not write is marked.
 ---@param count integer Number of lines
 ---@param now number Server time
 ---@return string[] lines Ready for chat: every `|` is doubled, so a link shows as its text
@@ -253,7 +297,7 @@ function guildChat:PrintLines(count, now)
   for index = math.max(1, #lines - count + 1), #lines do
     local line = lines[index]
     result[#result + 1] = ns.syncCommands.escape("  " .. ns.syncOptions.ago(now - line.time) .. " " .. line.sender
-      .. ": " .. line.text)
+      .. (line.bySender and "" or " (witness)") .. ": " .. line.text)
   end
   return result
 end

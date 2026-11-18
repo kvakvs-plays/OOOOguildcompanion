@@ -110,10 +110,12 @@ return function(T)
         end,
       }),
     })
-    -- The guild chat capture asks for the own name; in the game it reads the unit
+    -- The guild chat capture asks for the own name and for the peers; in the game it reads the unit and
+    -- takes the session of the game
     ns.guildChat.playerName = function()
       return name
     end
+    ns.guildChat.session = self.session
     self.endpoint.receive = function(text, distribution, sender)
       self.transport:Receive(text, distribution, sender)
     end

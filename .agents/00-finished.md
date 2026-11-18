@@ -306,3 +306,13 @@
   `/oooo sync chat [count]` (`PrintLines`). The test replicas
   (`Tests/fixtures/replica.lua`) load the file, so every one has the table;
   `Replica:Hear`. `Tests/sync_guildchat.lua`.
+- **10.3 Witness for members without the addon** (code; the client check is
+  open in the plan): in `SyncGuildChat.lua`, `ShouldWrite` also takes the
+  line of a sender who is no peer when `IsWitness` holds: discovery is done
+  and no peer has a name before the own one in byte order. A line of `Lines`
+  has `bySender` (the origin of one of its records belongs to the sender:
+  `ns.sync:IsOriginOf`, `character.hasOrigin` in `SyncCharacter.lua`), and
+  `/oooo sync chat` marks the others `(witness)`. Found by a host test: a
+  replica whose hello got no answer knows no peer and writes the lines of
+  members with the addon too, until it hears their push (plan 5.3, "A peer
+  list with a hole", and step 10.4). Tests in `Tests/sync_guildchat.lua`.

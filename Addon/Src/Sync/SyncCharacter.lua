@@ -197,6 +197,41 @@ function ns.sync:IsAltOf(name, other)
   return tbl ~= nil and character.shareOrigin(tbl, name, other)
 end
 
+---Tells whether an origin has written a character, by a stored `character` table: it is the writer of the
+---character's record or listed in its payload. It makes no table, so it can be asked for many records.
+---@param tbl OOOOSyncTable
+---@param name string Character name
+---@param origin string
+---@return boolean
+function character.hasOrigin(tbl, name, origin)
+  local record = tbl.records[name]
+  if not record or record.x then
+    return false
+  end
+  if versionId.originOf(record.v) == origin then
+    return true
+  end
+  local listed = type(record.d) == "table" and record.d.origins
+  if type(listed) == "table" then
+    for _, other in ipairs(listed) do
+      if other == origin then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+---Tells whether an origin belongs to the player of a character, from the table `character`. A reader of the
+---table `guildchat` asks this to tell a line that the sender's addon wrote from one of a witness.
+---@param name string Character name
+---@param origin string
+---@return boolean
+function ns.sync:IsOriginOf(name, origin)
+  local tbl = self:GetTable(character.TABLE)
+  return tbl ~= nil and character.hasOrigin(tbl, name, origin)
+end
+
 ---Name of the logged-in character as the roster and message senders give it; nil when it is hidden.
 ---`UnitName("player")` returns the first and the last name as two values on Forever.
 ---@return string|nil

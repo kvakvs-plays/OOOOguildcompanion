@@ -5,7 +5,9 @@ converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
 Status: stages 0 to 7 are finished, and stage 8 except for the hour-long
-client session, which is postponed to step 10.2 (`00-finished.md`). The probes of stage 1
+client session, which is postponed to step 10.2 (`00-finished.md`). Stage 9
+is postponed. The code of stage 10 is finished; its client checks (10.2,
+10.3) and the question of step 10.4 are open. The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -381,6 +383,19 @@ ns.sync:RegisterTable({
   - A replica is not a witness before its first discovery is complete (7.1
     step 5). Until then it knows no peers and would write every line that it
     hears, also the lines of members who have the addon.
+  - **A peer list with a hole** (found in step 10.3, shown by a host test).
+    "A short time" above is too kind. A replica whose tables equal those of
+    the others, the normal case after a `/reload` or a short absence, gets
+    no answer to its hello (7.1 step 4) and knows no peer after its
+    discovery. It then takes itself for the witness, and takes every sender
+    for a member without the addon: it writes each line that it hears, also
+    the lines that the sender's own addon writes. For each sender this ends
+    when the replica hears a message of that sender, in practice the push of
+    the sender's lines 5 to 10 minutes later. The data stays correct:
+    `Lines` joins the records, and the sender's own record keeps the line
+    marked as written by its sender. The cost is storage and traffic: about
+    the first 10 minutes of chat after each login are stored twice. Step
+    10.4 decides whether to change this.
   - Every other replica gets the line through the push and the pull. It does
     not store what it hears itself.
 - **No gap after login.** A member who logs in can hear a push, write an own
@@ -793,7 +808,8 @@ Postponed (2026-11-18): the guild has no use for equipment data yet. Stages
 
 ### Stage 10. Guild chat table
 
-Design in 5.3. It does not depend on stage 9.
+Design in 5.3. It does not depend on stage 9. The code of the three steps is
+finished and checked on the host; the two client checks need two accounts.
 
 - **10.1 Engine: `Append` and `maxAge`**: finished; see `00-finished.md`.
 - **10.2 Table `guildchat`: own lines, retention, reading** (**CLIENT**, two
@@ -814,24 +830,29 @@ Design in 5.3. It does not depend on stage 9.
       are not recognized and nothing is recorded.
   - Done when: the client checkpoint and the hour of step 8.2 are recorded.
 - **10.3 Witness for members without the addon** (**CLIENT**, two accounts and
-  a member without the addon)
-  - Substeps
-    - On a line of a sender that is not the own character and not an online
-      peer: write it when the own name is the first in byte order among the
-      own name and the online peers.
-    - `ns.guildChat:Lines` also tells for each line whether its origin belongs
-      to the sender (5.3, trust).
+  a member without the addon). The code and the host tests are finished; see
+  `00-finished.md`. The client check is open:
   - Checkpoint (**CLIENT**): a member without the addon writes a line; it
-    appears once on both accounts.
-  - Host tests (`Tests/sync_guildchat.lua`, fake network)
-    - Three replicas hear a line of a non-peer: one record exists after the
-      push.
-    - The sender is a peer: no witness writes.
-    - A replica that has just joined and has not finished its discovery hears
-      a line of a non-peer and writes nothing.
-    - Two replicas that do not know each other yet both write; `Lines` shows
-      one line.
+    appears once on both accounts, marked `(witness)` in `/oooo sync chat`.
+    Also record how many records `/oooo sync status` counts for `guildchat`
+    after a `/reload` of one account and some lines of the other: more
+    records than lines is the double writing of 5.3 ("A peer list with a
+    hole").
   - Done when: the client checkpoint is recorded.
+- **10.4 Decide: a peer list without holes** (open question, found in step
+  10.3; no code yet)
+  - The witness rule needs to know who has the addon, and discovery does not
+    tell: a replica whose tables equal those of the others gets no answer to
+    its hello (7.1 step 4) and knows no peer. See 5.3, "A peer list with a
+    hole", for what that costs.
+  - Options: (a) accept the double records, which `Lines` joins; (b) every
+    peer answers a hello with a short whisper to its sender, also when no
+    table differs: one small message per peer and login, and a new message
+    type; (c) a replica is no witness for the first 15 minutes after its
+    discovery, and the others do not count it as one for that time: no new
+    message, but the lines of members without the addon are lost while the
+    only replica online is that new.
+  - Done when: the user has chosen, and the choice is in 5.3.
 
 ### Stage 11. Chat history and mentions
 
