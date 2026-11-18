@@ -21,6 +21,7 @@ local FILES = {
   "Addon/Src/Sync/SyncSession.lua",
   "Addon/Src/Sync/SyncPull.lua",
   "Addon/Src/Sync/SyncPush.lua",
+  "Addon/Src/Sync/SyncCleanup.lua",
 }
 
 ---@param T TestHarness

@@ -88,6 +88,11 @@ function handlers.Q(self, sender, request)
   if definition.schema ~= request.schema then
     return self:Refuse(sender, request, protocol.REASON_SCHEMA, pull.RETRY_REFUSED)
   end
+  -- A table that was out of contact for too long can hold records that were deleted meanwhile. It gives
+  -- nothing until its own pull has emptied and filled it again (SyncCleanup.lua).
+  if self:IsStale(request.table) then
+    return self:Refuse(sender, request, protocol.REASON_BUSY, pull.RETRY_BUSY)
+  end
   -- The version of this table has changed since the guild heard it last, through records that others
   -- sent. The peers still list the old one, and this request may be the first of many that it causes:
   -- one summary lets the others see that they need not ask.
@@ -299,7 +304,9 @@ function Session:StartPull(tableName, source)
   if not tbl or not definition then
     return false
   end
-  local nonce = math.floor(self.parts.random() * (protocol.MAX_NONCE - 1)) + 1
+  -- A table that was away for longer than tombstones live starts again from nothing (SyncCleanup.lua)
+  self:ResetIfStale(tableName)
+  local nonce =math.floor(self.parts.random() * (protocol.MAX_NONCE - 1)) + 1
   if not self.parts.transport:Send("Q", source.name, "BULK", nil, tableName, definition.schema, nonce,
     store.digest(tbl)) then
     self:DeferPeer(source.name, tableName, pull.RETRY_AFTER_TIMEOUT)
@@ -373,6 +380,9 @@ function handlers.D(self, sender, delta)
     or delta.batch ~= active.nextBatch then
     return
   end
+  if #delta.records > 0 then
+    self:MarkFresh(active.table, true)
+  end
   local _, dropped = self.parts.sync:ApplyRemote(active.table, delta.records, function(record, definition)
     return self:CheckRecord(record, definition)
   end)
@@ -407,6 +417,7 @@ function Session:FinishPull(active, delta)
   if isComplete then
     store.mergeClock(tbl, delta.rest)
     tbl.syncedAt = now
+    self:MarkFresh(active.table)
     local version = pull.responderVersion(tbl, delta.wants)
     self.merged[active.table] = self.merged[active.table] or {}
     self.merged[active.table][version] = true

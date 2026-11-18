@@ -3,7 +3,7 @@ local addonName, ns = ...
 -- The session of the shared database: what a replica does while the character is online. This stage holds
 -- discovery (.agents/00-plan.md, section 7.1): the hello after login, the answers to the hellos of others,
 -- and the list of peers. The pull is in SyncPull.lua, which adds its methods and message handlers to the
--- session of this file. The push is in SyncPush.lua, in the same way.
+-- session of this file. The push is in SyncPush.lua and the local cleanup in SyncCleanup.lua, in the same way.
 --
 -- `session.new` builds a session from parts that are passed in, so the host tests run many of them over a
 -- fake network (Tests/sync_discovery.lua). `session.Start` builds the one of the game. Nothing at file scope
@@ -200,6 +200,7 @@ function Session:Stop()
   self.peers = {}
   self:StopPull()
   self:StopPush()
+  self:StopCleanup()
 end
 
 ---Sends the hello with the versions of all tables and starts collecting the answers. While the conditions
@@ -237,6 +238,7 @@ end
 ---Called when the answers to the own hello have been collected. The peers that differ are then known.
 function Session:OnDiscoveryDone()
   self.discovered = true
+  self:CleanUp()
   self:PumpPulls()
   self:MarkUnpushed()
   self:ScheduleSummary()

@@ -237,3 +237,16 @@
   `"anyone"`; `memberRelay` is gone from the table definition and `trusted`
   from the stored table. `Tests/sync_tables.lua` registers `notes` as second
   table and expects `writers = "officer"` to raise. Host only by design.
+
+## Stage 8. Cleanup
+
+- **8.1 Tombstones and the stale reset**: `Src/Sync/SyncCleanup.lua` adds to
+  the session `CleanUp` (once per stay in the guild, after discovery: old
+  tombstones of every table), `IsStale`, `MarkFresh`, `ResetIfStale` (called
+  in `StartPull`). `SyncTables.lua` got `Sweep` (removal in steps of 500
+  records per frame, clock untouched), `RemoveOldTombstones`, `Reset`;
+  `SyncStore.lua` `TOMBSTONE_SECONDS`, `STALE_SECONDS`, `isStale`, `reset`;
+  `VersionId.lua` `timePrefix`. Beyond the plan: staleness is measured by the
+  new field `freshAt` (plan 4.4), not by `syncedAt`, and a stale table
+  refuses `Q` with `busy`. `Tests/sync_cleanup.lua` (59, 61, and 100 days
+  away). Host only by design.

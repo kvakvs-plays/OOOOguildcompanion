@@ -412,6 +412,91 @@ function sync:ApplyRemote(tableName, records, checkFn)
   return changed, dropped
 end
 
+--------------------------------------------------------------------------------
+-- Local cleanup (plan section 4.4): it sends nothing and leaves the clock, and so the table version, alone
+--------------------------------------------------------------------------------
+
+---Records that one step of `Sweep` looks at; the next step runs in a later frame
+sync.SWEEP_CHUNK = 500
+
+---Removes the stored records of a table for which `shouldRemove` gives true, without a change to the
+---clock, `maxId`, or `fp`. With `after`, the work is cut into steps of `SWEEP_CHUNK` records, one per frame;
+---a record that changes between two steps is judged as it is when its step runs. "OnRecordChanged" fires
+---for every removed record that was not a tombstone.
+---@param tableName string
+---@param shouldRemove fun(key: string, record: OOOOSyncRecord): boolean
+---@param after (fun(seconds: number, fn: fun()): any)? Calls `fn` once, later; without it all is done at once
+---@param onDone (fun(removed: integer))? Called after the last step
+function sync:Sweep(tableName, shouldRemove, after, onDone)
+  local tbl = self:GetTable(tableName)
+  -- The keys are listed first: a walk over the records themselves cannot go on in a later frame
+  local keys = {}
+  for key in pairs(tbl and tbl.records or {}) do
+    keys[#keys + 1] = key
+  end
+  local position, removed = 1, 0
+  local function step()
+    local last = after and math.min(#keys, position + sync.SWEEP_CHUNK - 1) or #keys
+    for index = position, last do
+      local key = keys[index]
+      local record = tbl.records[key]
+      if record and shouldRemove(key, record) then
+        tbl.records[key] = nil
+        removed = removed + 1
+        if not record.x then
+          self.callbacks:Fire("OnRecordChanged", tableName, key, nil, true)
+        end
+      end
+    end
+    position = last + 1
+    if position <= #keys and after then
+      after(0, step)
+    elseif onDone then
+      onDone(removed)
+    end
+  end
+  step()
+end
+
+---Removes the tombstones of a table that are older than `syncStore.TOMBSTONE_SECONDS`. Every replica does
+---this by itself. A replica that was away for longer empties the table before it pulls (`Reset`), so it
+---cannot bring back a record whose tombstone is gone.
+---@param tableName string
+---@param after (fun(seconds: number, fn: fun()): any)? As in `Sweep`
+---@param onDone (fun(removed: integer))?
+function sync:RemoveOldTombstones(tableName, after, onDone)
+  if not self.timeFn then
+    if onDone then
+      onDone(0)
+    end
+    return
+  end
+  local limit = versionId.timePrefix(self.timeFn() - store.TOMBSTONE_SECONDS)
+  self:Sweep(tableName, function(_key, record)
+    return record.x == true and record.v < limit
+  end, after, onDone)
+end
+
+---Empties a table and its clock, and fires "OnRecordChanged" for every record that was not a tombstone.
+---The session calls it for a table that was out of contact for too long, before it pulls the table again.
+---@param tableName string
+---@return boolean emptied false when the table cannot be used
+function sync:Reset(tableName)
+  local tbl = self:GetTable(tableName)
+  if not tbl then
+    return false
+  end
+  local records = tbl.records
+  store.reset(tbl, self.timeFn())
+  self.dirtySince[tableName] = nil
+  for key, record in pairs(records) do
+    if not record.x then
+      self.callbacks:Fire("OnRecordChanged", tableName, key, nil, true)
+    end
+  end
+  return true
+end
+
 ---Returns the payload of a record. The table that is returned is the stored one: do not change it.
 ---@param tableName string
 ---@param key string

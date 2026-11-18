@@ -318,6 +318,9 @@ function handlers.P(self, sender, pushed)
       accepted[#accepted + 1] = record
     end
   end
+  if #accepted > 0 then
+    self:MarkFresh(pushed.table, true)
+  end
   local _, dropped = sync:ApplyRemote(pushed.table, accepted, function(record, recordDefinition)
     -- Own new writes come from their writer, so the owner rule can be checked. Records that the sender
     -- passes on after a pull cannot: any member may pass on the records of any other (plan section 5.2).
@@ -367,12 +370,20 @@ function Session:NoteVersions(sender, versions, isComplete)
       self.heardOwn[name] = version
     end
   end
+  local differs = false
   for name, version in pairs(versions) do
     local merged = self.merged[name]
-    if own[name] and own[name] ~= version and not (merged and merged[version]) then
-      self:ScheduleDelayedPull()
-      return
+    if own[name] then
+      if own[name] == version or (merged and merged[version]) then
+        -- This replica holds all that an online peer holds: nothing in the table is out of date
+        self:MarkFresh(name)
+      else
+        differs = true
+      end
     end
+  end
+  if differs then
+    self:ScheduleDelayedPull()
   end
 end
 

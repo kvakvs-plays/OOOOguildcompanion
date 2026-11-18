@@ -4,7 +4,7 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: stages 0 to 7 are finished (`00-finished.md`). The probes of stage 1
+Status: stages 0 to 7 and step 8.1 are finished (`00-finished.md`). The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -135,6 +135,7 @@ db.global.sync = {
       maxId = "<id>",             -- greatest value in clock
       fp = 123456789,             -- fingerprint of clock, see 4.3
       syncedAt = 1795000000,      -- server time of the last completed pull
+      freshAt = 1795000000,       -- server time of the last contact, see 4.4
       records = {
         ["Charname"] = { v = "<id>", d = { ... } },
         ["Gone"] = { v = "<id>", x = true },   -- tombstone
@@ -212,9 +213,24 @@ db.global.sync = {
 - A delete is a tombstone record (`x = true`) with a new id. It spreads like any
   record.
 - Tombstones older than 90 days are removed locally.
-- A replica whose `syncedAt` for a table is older than 60 days empties that
-  table and its clock before its next pull, so that it cannot keep records whose
-  tombstones are already gone.
+- A replica whose last contact for a table (`freshAt`) is older than 60 days
+  empties that table and its clock before its next pull, so that it cannot keep
+  records whose tombstones are already gone.
+  - `freshAt` is set when the replica completes a pull, when a peer announces
+    a table version that the replica holds (it then holds all that the peer
+    holds), when the table is emptied, and when a table without contact takes
+    its first records from others. The time of the last pull alone would not
+    do: a replica in a healthy guild gets everything by push and never pulls.
+    A table without `freshAt` falls back to `syncedAt`.
+  - A table that never had contact has neither value and is not emptied: it
+    holds only own writes.
+  - Until its pull, a stale table answers a pull request with `B` `busy`, so
+    no other replica takes the old records from it.
+  - The reset also removes own writes that were never pushed. A feature that
+    scans again writes them again, because `Put` then finds no equal record.
+  - Known cost: two replicas that both return after 60 days and differ both
+    empty their tables. What only those two held is lost, except the own
+    records that their features write again.
 - For tables keyed by character name, each replica also drops records of
   characters that are no longer in the guild roster. This is a local rule and
   sends nothing.
@@ -629,6 +645,7 @@ Addon\Src\Sync\SyncTables.lua      table registry, Put/Get/Delete, callbacks
 Addon\Src\Sync\SyncProtocol.lua    encode, decode, validate messages            (host-testable with a stub)
 Addon\Src\Sync\SyncComm.lua        AceComm wiring, sender checks, send queue
 Addon\Src\Sync\SyncSession.lua     hello, source choice, pull, push, timers, conditions
+Addon\Src\Sync\SyncCleanup.lua     old tombstones, the reset of a stale table, roster cleanup (stage 8)
 Addon\Src\Sync\SyncOptions.lua     options page
 Addon\Src\Sync\SyncProbe.lua       /oooo sync probe commands (stage 1)
 Addon\Src\Sync\SyncGuildChat.lua   the table guildchat: capture, witness rule, ordered reading (stage 10)
@@ -710,23 +727,8 @@ Finished; see `00-finished.md`.
 
 ### Stage 8. Cleanup
 
-- **8.1 Tombstones and the stale reset**
-  - Substeps
-    - Once per session, after the first completed discovery, remove tombstones
-      older than 90 days. The clock and `fp` do not change.
-    - Before a pull, when `syncedAt` is older than 60 days, empty the table and
-      its clock. A table that has never been synced and holds only own records
-      is not emptied.
-    - Cut the work across frames for a large table.
-  - Checkpoint: on the host, a replica that was away for 61 days ends equal to
-    the others and without the records that were deleted meanwhile.
-  - Host tests (`Tests/sync_cleanup.lua`, fake clock)
-    - A tombstone of 89 days stays; one of 91 days goes; the table version is
-      the same before and after.
-    - A replica that was away for 61 days does not bring a deleted record back
-      to the others.
-    - A replica that was away for 59 days is not emptied.
-  - Done when: cleanup never changes a table version.
+Step 8.1 is finished; see `00-finished.md`.
+
 - **8.2 Roster cleanup and size limits**
   - Substeps
     - For `keyKind = "character"`: drop records of names that are not in the

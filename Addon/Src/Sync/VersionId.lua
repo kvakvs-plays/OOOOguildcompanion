@@ -63,6 +63,14 @@ function versionId.parse(id)
     base94.decode(id:sub(TIME_WIDTH + ORIGIN_WIDTH + 1))
 end
 
+---Returns the timestamp part of an id for a time. An id is older than that time exactly when it is below
+---the returned string in a plain `<`, so a cleanup can compare without parsing every id.
+---@param timestamp integer Seconds, as GetServerTime() gives them
+---@return string prefix 5 base-94 characters
+function versionId.timePrefix(timestamp)
+  return base94.encode(math.max(0, timestamp), TIME_WIDTH)
+end
+
 ---Returns the origin of a well-formed id: the player who wrote the record.
 ---@param id string
 ---@return string origin

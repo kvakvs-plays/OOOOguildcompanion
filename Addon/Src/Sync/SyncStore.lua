@@ -17,6 +17,8 @@ local addonName, ns = ...
 ---@field records table<string, OOOOSyncRecord> Key -> record
 ---@field syncedAt integer|nil Server time of the last completed pull; nil when there was none
 ---@field pushed string|nil The id of this install's last write that was pushed to the guild (plan section 7.3)
+---@field freshAt integer|nil Server time at which the table last could hold no record whose tombstone is gone
+---everywhere: it was level with a peer, completed a pull, was emptied, or took its first records from others
 
 ---@class OOOOSyncStore
 local store = {}
@@ -38,6 +40,34 @@ store.TABLE_VERSION_LENGTH = versionId.LENGTH + FP_WIDTH
 ---@return OOOOSyncTable
 function store.newTable(schema)
   return { schema = schema, clock = {}, maxId = versionId.ZERO, fp = 0, records = {} }
+end
+
+---Age in seconds after which a tombstone is removed locally (plan section 4.4)
+store.TOMBSTONE_SECONDS = 90 * 86400
+---Seconds without contact after which a table is emptied before its next pull. It is shorter than the life
+---of a tombstone, so a table that is not emptied has received every tombstone that others have removed.
+store.STALE_SECONDS = 60 * 86400
+
+---Tells whether a table was out of contact for so long that it can hold records which were deleted
+---meanwhile and whose tombstones are gone. A table that never had contact holds only own writes and is not.
+---@param tbl OOOOSyncTable
+---@param now number Server time
+---@return boolean
+function store.isStale(tbl, now)
+  -- A table of an older addon version has only the time of its last pull
+  local freshAt = tbl.freshAt or tbl.syncedAt
+  return type(freshAt) == "number" and now - freshAt > store.STALE_SECONDS
+end
+
+---Empties a table and its clock in place. The id of the last pushed write stays: the peers hold what was
+---pushed, and a later push must name it as base.
+---@param tbl OOOOSyncTable
+---@param now integer Server time; an empty table is fresh
+function store.reset(tbl, now)
+  tbl.clock, tbl.records = {}, {}
+  tbl.maxId, tbl.fp = versionId.ZERO, 0
+  tbl.syncedAt = nil
+  tbl.freshAt = now
 end
 
 ---Raises the clock of an id's origin to the id, when the id is greater, and keeps `fp` and `maxId` in step.
