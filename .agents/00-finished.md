@@ -376,11 +376,11 @@
 ## Stage 11. Chat history and mentions
 
 The code of all steps was written on 2026-11-18 and checked on the host only
-(luacheck, `lua Tests/run_all.lua`). Step 11.2 is finished; the client checks
-of 11.1, 11.3, 11.4, and 11.5 are open in the plan.
+(luacheck, `lua Tests/run_all.lua`). Steps 11.1 and 11.2 are finished; parts
+of the client checks of 11.3, 11.4, and 11.5 are open in the plan.
 
-- **11.1 Settings and matching** (code; the client check is open in the
-  plan): `Src/Chat/Mentions.lua` (`ns.mentions`) with `parseWatchList`,
+- **11.1 Settings and matching** (checked in the client on 2026-11-18: the
+  section "Mentions" and its two settings): `Src/Chat/Mentions.lua` (`ns.mentions`) with `parseWatchList`,
   `hasMention`, `fragments`, and `sanitize`. `sanitize` keeps hyperlinks with
   their text, colour codes, `|r`, and `||`, doubles every other `|`, also
   inside the text of a link, and closes a colour that is left open. Of two

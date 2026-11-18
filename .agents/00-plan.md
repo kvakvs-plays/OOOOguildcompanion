@@ -927,8 +927,9 @@ Design:
   ended the peers are unknown and nothing is printed.
 
 The code of all five steps is written and passes on the host (2026-11-18);
-see `00-finished.md`. Step 11.2 is finished. The other four wait for their
-check in the client. What the code does differently from the design above:
+see `00-finished.md`. Steps 11.1 and 11.2 are finished. The other three
+have parts of their client check open. What the code does differently from
+the design above:
 
 - The notice does not compare ids with "the one of the last notice".
   `db.global.mentions.noticed` marks every unread entry that a notice has
@@ -946,9 +947,6 @@ check in the client. What the code does differently from the design above:
 - An `@` that the user types before an entry of the watch list is dropped.
 - A line that is not of today shows its day before the time.
 
-- **11.1 Settings and matching** (**CLIENT**, open)
-  - Check: the section "Mentions" appears on the General tab, and the watch
-    list and the checkbox keep their values over a `/reload`.
 - **11.3 Chat history window** (**CLIENT**, open)
   - Probe `chatframe`: run on 2026-11-18 and recorded in AGENTS.md. All
     globals exist, the `ScrollingMessageFrame` misses no method, and
@@ -959,7 +957,11 @@ check in the client. What the code does differently from the design above:
     without an "Interface action failed" entry; a new guild chat line appears
     at the bottom after its push; Escape closes the window; the position is
     kept over a `/reload`.
-  - Done when: the checkpoint is recorded.
+  - Checked in the client (2026-11-18): `/oooo chat` shows the stored lines.
+  - Still open: loading older lines at the top (the history had fewer than
+    100 lines); the click on an item link; a new line at the bottom; Escape;
+    the position over a `/reload`.
+  - Done when: the open parts are recorded.
 - **11.4 Mentions in the window, and the notice** (**CLIENT**, two accounts,
   open)
   - Probe `chatlink`: run on 2026-11-18 and recorded in AGENTS.md. The click
@@ -972,11 +974,21 @@ check in the client. What the code does differently from the design above:
     `@Tall` scrolls to its line, highlights it, and moves the entry to
     "Read". After a `/reload` the entry is still read, the other still
     unread, and no notice is printed.
-  - Done when: the checkpoint is recorded.
+  - Checked in the client (2026-11-18, two accounts): a mention written
+    while the watcher was offline gives the notice after the watcher's login
+    and sync; the mentions show in the window; a click scrolls to the line
+    and highlights it.
+  - Still open: after a `/reload` the read entry stays read and no notice is
+    repeated.
+  - Done when: the open part is recorded.
 - **11.5 Warning for a mention that nobody can copy** (**CLIENT**, open)
   - Checkpoint: alone with the addon, "@tall test" in guild chat prints the
     warning once; with the second account online it prints nothing.
-  - Done when: the checkpoint is recorded.
+  - Checked in the client (2026-11-18): alone with the addon, a mention
+    prints the warning. The line reached the other account after its login
+    and sync.
+  - Still open: with the second account online, nothing is printed.
+  - Done when: the open part is recorded.
 
 ## 11. Decisions taken
 
