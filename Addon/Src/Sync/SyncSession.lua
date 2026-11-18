@@ -20,6 +20,7 @@ local addonName, ns = ...
 ---@field after fun(seconds: number, fn: fun()): OOOOSyncTimer Calls `fn` once, later
 ---@field random fun(): number Like math.random(): from 0 up to, not including, 1
 ---@field playerName fun(): string|nil Name of the logged-in character, as the roster shows it
+---@field policy OOOOSyncPolicyView Tells what may send now (SyncPolicy.lua)
 
 ---@class OOOOSyncPeer An online guild member whose addon has announced itself
 ---@field name string Character name
@@ -34,6 +35,7 @@ local addonName, ns = ...
 ---@field peerCount integer Number of peers that were ever added; gives `order`
 ---@field helloTimer OOOOSyncTimer|nil Runs until the hello is sent
 ---@field helloSent boolean true once the hello of this stay in the guild was sent
+---@field helloHeld boolean true while the hello waits for the conditions to allow it
 ---@field collectTimer OOOOSyncTimer|nil Runs while the answers to the hello are collected
 ---@field discovered boolean true once the answers to the hello were collected
 ---@field answerTimer OOOOSyncTimer|nil Runs until the summary is sent
@@ -76,6 +78,7 @@ function session.new(parts)
     peers = {},
     peerCount = 0,
     helloSent = false,
+    helloHeld = false,
     discovered = false,
     merged = {},
   }, Session)
@@ -101,23 +104,40 @@ function Session:RandomDelay(low, high)
   return low + self.parts.random() * (high - low)
 end
 
----Tells whether this replica may send now. Always true until the conditions of stage 6 exist.
+---Tells whether this replica may send the messages that belong to no table, hello and summary: not in
+---combat.
 ---@return boolean
 function Session:MaySend()
-  return true
+  return self.parts.policy:MayTalk()
 end
 
----Returns the table version of every registered table: what a hello carries.
+---Tells whether a table may send its records, or ask for records, now: its policy and the conditions.
+---@param tableName string
+---@return boolean
+function Session:MayTransfer(tableName)
+  return self.parts.policy:MaySend(tableName)
+end
+
+---Returns the table version of every table that takes part in the exchange: what a hello carries.
+---A table that the user has turned off is left out, so nobody answers for it.
 ---@return table<string, string> versions Table name -> table version; empty while the database is not ready
 function Session:LocalVersions()
   local sync, versions = self.parts.sync, {}
   for _, name in ipairs(sync.names) do
     local tbl = sync:GetTable(name)
-    if tbl then
+    if tbl and self.parts.policy:IsEnabled(name) then
       versions[name] = store.tableVersion(tbl)
     end
   end
   return versions
+end
+
+---Follows the conditions of the game: what was held back while they forbade sending goes on.
+function Session:OnConditionsChanged()
+  if self.helloHeld then
+    self:SendHello()
+  end
+  self:PumpPulls()
 end
 
 ---Follows the guild state: inside the guild the hello timer starts, outside it everything stops.
@@ -142,14 +162,19 @@ function Session:Stop()
   cancel(self.collectTimer)
   cancel(self.answerTimer)
   self.helloTimer, self.collectTimer, self.answerTimer, self.answerTables = nil, nil, nil, nil
-  self.helloSent, self.discovered = false, false
+  self.helloSent, self.helloHeld, self.discovered = false, false, false
   self.peers = {}
   self:StopPull()
 end
 
----Sends the hello with the versions of all tables and starts collecting the answers.
+---Sends the hello with the versions of all tables and starts collecting the answers. While the conditions
+---forbid sending, the hello is held and goes out with `OnConditionsChanged`.
 function Session:SendHello()
-  if self.helloSent or not self:MaySend() then
+  if self.helloSent then
+    return
+  end
+  self.helloHeld = not self:MaySend()
+  if self.helloHeld then
     return
   end
   local function done()
@@ -328,6 +353,17 @@ function Session:DifferingTables(peer)
   return names
 end
 
+---Tells in a word whether a table may send now, for `/oooo sync status`.
+---@param tableName string
+---@return string state "yes", "off" (turned off by the user), or "no" with the condition that is not met
+function Session:SendState(tableName)
+  local effective = self.parts.policy:Get(tableName)
+  if not effective or not effective.enabled then
+    return "off"
+  end
+  return self:MayTransfer(tableName) and "yes" or ("no, needs " .. effective.when)
+end
+
 ---Builds the lines about discovery and the peers for `/oooo sync status`.
 ---@return string[] lines Plain text; the caller escapes it for chat
 function Session:StatusLines()
@@ -336,6 +372,8 @@ function Session:StatusLines()
     state = "done"
   elseif self.helloSent then
     state = "collecting answers"
+  elseif self.helloHeld then
+    state = "the hello waits until the fight is over"
   elseif self.helloTimer then
     state = "waiting to send the hello"
   else
@@ -370,6 +408,15 @@ function session.Start()
     after = C_Timer.NewTimer,
     random = math.random,
     playerName = ns.syncCharacter.playerName,
+    policy = ns.syncPolicy.new({
+      sync = ns.sync,
+      overrides = function()
+        return ns.db.profile.sync.tables
+      end,
+      state = function()
+        return ns.syncPolicy.state
+      end,
+    }),
   })
   session.current = current
   ns.guildState.RegisterCallback(session, "OnGuildStateChanged", function(_event, inGuild)
@@ -378,5 +425,9 @@ function session.Start()
   ns.guildState.RegisterCallback(session, "OnRosterChanged", function()
     current:OnRosterChanged()
   end)
+  ns.syncPolicy.RegisterCallback(session, "OnConditionsChanged", function()
+    current:OnConditionsChanged()
+  end)
+  ns.syncPolicy.Start()
   return current
 end

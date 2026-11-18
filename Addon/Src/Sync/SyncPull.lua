@@ -81,7 +81,8 @@ end
 ---@param request OOOOSyncPullRequest
 function handlers.Q(self, sender, request)
   local tbl, definition = self.parts.sync:GetTable(request.table)
-  if not tbl or not definition then
+  -- A table that the user has turned off is refused like one that this replica does not have
+  if not tbl or not definition or not self.parts.policy:IsEnabled(request.table) then
     return self:Refuse(sender, request, protocol.REASON_UNKNOWN, pull.RETRY_REFUSED)
   end
   if definition.schema ~= request.schema then
@@ -94,7 +95,7 @@ function handlers.Q(self, sender, request)
     serving = nil
     self.serving = nil
   end
-  if serving or not self:MaySend() then
+  if serving or not self:MayTransfer(request.table) then
     return self:Refuse(sender, request, protocol.REASON_BUSY, pull.RETRY_BUSY)
   end
 
@@ -129,7 +130,7 @@ function Session:SendBatch(serving)
     return
   end
   -- The requester has gone, or this replica may not send any more: the requester's timeout does the rest
-  if not self.parts.guild:IsOnline(serving.peer) or not self:MaySend() then
+  if not self.parts.guild:IsOnline(serving.peer) or not self:MayTransfer(serving.table) then
     self.serving = nil
     return
   end
@@ -224,7 +225,7 @@ end
 ---be asked. This is the queue of the pull: the other tables wait until this function runs again, after the
 ---pull has ended. When peers have to wait, a timer calls it again at the earliest time.
 function Session:PumpPulls()
-  if self.pull or not self.discovered or not self:MaySend() or not self:IsRosterReady() then
+  if self.pull or not self.discovered or not self:IsRosterReady() then
     return
   end
   cancel(self.retryTimer)
@@ -233,7 +234,8 @@ function Session:PumpPulls()
   local earliest
   for _, name in ipairs(sync.names) do
     local tbl = sync:GetTable(name)
-    if tbl then
+    -- A table that may not send now waits for `OnConditionsChanged`
+    if tbl and self:MayTransfer(name) then
       local source, retryAt = pull.chooseSource(peers, name, store.tableVersion(tbl), self.merged[name], now)
       if source and self:StartPull(name, source) then
         return

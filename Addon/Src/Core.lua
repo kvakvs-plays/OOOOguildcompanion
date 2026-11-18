@@ -6,9 +6,13 @@ local addonName, ns = ...
 ---@class OOOOGeneralSettings
 ---@field optAlias boolean True when `/opt` opens the settings window, like `/oooo opt`
 
+---@class OOOOSyncSettings
+---@field tables table<string, OOOOSyncPolicyOverride> Table name -> what the user changed of its send policy
+
 ---@class OOOOProfile
 ---@field general OOOOGeneralSettings
 ---@field emoji OOOOEmojiSettings
+---@field sync OOOOSyncSettings
 
 ---@class OOOOGlobalSettings
 ---@field schemaVersion integer|nil Version of the saved variables layout, for migrations
@@ -44,6 +48,8 @@ local addonName, ns = ...
 ---@field syncProtocol OOOOSyncProtocol
 ---@field syncComm OOOOSyncComm
 ---@field syncSession OOOOSyncSessionModule
+---@field syncPull OOOOSyncPullModule
+---@field syncPolicy OOOOSyncPolicyModule
 ---@field dbIsNewer boolean|nil true when the saved variables are from a newer addon version and were left alone
 
 local defaults = {
@@ -53,6 +59,9 @@ local defaults = {
     },
     emoji = {
       disabled = {},
+    },
+    sync = {
+      tables = {},
     },
   },
 }

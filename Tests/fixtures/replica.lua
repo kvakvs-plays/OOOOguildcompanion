@@ -17,6 +17,7 @@ local FILES = {
   "Addon/Src/Sync/SyncCommands.lua",
   "Addon/Src/Sync/SyncProtocol.lua",
   "Addon/Src/Sync/SyncComm.lua",
+  "Addon/Src/Sync/SyncPolicy.lua",
   "Addon/Src/Sync/SyncSession.lua",
   "Addon/Src/Sync/SyncPull.lua",
 }
@@ -38,6 +39,9 @@ return function(T)
   ---@field transport table
   ---@field session table
   ---@field notices string[] Lines that the replica printed for its user
+  ---@field state table The conditions of the game for this replica; change them with `SetState`
+  ---@field overrides table Table name -> policy override of this replica's user
+  ---@field net Fakenet
   local Replica = {}
   Replica.__index = Replica
 
@@ -56,6 +60,8 @@ return function(T)
     function ns.print(text)
       self.notices[#self.notices + 1] = text
     end
+    self.state = { inCombat = false, inRaid = false, inInstance = false, resting = false }
+    self.overrides = {}
     self.data = { origin = options.origin or ns.base94.encode(made, 4), tables = {} }
     ns.sync:Initialize(self.data, function()
       return math.floor(net:Now())
@@ -86,6 +92,15 @@ return function(T)
       playerName = function()
         return name
       end,
+      policy = ns.syncPolicy.new({
+        sync = ns.sync,
+        overrides = function()
+          return self.overrides
+        end,
+        state = function()
+          return self.state
+        end,
+      }),
     })
     self.endpoint.receive = function(text, distribution, sender)
       self.transport:Receive(text, distribution, sender)
@@ -108,6 +123,15 @@ return function(T)
     self.session:Stop()
     self.transport:SetActive(false)
     self.net:SetOnline(self.name, false)
+  end
+
+  ---Changes the conditions of the game for this replica and tells its session.
+  ---@param changes table Fields of the state: inCombat, inRaid, inInstance, resting
+  function Replica:SetState(changes)
+    for field, value in pairs(changes) do
+      self.state[field] = value
+    end
+    self.session:OnConditionsChanged()
   end
 
   ---Returns the table version of one table.

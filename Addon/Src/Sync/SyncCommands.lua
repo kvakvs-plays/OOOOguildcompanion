@@ -42,15 +42,16 @@ function commands.statusLines()
   if not origin then
     return { "The shared database is not ready." }
   end
+  -- The session exists only in the game, after login
+  local current = ns.syncSession and ns.syncSession.current
   local lines = { commands.escape("origin: " .. origin) }
   for _, name in ipairs(sync.names) do
     local tbl = sync:GetTable(name)
     local live, deleted = sync:Count(name)
     lines[#lines + 1] = commands.escape(name .. ": " .. live .. " records, " .. deleted .. " deleted, version "
-      .. (tbl and ns.syncStore.tableVersion(tbl) or "?"))
+      .. (tbl and ns.syncStore.tableVersion(tbl) or "?")
+      .. (current and (", may send: " .. current:SendState(name)) or ""))
   end
-  -- The session exists only in the game, after login
-  local current = ns.syncSession and ns.syncSession.current
   if current then
     for _, line in ipairs(current:StatusLines()) do
       lines[#lines + 1] = commands.escape(line)

@@ -160,3 +160,20 @@
   and `character` with 2 records. `Q` and `D` therefore arrive on `WHISPER`
   through AceComm. Not seen in that check: a multipart message, and the
   offline line filter.
+
+## Stage 6. Push and policy
+
+- **6.1 Conditions**: `Src/Sync/SyncPolicy.lua` with `conditionMet(when,
+  state)`, `effective(defaults, override)` (a bad override field falls back to
+  the definition; `enabled` defaults to true), `new(parts)` (the view that
+  the session asks: `Get`, `IsEnabled`, `MayTalk`, `MaySend`), and for the
+  game `state`, `Refresh`, `Start` with one event handler table, and the
+  callback `OnConditionsChanged`. Overrides live in
+  `db.profile.sync.tables[name]`. Hello and summary need only "not in
+  combat"; a hello in combat is held and sent afterwards, a summary in combat
+  is not sent. A pull request and the responder ask the policy of the table;
+  a table that is turned off is absent from `H` and `S` and answers `Q` with
+  `B` `unknown`. `/oooo sync status` shows `may send` per table.
+  `Tests/sync_policy.lua`. Host only; the event frame runs in the client with
+  step 6.4. The deferred checks of stage 1 were still open (the raids unlock
+  on 2026-12-09), so no state was made a hard limit.

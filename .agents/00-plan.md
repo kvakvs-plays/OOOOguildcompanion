@@ -553,8 +553,9 @@ Finished; see `00-finished.md`.
 ### Stage 1. Probes
 
 Finished; see `00-finished.md`. Deferred checks, to run with
-`/oooo sync probe state` when the chance comes (they affect only the `noraid`
-policy of 7.4, see step 6.1):
+`/oooo sync probe state` when the chance comes. They were still open when
+step 6.1 was done, so no state is a hard limit yet. If one of them fails, make
+that state a hard limit for every table in `SyncPolicy.conditionMet`:
 
 - in a raid group;
 - in a raid instance (the raids unlock on December 9, 2026);
@@ -581,28 +582,7 @@ announces a version.
 
 ### Stage 6. Push and policy
 
-- **6.1 Conditions**
-  - Substeps
-    - `conditionMet(when, state)` as a function without side effects, where
-      `state` is `{ inCombat, inRaid, inInstance, resting }`.
-    - One event handler table for the events of 7.4 that keeps `state` current
-      and fires `OnConditionsChanged`.
-    - Effective policy: the table definition, then the override from
-      `db.profile.sync.tables[name]`, each field checked for type and range.
-    - Hello, pull, and the responder now ask the conditions.
-    - Run the deferred checks of stage 1 (raid group, raid instance, boss
-      encounter) if they are still open, and make a failing state a hard limit
-      for every table.
-  - Checkpoint: `/oooo sync status` shows for each table whether it may send
-    now.
-  - Host tests (`Tests/sync_policy.lua`)
-    - The truth table of `conditionMet` for the three values of `when` and all
-      16 states.
-    - An override replaces only the fields that it sets; a bad value (negative
-      delay, unknown `when`) falls back to the default.
-    - `enabled = false`: the table is absent from `H` and `S`, and a `Q` for it
-      gets `B`.
-  - Done when: no send path skips the condition check.
+- 6.1 is finished; see `00-finished.md`.
 - **6.2 Push of local changes**
   - Substeps
     - Protocol type `P` with its checks, including `base` as a table of
