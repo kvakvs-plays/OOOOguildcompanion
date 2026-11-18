@@ -61,6 +61,7 @@ moved, or removed.
 | `Sync/SyncPush.lua` | `ns.syncPush`: the push, added to the session class. `SendPush` (one or several `P` with bases), `PushLocal`, `SchedulePush`, `MarkUnpushed`, `PushWanted` (after a pull), the periodic summary (`ScheduleSummary`, `SendSummary`), the handler of `P`, `NoteVersions`, `ScheduleDelayedPull`, `RememberOwnVersion`. Host-loadable. |
 | `Sync/SyncCleanup.lua` | `ns.syncCleanup`: the local cleanup, added to the session class. `CleanUp` (old tombstones, once per stay in the guild), `CleanRoster` (records of characters who left), `ExpireTables` (records over the `maxAge` of their table, at the start and every hour), `IsStale`, `MarkFresh`, `ResetIfStale`. Host-loadable. |
 | `Sync/SyncOptions.lua` | `ns.syncOptions`: the "Sync" tab of the settings window, shown only in the developer mode (`buildTab`), `statusText`, `ago`, `setOverride`, `getValue`. Host-loadable. |
+| `Sync/SyncGuildChat.lua` | `ns.guildChat`: the table `guildchat` (the guild chat of the last `KEEP_DAYS` days, one record per line under its own id), `validate`, the capture `OnChatLine` with `ShouldWrite`, the event frame (`SetListening`, `handlers`), the ordered reading `Lines(sinceTime)` with `Keys` and `DUPLICATE_WINDOW`, `PrintLines` and `/oooo sync chat`. Host-loadable. Loads after `Sync/SyncOptions.lua`. |
 | `Sync/SyncProbe.lua` | `ns.syncProbe`: `/oooo sync probe <name>`, the probe registry, reports stored in `db.global.probeResults`, and the computing helpers of the probes (`rosterVerdict` of the probe `roster` for plan step 8.2). Host-loadable. |
 
 ## `Tests/` (host only, Lua 5.4, not packaged)
@@ -73,6 +74,7 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `fakenet.lua` | In-memory guild network for the session tests: fake clock and timers (`After`, `Advance`), endpoints (`Join`, `Send`, `receive`, `onRosterChanged`), delay, loss, `dropIf`, a send queue with `sendRate`, in-order arrival, `SetOnline`, `Leave`, the roster view `net.guild` (`rosterIncomplete`), the message `log`. |
 | `run_all.lua` | Runs every `Tests/sync_*.lua` in its own process and prints one summary line. |
 | `sync_harness.lua` | Tests of the harness itself. |
+| `sync_guildchat.lua` | Tests of `Sync/SyncGuildChat.lua`: capture, `validate`, `Lines`, retention, and the member who was offline (the race after login, a cut pull). |
 | `sync_guildstate.lua` | Tests of `Guild/GuildState.lua`, with stubbed guild and roster functions. |
 | `sync_alts.lua` | Tests of `Sync/SyncCharacter.lua` and `Sync/SyncCommands.lua`. |
 | `sync_api.lua` | Tests of `Put`, `Get`, `Delete`, `Iterate`, and the callback in `Sync/SyncTables.lua`. |
@@ -93,4 +95,4 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `sync_store.lua` | Tests of `Sync/SyncStore.lua`: merge, clock, fingerprint, table version. |
 | `sync_tables.lua` | Tests of the registry in `Sync/SyncTables.lua`. |
 | `sync_versionid.lua` | Tests of `Sync/VersionId.lua`. |
-| `fixtures/` | Helper files of the tests; not matched by `run_all.lua`. `stub_serializer.lua`: a serializer with the interface of AceSerializer-3.0. `replica.lua`: builds a full replica (own namespace, database, transport, policy with `state` and `overrides`, session) on a `fakenet` network; `Replica.withoutPush` turns the push and the periodic summary off for tests of discovery and pull alone. |
+| `fixtures/` | Helper files of the tests; not matched by `run_all.lua`. `stub_serializer.lua`: a serializer with the interface of AceSerializer-3.0. `replica.lua`: builds a full replica (own namespace, database, transport, policy with `state` and `overrides`, session) on a `fakenet` network; `Replica:Hear` plays a line of guild chat; `Replica.withoutPush` turns the push and the periodic summary off for tests of discovery and pull alone. |

@@ -41,3 +41,4 @@ Src\Sync\SyncPull.lua
 Src\Sync\SyncPush.lua
 Src\Sync\SyncCleanup.lua
 Src\Sync\SyncOptions.lua
+Src\Sync\SyncGuildChat.lua

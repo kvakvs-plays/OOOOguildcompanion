@@ -797,42 +797,21 @@ Design in 5.3. It does not depend on stage 9.
 
 - **10.1 Engine: `Append` and `maxAge`**: finished; see `00-finished.md`.
 - **10.2 Table `guildchat`: own lines, retention, reading** (**CLIENT**, two
-  accounts)
-  - Substeps
-    - `Src\Sync\SyncGuildChat.lua`: register the table (5.3) and listen to
-      `CHAT_MSG_GUILD` on an own event frame, only while the guild state is
-      `in`. Check the event with `C_EventUtils.IsEventValid` first.
-    - Guard the sender and the text with `issecretvalue`. Write with `Append`
-      when the sender is the own character.
-    - The constant `KEEP_DAYS = 14`; no setting and no migration step.
-    - `ns.guildChat:Lines(sinceTime)`: the lines in id order, with the double
-      records of one line joined (5.3). It keeps a sorted list of the keys,
-      built once and updated from `OnRecordChanged`.
-    - `/oooo sync chat [count]` prints the last lines, for the client check.
+  accounts). The code and the host tests are finished; see `00-finished.md`.
+  The client check is open:
   - Checkpoint (**CLIENT**): account B is offline. Account A writes three lines
     in guild chat, one of them with an emoji name and one with an item link.
     Account B logs in; after its pull, `/oooo sync chat` shows the three lines
-    in order with the original text. Run the postponed hour of step 8.2
+    in order with the original text (the command doubles every `|`, so a
+    link shows as its escape sequence). Run the postponed hour of step 8.2
     (stage 8) in this session. Record whether a line written in combat
     and one written inside a dungeon are stored, or are secret.
-  - Host tests (`Tests/sync_guildchat.lua`)
-    - A line of the own character is stored; a line of another sender is not.
-    - A secret sender or text stores nothing (with a stub of `issecretvalue`).
-    - `validate` refuses a missing sender, an empty text, and a text of 256
-      bytes.
-    - `Lines` gives the id order after records arrive out of order, and joins
-      two records with the same sender and text 2 minutes apart, but not 4
-      minutes apart. Two records with the same sender and different texts 2
-      seconds apart stay two lines.
-    - A line of 15 days ago is gone after `Expire`; one of 13 days stays.
-    - A replica that joins the fake network 2 hours after three lines were
-      written holds them after its pull.
-    - The race after login: a replica that was away while A wrote 50 lines
-      joins, hears a push of A with 2 new lines, and writes an own line, all
-      before its first pull. It applies none of the pushed records, and after
-      the pull it holds all 52 lines of A and its own.
-    - The same with the first pull cut after one batch: the next pull brings
-      the rest.
+  - Not known before this check, and what it shows when it is wrong:
+    - Whether `CHAT_MSG_GUILD` is a valid event on Forever. If not, nothing
+      is recorded and `/oooo sync chat` stays at 0 lines.
+    - Whether the sender of the event is the roster name (`Nota Scam`, no
+      realm suffix), as it is for an addon message. If not, the own lines
+      are not recognized and nothing is recorded.
   - Done when: the client checkpoint and the hour of step 8.2 are recorded.
 - **10.3 Witness for members without the addon** (**CLIENT**, two accounts and
   a member without the addon)

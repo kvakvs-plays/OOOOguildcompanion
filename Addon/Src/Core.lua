@@ -55,6 +55,7 @@ local addonName, ns = ...
 ---@field syncPolicy OOOOSyncPolicyModule
 ---@field syncPush OOOOSyncPushModule
 ---@field syncOptions OOOOSyncOptions
+---@field guildChat OOOOGuildChat
 ---@field dbIsNewer boolean|nil true when the saved variables are from a newer addon version and were left alone
 
 local defaults = {

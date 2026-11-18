@@ -22,6 +22,8 @@ local FILES = {
   "Addon/Src/Sync/SyncPull.lua",
   "Addon/Src/Sync/SyncPush.lua",
   "Addon/Src/Sync/SyncCleanup.lua",
+  "Addon/Src/Sync/SyncOptions.lua",
+  "Addon/Src/Sync/SyncGuildChat.lua",
 }
 
 ---@param T TestHarness
@@ -108,6 +110,10 @@ return function(T)
         end,
       }),
     })
+    -- The guild chat capture asks for the own name; in the game it reads the unit
+    ns.guildChat.playerName = function()
+      return name
+    end
     self.endpoint.receive = function(text, distribution, sender)
       self.transport:Receive(text, distribution, sender)
     end
@@ -143,6 +149,14 @@ return function(T)
     self.session:Stop()
     self.transport:SetActive(false)
     self.net:SetOnline(self.name, false)
+  end
+
+  ---Lets the replica hear one line of guild chat, as the event CHAT_MSG_GUILD gives it.
+  ---@param text any
+  ---@param sender any Character name of the member who wrote the line
+  ---@return string|nil id The id of the record when this replica wrote the line
+  function Replica:Hear(text, sender)
+    return self.ns.guildChat:OnChatLine(text, sender)
   end
 
   ---Changes the conditions of the game for this replica and tells its session.

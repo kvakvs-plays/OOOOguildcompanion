@@ -292,3 +292,17 @@
   push. `Session:ExpireTables` in `SyncCleanup.lua` runs when the stay in
   the guild starts, before the hello, and then every 3600 s.
   `Tests/sync_maxage.lua`. Host only by design.
+- **10.2 Table `guildchat`: own lines, retention, reading** (code; the
+  client check is open in the plan): `Src/Sync/SyncGuildChat.lua`
+  (`ns.guildChat`) registers the table (`maxAge` of `KEEP_DAYS = 14` days,
+  400 bytes per record), listens to `CHAT_MSG_GUILD` on its own frame while
+  the guild state is `in` (`SetListening`), and writes an own line with
+  `Append` (`OnChatLine`, `ShouldWrite`); a secret sender or text is not
+  recorded. `Lines(sinceTime)` gives the lines in id order from a sorted key
+  list (`Keys`, kept current by `OnRecordChanged`, built again after a
+  removal) and joins records with the same sender and text within
+  `DUPLICATE_WINDOW = 180` s of the first. Beyond the plan: `validate` wants
+  an id as key, and a record whose key is not its own id is no line.
+  `/oooo sync chat [count]` (`PrintLines`). The test replicas
+  (`Tests/fixtures/replica.lua`) load the file, so every one has the table;
+  `Replica:Hear`. `Tests/sync_guildchat.lua`.

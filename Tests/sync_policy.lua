@@ -274,7 +274,8 @@ do
       hello = fields
     end
   end
-  T.eq(hello, { character = a:Version("character") }, "the hello leaves the table out")
+  T.eq(hello, { character = a:Version("character"), guildchat = a:Version("guildchat") },
+    "the hello leaves the table out")
 end
 
 -- A requester does not ask for a table that it has turned off

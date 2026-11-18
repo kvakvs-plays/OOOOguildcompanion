@@ -81,8 +81,8 @@ do
   T.eq(Replica.count(net, "H"), 1, "one hello within 40 seconds")
   T.eq(net.log[1].distribution, "GUILD", "the hello goes to the guild")
   local _, versions = Replica.codec.decode(net.log[1].text)
-  T.eq(versions, { character = a:Version("character"), debug = a:Version("debug") },
-    "the hello carries the version of every table")
+  T.eq(versions, { character = a:Version("character"), debug = a:Version("debug"),
+    guildchat = a:Version("guildchat") }, "the hello carries the version of every table")
   T.ok(net.log[1].time - start >= 20 and net.log[1].time - start <= 40, "the hello is sent in the random range")
   T.eq(a.session.discovered, false, "the answers are still collected")
   T.eq(a.session:StatusLines()[1], "discovery: collecting answers", "the status says collecting")
@@ -147,8 +147,8 @@ do
   T.eq(a.session:DifferingTables(a.session.peers["Other One"]), { "debug" },
     "the old replica lacks the record of the new one")
   T.eq(a.session:StatusLines()[3]:match(", (.+)$"), "has newer data in debug", "and its status names the table")
-  T.eq(a.session.peers["Other One"].versions, { character = b:Version("character"), debug = b:Version("debug") },
-    "a hello gives all versions of the sender")
+  T.eq(a.session.peers["Other One"].versions, { character = b:Version("character"), debug = b:Version("debug"),
+    guildchat = b:Version("guildchat") }, "a hello gives all versions of the sender")
   for _, entry in ipairs(discoveryLog(net)) do
     T.eq(entry.distribution, "GUILD", "a hello and a summary travel on the guild channel")
   end
