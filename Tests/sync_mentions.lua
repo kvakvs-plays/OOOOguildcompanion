@@ -479,4 +479,56 @@ do
   history:Close()
 end
 
+--------------------------------------------------------------------------------
+-- Step 11.5: the warning for a mention that nobody can copy
+--------------------------------------------------------------------------------
+
+---Counts the warnings that a replica has printed.
+---@param replica TestReplica
+---@return integer
+local function warningCount(replica)
+  local count = 0
+  for _, line in ipairs(replica.notices) do
+    if line == replica.ns.guildChat.UNSHARED_WARNING then
+      count = count + 1
+    end
+  end
+  return count
+end
+
+-- No peer and discovery done: one warning in 5 minutes
+do
+  local net = Fakenet.new({ random = random })
+  local a = Replica.new(net, "Nota Scam", { random = random })
+  a:Login()
+  net:Advance(5)
+  T.eq(a.session.discovered, false, "the discovery has not ended yet")
+  T.ok(a:Hear("@tall too early", "Nota Scam"), "a mention before the end of the discovery is stored")
+  T.eq(warningCount(a), 0, "and gives no warning: the peers are not known")
+  net:Advance(100)
+  T.eq({ a.session.discovered, a:PeerNames() }, { true, {} }, "the discovery has ended without a peer")
+  a:Hear("a line without a mention", "Nota Scam")
+  T.eq(warningCount(a), 0, "a line without @ gives no warning")
+  a:Hear("@tall from somebody else", "Other One")
+  T.eq(warningCount(a), 0, "nor the mention of another sender")
+  local id = a:Hear("@tall test", "Nota Scam")
+  T.eq(warningCount(a), 1, "an own mention gives the warning")
+  T.eq(a.sync:Get(TABLE, id), { s = "Nota Scam", t = "@tall test" }, "and the line is stored")
+  net:Advance(200)
+  a:Hear("@tall again", "Nota Scam")
+  T.eq(warningCount(a), 1, "a second mention within 5 minutes gives none")
+  net:Advance(100)
+  a:Hear("@tall later", "Nota Scam")
+  T.eq(warningCount(a), 2, "one after 5 minutes does")
+
+  -- A peer online: no warning
+  local b = Replica.new(net, "Other One", { random = random })
+  b:Login()
+  net:Advance(400)
+  T.eq(a:PeerNames(), { "Other One" }, "a peer has come online")
+  a:Hear("@tall with a peer", "Nota Scam")
+  T.eq(warningCount(a), 2, "with a peer online there is no warning")
+  T.eq(warningCount(b), 0, "and the peer has none either")
+end
+
 T.finish()

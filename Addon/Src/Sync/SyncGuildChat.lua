@@ -32,6 +32,7 @@ local addonName, ns = ...
 ---@field eventMissing boolean|nil true when the client does not know the chat event
 ---@field counts OOOOGuildChatCounts What the capture has seen in this session, for `/oooo sync chat`
 ---@field lastSender string|nil The sender name of the last line that was heard, as the event gave it
+---@field warnedAt integer|nil Server time of the last warning about a mention that nobody can copy
 local guildChat = {}
 ns.guildChat = guildChat
 
@@ -51,6 +52,11 @@ guildChat.KEEP_DAYS = 14
 ---Seconds within which two records with the same sender and text count as one line. It is wide because an
 ---id can be minutes ahead of the real time (plan section 3).
 guildChat.DUPLICATE_WINDOW = 180
+---Seconds in which the warning about a mention that nobody can copy is printed at most once
+guildChat.WARNING_INTERVAL = 300
+---The warning for the writer of a mention while no other replica is online (plan step 11.5)
+guildChat.UNSHARED_WARNING = "No other player with the addon is online. Your @mention is not shared until one "
+  .. "comes online."
 ---Longest sender name in bytes: a first and a last name of 12 UTF-8 letters each fit
 local MAX_SENDER = 48
 ---Longest text in bytes: the limit of a chat message
@@ -152,6 +158,28 @@ function guildChat:ShouldWrite(sender, own)
   return self:IsWitness(own)
 end
 
+---Warns the writer of an own line with an `@` word when no other replica is online to copy it: the member
+---who is meant gets the line only after a replica has met this one. Before the discovery has ended the peers
+---are not known, and nothing is printed.
+---@param text string The text of an own guild chat line; not a secret value
+---@return boolean warned
+function guildChat:WarnIfUnshared(text)
+  local session = currentSession()
+  if not session or not session.discovered or next(session.peers) ~= nil then
+    return false
+  end
+  if not ns.mentions or not ns.mentions.hasMention(text) or not ns.sync.timeFn then
+    return false
+  end
+  local now = ns.sync.timeFn()
+  if self.warnedAt and now - self.warnedAt < guildChat.WARNING_INTERVAL then
+    return false
+  end
+  self.warnedAt = now
+  ns.print(guildChat.UNSHARED_WARNING)
+  return true
+end
+
 ---Takes one line of guild chat, as the event CHAT_MSG_GUILD gives it, and stores it when this replica is
 ---the one that writes it. A line whose sender or text is secret is not recorded.
 ---@param text any The message
@@ -170,6 +198,9 @@ function guildChat:OnChatLine(text, sender)
   self.lastSender = type(sender) == "string" and sender or nil
   local name = ns.guildState.normalizeName(sender)
   local own = ownName()
+  if name and name == own then
+    self:WarnIfUnshared(text)
+  end
   if not name or not own or not self:ShouldWrite(name, own) then
     return nil
   end
