@@ -4,7 +4,7 @@ local T = dofile("Tests/harness.lua")
 T.loadLibraries()
 
 ---What the stubbed client tells: the guild of the character and the roster
-local client = { inGuild = true, guildName = nil, roster = {}, requests = 0, time = 100 }
+local client = { inGuild = true, guildName = nil, roster = {}, requests = 0, time = 100, showOffline = true }
 ---A value that stands for a secret one
 local SECRET = {}
 
@@ -19,6 +19,9 @@ _G.GetGuildInfo = function()
 end
 _G.GetNumGuildMembers = function()
   return #client.roster
+end
+_G.GetGuildRosterShowOffline = function()
+  return client.showOffline
 end
 _G.GetGuildRosterInfo = function(index)
   local member = client.roster[index]
@@ -148,6 +151,18 @@ do
   fire("GUILD_ROSTER_UPDATE")
   T.eq(fired(), "roster", "a roster that becomes complete fires OnRosterChanged")
   T.eq(guildState:IsRosterComplete(), true, "a roster with an entry for every member is complete")
+  -- Offline members hidden (SetGuildRosterShowOffline(false) of another addon): the read is not trusted
+  for _, hidden in ipairs({ false, SECRET }) do
+    client.showOffline = hidden
+    fire("GUILD_ROSTER_UPDATE")
+    T.eq(fired(), "roster", "a roster read with offline members hidden fires OnRosterChanged")
+    T.eq(guildState:IsRosterComplete(), false, "and is not complete, also with an entry for every index")
+    T.eq(guildState.rosterCount, 2, "the entries that it gave are still cached")
+    client.showOffline = true
+    fire("GUILD_ROSTER_UPDATE")
+    T.eq(fired(), "roster", "showing offline members again fires OnRosterChanged")
+    T.eq(guildState:IsRosterComplete(), true, "and the roster is complete again")
+  end
   client.roster[#client.roster + 1] = unreadable[2]
   client.roster[#client.roster + 1] = unreadable[1]
   fire("GUILD_ROSTER_UPDATE")

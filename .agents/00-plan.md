@@ -238,7 +238,9 @@ db.global.sync = {
   when the roster cache lists every member (`guildState:IsRosterComplete`):
   the roster read gave an entry for each index, and the own character is in
   it. A roster entry that is secret makes the cache incomplete, and the
-  cleanup waits for a later roster update.
+  cleanup waits for a later roster update. A read while
+  `GetGuildRosterShowOffline()` is not `true` is incomplete too: the client
+  may then leave the offline members out.
 - A table with `maxAge` (5.3) drops records whose id is older than that age.
   This is also a local rule: it sends nothing and leaves the clock and `fp` as
   they are. Two replicas with equal clocks can then hold different numbers of
@@ -802,16 +804,24 @@ The code of both steps is finished; see `00-finished.md`. One check is open:
       The two `character` records were both of online members and stayed.
     - `/oooo sync put a ...` on one account arrived on the other about 10
       seconds later (the `pushDelay` of the `debug` table).
+    - The probe was run again with "Show offline members" unticked in the
+      guild window and gave the same lines, also
+      `GetGuildRosterShowOffline(): true`: the box of the guild window does
+      not change that flag, and the roster read is the same with it ticked
+      or not (46 entries, 37 offline, `safe`). So the box cannot harm the
+      cleanup.
+  - Closed in code, not seen in the client: the roster read after
+    `/run SetGuildRosterShowOffline(false)`, which another addon could
+    call. `guildState:ReadRoster` now takes a read as incomplete unless
+    `GetGuildRosterShowOffline()` gives `true`, so the cleanup waits
+    whatever that read lists (`Tests/sync_guildstate.lua`). The probe after
+    that `/run` is no longer needed for the step; when it is run, it must
+    show "complete: false".
   - Still open:
-    - The hour without a Lua error or an "Interface action failed" entry.
-    - The roster read with `GetGuildRosterShowOffline()` false. The probe
-      was run again with "Show offline members" unticked in the guild
-      window and gave the same lines, also `GetGuildRosterShowOffline():
-      true`: the box of the guild window does not change that flag, and
-      the roster read is the same with it ticked or not (46 entries, 37
-      offline, `safe`). So the box cannot harm the cleanup. Not yet seen:
-      the read after `/run SetGuildRosterShowOffline(false)`, which another
-      addon could call.
+    - The hour without a Lua error or an "Interface action failed" entry,
+      with two accounts. Turn on `/console scriptErrors 1` and
+      `/console taintLog 1` first; the second writes `Logs\taint.log`,
+      which shows a blocked action of the addon after the session.
   - Seen as well (account `>/qs` alone, the other logged out, discovery
     done with 0 peers and the roster cleanup started): the roster gave 46
     entries, 8 online and 38 offline, and the probe showed "1 of online

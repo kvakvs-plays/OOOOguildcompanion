@@ -19,7 +19,7 @@ local addonName, ns = ...
 ---@field state OOOOGuildStateName
 ---@field roster table<string, OOOOGuildMember> Character name (`First Last`) -> member
 ---@field rosterCount integer Number of members in `roster`
----@field rosterComplete boolean true when the last roster read gave an entry for every member
+---@field rosterComplete boolean true when the last roster read gave an entry for every member, offline ones too
 ---@field frame table|nil The event frame; nil until `Start`
 ---@field handlers table<string, fun(...: any)> Event name -> handler
 ---@field callbacks table CallbackHandler registry; fires "OnGuildStateChanged" and "OnRosterChanged"
@@ -79,8 +79,8 @@ function guildState:IsOnline(name)
   return member ~= nil and member.online
 end
 
----Tells whether the roster cache lists every member of the guild: the character is in the guild, and the
----last read left no entry out. Only then does a name that is missing mean a member who left; the cleanup
+---Tells whether the roster cache lists every member of the guild: the character is in the guild, the
+---last read left no entry out, and the client was not hiding offline members. Only then does a name that is missing mean a member who left; the cleanup
 ---of the shared database asks this before it removes records (SyncCleanup.lua).
 ---@return boolean
 function guildState:IsRosterComplete()
@@ -153,8 +153,13 @@ function guildState:ReadRoster()
     end
   end
   local wasComplete = self.rosterComplete
+  -- Another addon can hide offline members with SetGuildRosterShowOffline(false). Whether the member count
+  -- then leaves them out was not seen in the client (plan step 8.2), so such a read never counts as complete:
+  -- the cleanup would take a hidden member for one who left.
+  local showsOffline = GetGuildRosterShowOffline()
+  local listsOffline = not issecretvalue(showsOffline) and showsOffline == true
   -- An entry that was left out (secret, malformed, or a repeated name) makes the cache incomplete
-  self.roster, self.rosterCount, self.rosterComplete = roster, count, count == total
+  self.roster, self.rosterCount, self.rosterComplete = roster, count, count == total and listsOffline
   if self.rosterComplete ~= wasComplete then
     changed = true
   end

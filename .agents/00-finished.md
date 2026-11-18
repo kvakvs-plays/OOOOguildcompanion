@@ -254,7 +254,8 @@
   the plan): `Session:CleanRoster` in `SyncCleanup.lua` removes, once per
   stay in the guild, the records of names outside the roster from the tables
   keyed by character; it waits for `guildState:IsRosterComplete` (new: the
-  roster read gave an entry for every member) and for the own character in
+  roster read gave an entry for every member, and
+  `GetGuildRosterShowOffline()` gave `true`) and for the own character in
   the roster. `Put` refuses a record over `maxRecordBytes` (`"too large"`),
   and `ApplyRemote` drops one; `character` allows 300 bytes. The limits of
   key length, table name, and table count are in `SyncStore.lua` for the
