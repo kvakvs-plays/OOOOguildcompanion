@@ -204,6 +204,10 @@ may be fixed there. Test a claim on the release client before relying on it.
     name and no realm suffix (`Nixia Ameldus`, also with a UTF-8 letter:
     `Æz Clap`). The text and the sender of five lines were not secret; where
     the listener was (combat, instance) was not recorded.
+  - The text of a `CHAT_MSG_GUILD` line with an item link carries the link
+    as `|cnIQ1:|Hitem:4603::::::::45:1485:::::::::|h[Raw Spotted Yellowtail]|h|r`:
+    the colour is the named form `|cn<name>:`, not `|cffRRGGBB`. Code that
+    keeps or strips colour codes must know both forms.
   - Not yet checked: addon messages in a raid group and in a raid instance
     (the raids unlock on December 9, 2026), and during a boss encounter.
 - If you are not sure that an API exists on Forever, say so and write a

@@ -845,9 +845,20 @@ finished and checked on the host; the two client checks need two accounts.
       counts the lines that were not recorded for that reason.
   - First result (2026-11-18, one account, screenshot of `/oooo sync chat`):
     the event is valid and the sender is the roster name, see step 10.3.
-    Still to see: an own line stored without the mark `(witness)`, the three
-    lines on account B after its pull, a line with a link, the count
-    "secret" after a line in combat and one in a dungeon, and the hour.
+  - Second result (2026-11-18, two accounts, screenshots): the checkpoint
+    passed. `Nota Tall` wrote "test", "test kek" (an emoji name, shown as
+    the emoji in chat), and "test" with an item link while `Nota Scam` was
+    offline. On `Nota Tall`, `/oooo sync chat` showed the three lines
+    without the mark `(witness)`. `Nota Scam` logged in and showed, 3
+    minutes after the lines, all 8 stored lines in the same order with the
+    original text; the link arrived as
+    `|cnIQ1:|Hitem:4603::::::::45:1485:::::::::|h[Raw Spotted Yellowtail]|h|r`.
+    The lines of `Nota Tall` were unmarked there too, so the origin was
+    found in the table `character`. The capture line of `Nota Scam` read
+    "listening; this session 0 lines heard, 0 secret, 0 written; own name
+    'Nota Scam', last sender 'nil'; witness".
+  - Still to see: the count "secret" after a line in combat and one in a
+    dungeon, and the hour of step 8.2.
   - Done when: the client checkpoint and the hour of step 8.2 are recorded.
 - **10.3 Witness for members without the addon** (**CLIENT**, two accounts and
   a member without the addon). The code and the host tests are finished; see
@@ -864,10 +875,12 @@ finished and checked on the host; the two client checks need two accounts.
     and one of `Æz Clap`, 40 and 41 minutes old, in order, each once. So
     `CHAT_MSG_GUILD` is valid, its sender is the roster name, and the lines
     of members without the addon are written by a witness and marked.
-    Still to see: the same five lines, once each, on the second account;
-    the record count of `guildchat` in `/oooo sync status` (5 when no line
-    was written twice); the peer in the status after a `/reload`. The
-    screenshot did not show the line "capture: ...".
+  - Second result (2026-11-18, two accounts): both accounts list the same
+    five witness lines, once each and in the same order.
+  - Still to see: the record count of `guildchat` in `/oooo sync status`
+    against the 8 lines (more records means a line was written twice); the
+    peer in the status about 40 seconds after a `/reload`; a line of a
+    member without the addon written while both accounts are online.
   - Done when: the client checkpoint is recorded.
 - **10.4 A peer list without holes**: finished; see `00-finished.md`. The
   whisper `A` travels in the client for the first time with the check of
