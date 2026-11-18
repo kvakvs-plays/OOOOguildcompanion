@@ -143,3 +143,20 @@
   pull without a step for 120 s is given up. `Tests/fakenet.lua` got a send
   rate, in-order arrival per sender and receiver, and `dropIf`.
   `Tests/sync_pull.lua`. Host only by design.
+- **5.3 Requester and queue**: in `Src/Sync/SyncPull.lua`:
+  `pull.chooseSource` (no side effects), `PumpPulls` (the queue is implicit:
+  the first table, in the order of registration, for which a peer can be
+  asked), the handlers of `D` and `B`, `FinishPull`. `sync:ApplyRemote` in
+  `SyncTables.lua` checks and merges received records and fires
+  `OnRecordChanged`. The merged version is the responder's, worked out from
+  the own clock and the `wants` (`pull.responderVersion`). Waits: 300 s after
+  a timeout, 1800 s after a dropped record, the retry time of a `B` (at least
+  5 s). Beyond the plan: the `"seen"` verdict for a record of a name outside
+  the roster (plan section 8), collecting from the moment the hello has left
+  the queue, no pull before the roster holds the own character. `SyncComm`
+  hides the offline whisper line. Client check on 2026-11-18 with two
+  accounts: Nota Tall (origin `>/qs`) pulled from Nota Scam (origin `p:i<`)
+  and then showed `debug` with 1 record and the version of the other account,
+  and `character` with 2 records. `Q` and `D` therefore arrive on `WHISPER`
+  through AceComm. Not seen in that check: a multipart message, and the
+  offline line filter.

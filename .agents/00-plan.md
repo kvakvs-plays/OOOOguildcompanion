@@ -4,7 +4,7 @@ A database that every guild member with the addon holds in full and that
 converges between members through addon messages. It is not realtime: data moves
 in the background, when the game is quiet.
 
-Status: stages 0 to 4 are finished (`00-finished.md`). The probes of stage 1
+Status: stages 0 to 5 are finished (`00-finished.md`). The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -574,68 +574,10 @@ Finished; see `00-finished.md`.
 
 ### Stage 5. Pull
 
-- 5.1 and 5.2 are finished; see `00-finished.md`.
-- **5.3 Requester and queue** (**CLIENT**, two accounts)
-  - Status: the code and the host tests are done, in `Src\Sync\SyncPull.lua`
-    (`pull.chooseSource`, `Session:PumpPulls`, the handlers of `D` and `B`),
-    `SyncTables.lua` (`sync:ApplyRemote`), and `SyncComm.lua` (the
-    `CHAT_MSG_SYSTEM` filter). Open: the client checkpoint below.
-  - To check in the client, with two accounts:
-    - On the account that logs in second, `/oooo sync status` shows the
-      `debug` version of the other account about a minute after login (hello
-      after 20 to 40 s, 10 s of collecting, then the pull).
-    - `character` holds the records of both characters on that account. Its
-      version still differs from the other account, which lacks the new
-      record until the push of stage 6 exists, unless both logged in within
-      the same minute and pulled from each other.
-    - No Lua error, and no "No player named" line when one account logs out
-      during a pull. This is the first use of `WHISPER` through AceComm.
-  - The queue is implicit: `PumpPulls` takes the first table, in the order of
-    registration, for which a peer can be asked; the others wait until the
-    pull has ended.
-  - The version that counts as merged is the version of the responder, worked
-    out from the own clock after the pull and the `wants` of the last batch
-    (`pull.responderVersion`), not the version that the peer announced before.
-  - Waits: 300 s for a peer after a timeout, 1800 s after a pull with a
-    dropped record, the retry time of a `B` (at least 5 s). A timer starts the
-    next pull when the earliest wait is over.
-  - No pull starts before the roster cache holds the own character.
-  - Known gap, for step 6.3: a replica learns of a peer only from a hello or a
-    summary. When its only known source goes offline during a pull, it keeps
-    the part that it has until another peer announces a version.
-  - Substeps
-    - Source choice: among the peers whose fingerprint differs and is not yet
-      merged, the greatest `maxId`; a tie goes to the first that answered. Write
-      it as a function without side effects.
-    - One pull at a time; the other tables wait in a queue.
-    - Apply each batch through `applyBatch` with the checks of section 8; ignore
-      a `D` with a wrong nonce, from another sender, or with a batch number out
-      of order.
-    - After the last batch: merge the clock rest when every batch was applied
-      and no record was dropped (`SyncStore.mergeClock`, each id validated),
-      set `syncedAt`, mark the fingerprint as merged, send
-      `S`, and take the next peer when one still differs.
-    - Timeout of 60 seconds without a batch, an offline peer, or `B`: return the
-      table to the queue with another peer, or with the same one after its
-      retry time.
-    - The `CHAT_MSG_SYSTEM` filter for the offline whisper line, when probe 1.3
-      shows that the line appears.
-  - Checkpoint (**CLIENT**): a fresh install receives the `debug` records of
-    the other account, and `/oooo sync status` shows equal table versions on
-    both.
-  - Host tests (`Tests/sync_pull.lua`, fake network)
-    - A fresh replica pulls 500 records and ends with the table version of the
-      source.
-    - Message loss after batch 3: the timeout fires, the applied batches stay, a
-      second pull completes the table.
-    - The source goes offline during the pull: the pull moves to another peer.
-    - Three peers with different data: the requester ends with the union.
-    - A `D` with a wrong nonce or from a third peer changes nothing.
-    - A source that sends an invalid id: that origin stops there, and the rest
-      is applied.
-    - The source choice function, on a table of cases: greatest `maxId`, tie,
-      merged fingerprint skipped, no candidate.
-  - Done when: the client checkpoint is recorded.
+Finished; see `00-finished.md`. One gap is left for step 6.3: a replica
+learns of a peer only from a hello or a summary. When its only known source
+goes offline during a pull, it keeps the part that it has until another peer
+announces a version.
 
 ### Stage 6. Push and policy
 

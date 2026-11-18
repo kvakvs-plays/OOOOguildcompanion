@@ -197,8 +197,8 @@ may be fixed there. Test a claim on the release client before relying on it.
     (November 18, 2026): serialized messages on `GUILD` arrived between two
     accounts through `RegisterComm` and `SendCommMessage`. AceComm calls
     the global `Ambiguate` on every addon message, so that global exists.
-    Multipart messages (over 255 bytes) and `WHISPER` through AceComm are
-    not yet checked.
+    `WHISPER` through AceComm works too: a pull between two accounts
+    completed. Multipart messages (over 255 bytes) are not yet checked.
   - Not yet checked: addon messages in a raid group and in a raid instance
     (the raids unlock on December 9, 2026), and during a boss encounter.
 - If you are not sure that an API exists on Forever, say so and write a
