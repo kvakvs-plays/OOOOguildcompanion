@@ -628,11 +628,18 @@ Finished; see `00-finished.md`.
       for both tables: the conditions follow the combat events.
     - The peer line showed a difference in `debug` only, so `character` was
       equal on both accounts.
-  - Still to check in the client:
-    - `/oooo opt` has a tab "Sync" with one group per table, and no Lua error.
-    - The checkpoint below: set `debug` to "Only in a city or an inn"; a put
-      outside a city stays local (`may send: no, needs resting`), and goes out
-      in a city.
+    - `/oooo opt` showed the tab "Sync" with the groups `character` and
+      `debug`, their status lines, and the four controls. With both tables set
+      to "Only in a city or an inn", outside a city `/oooo sync status` showed
+      `may send: no, needs resting`.
+  - Still to check in the client: the second half of the checkpoint below. A
+    put outside a city with `debug` on "Only in a city or an inn" shows
+    `has unsent changes` and reaches the other account only after the
+    character has entered a city or an inn.
+  - After that check the status was changed: the peer line reads
+    "has newer data in <tables>" or "no newer data known" and no longer counts
+    a version that this replica holds; the table line adds
+    "has unsent changes"; the label of the second slider is shorter.
   - An override is stored only where it differs from the table definition.
   - Substeps
     - `Src\Sync\SyncOptions.lua`: an AceConfig page "Sync" with `enabled`,

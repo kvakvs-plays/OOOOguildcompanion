@@ -206,7 +206,7 @@ function options.buildTab()
         minInterval = {
           type = "range",
           order = 4,
-          name = "Shortest time between sends (s)",
+          name = "Time between sends (s)",
           desc = "Seconds that must pass between two sends of your changes in this table.",
           min = 0,
           max = ns.syncPolicy.MAX_SECONDS,

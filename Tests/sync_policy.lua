@@ -227,7 +227,8 @@ do
   T.eq(ask(1), { { "D", 1 } }, "the responder serves while its condition is met")
   a:SetState({ inInstance = true })
   T.eq(ask(2), { { "B", "busy", 30 } }, "in an instance a noraid table answers busy")
-  T.eq(a.session:SendState("debug"), "no, needs noraid", "the status names the condition")
+  T.eq(a.session:SendState("debug"), "no, needs noraid, has unsent changes",
+    "the status names the condition and the unsent write")
   a:SetState({ inInstance = false, inRaid = true })
   T.eq(ask(3), { { "B", "busy", 30 } }, "and so in a raid group")
   a:SetState({ inRaid = false })

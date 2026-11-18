@@ -124,6 +124,9 @@ do
   end
   net:Advance(300)
   T.eq(Replica.count(net, "Q"), 0, "nobody pulls from a peer whose announced version is only out of date")
+  for _, peer in ipairs(c.session:PeerList()) do
+    T.eq(c.session:DifferingTables(peer), {}, "the status shows no difference to " .. peer.name)
+  end
 end
 
 -- A push while in combat is held and goes out after the state changes
@@ -134,9 +137,11 @@ do
   net:Advance(100)
   T.eq(#pushes(net), 0, "no push in combat")
   T.ok(a.sync.dirtySince.debug, "the change stays marked")
+  T.eq(a.session:SendState("debug"), "no, needs nocombat, has unsent changes", "the status shows the unsent change")
   a:SetState({ inCombat = false })
   net:Advance(1)
   T.eq(#pushes(net), 1, "the push goes out when the fight is over")
+  T.eq(a.session:SendState("debug"), "yes", "and the status shows nothing unsent")
   T.eq(b:Version("debug"), a:Version("debug"), "and arrives")
 
   -- The condition of the table: resting

@@ -112,7 +112,7 @@ do
   T.eq(Replica.count(net, "H", nil, since), 1, "one hello after the second login")
   T.eq(Replica.count(net, "S"), 0, "no summary between equal replicas")
   T.eq(a:PeerNames(), { "Other One" }, "the replica that heard the hello knows the sender")
-  T.eq(a.session:StatusLines()[3]:match("^  Other One: last message %d+ s ago, (.+)$"), "no known difference",
+  T.eq(a.session:StatusLines()[3]:match("^  Other One: last message %d+ s ago, (.+)$"), "no newer data known",
     "the status shows the peer without a difference")
   T.eq(b:PeerNames(), {}, "the new replica got no answer, so it knows no peer")
   T.eq(b.session.discovered, true, "its discovery still ends")
@@ -139,8 +139,14 @@ do
     "the answer waits 1 to 8 seconds after the hello arrives")
   T.eq(b:PeerNames(), { "Nota Scam" }, "the new replica knows the peer that answered")
   T.eq(a:PeerNames(), { "Other One" }, "the old replica knows the new one")
-  T.eq(b.session:DifferingTables(b.session.peers["Nota Scam"]), { "debug" }, "the peer differs in debug")
-  T.eq(b.session:StatusLines()[3]:match(", (.+)$"), "differs in debug", "the status names the table")
+  T.eq(b.session.peers["Nota Scam"].versions.debug, a:Version("debug"), "the peer is listed with its version")
+  T.ok(a:Version("debug") ~= b:Version("debug"), "which is not the version of the new replica")
+  T.eq(b.session:DifferingTables(b.session.peers["Nota Scam"]), {},
+    "after the pull the peer holds nothing that the new replica lacks")
+  T.eq(b.session:StatusLines()[3]:match(", (.+)$"), "no newer data known", "and the status says so")
+  T.eq(a.session:DifferingTables(a.session.peers["Other One"]), { "debug" },
+    "the old replica lacks the record of the new one")
+  T.eq(a.session:StatusLines()[3]:match(", (.+)$"), "has newer data in debug", "and its status names the table")
   T.eq(a.session.peers["Other One"].versions, { character = b:Version("character"), debug = b:Version("debug") },
     "a hello gives all versions of the sender")
   for _, entry in ipairs(discoveryLog(net)) do
@@ -152,7 +158,7 @@ do
   local lines = b.ns.syncCommands.statusLines()
   T.eq(lines[#lines - 2], "discovery: done", "the status command shows the state of discovery")
   T.eq(lines[#lines - 1], "peers: 1", "and the number of peers")
-  T.ok(lines[#lines]:find("^  Nota Scam: last message %d+ s ago, differs in debug$"), "and one line per peer")
+  T.ok(lines[#lines]:find("^  Nota Scam: last message %d+ s ago, no newer data known$"), "and one line per peer")
 
   -- The peer goes offline
   a:Logout()
@@ -194,7 +200,8 @@ for seed = 1, 3 do
   T.ok(summaries >= 1, "at least one replica answers the new one (seed " .. seed .. ")")
   T.ok(summaries <= 5, "at most 5 of 50 replicas answer, got " .. summaries .. " (seed " .. seed .. ")")
   T.eq(#new:PeerNames(), summaries, "the new replica knows each peer that answered")
-  T.eq(new.session:DifferingTables(new.session:PeerList()[1]), { "debug" }, "and that the peer differs in debug")
+  T.eq(new.session:DifferingTables(new.session:PeerList()[1]), {}, "and has pulled what the peer holds")
+  T.eq(old[1].sync:Count("debug"), 0, "the old replicas hold no record")
   for index = 1, 50 do
     T.eq(old[index].session.answerTimer, nil, "no answer is left pending")
   end

@@ -373,13 +373,17 @@ function Session:PeerList()
   return list
 end
 
----Lists the tables for which a peer has announced another version than this replica has.
+---Lists the tables for which a peer may hold data that this replica lacks: the peer has announced a
+---version that is not the own one and not one that this replica is known to hold. A version that the
+---replica has had itself, or has pulled, is only an entry that is out of date: the peer has not told the
+---guild since that it took a later push.
 ---@param peer OOOOSyncPeer
 ---@return string[] names Sorted
 function Session:DifferingTables(peer)
   local own, names = self:LocalVersions(), {}
   for name, version in pairs(peer.versions) do
-    if own[name] and own[name] ~= version then
+    local merged = self.merged[name]
+    if own[name] and own[name] ~= version and not (merged and merged[version]) then
       names[#names + 1] = name
     end
   end
@@ -389,13 +393,18 @@ end
 
 ---Tells in a word whether a table may send now, for `/oooo sync status`.
 ---@param tableName string
----@return string state "yes", "off" (turned off by the user), or "no" with the condition that is not met
+---@return string state "yes", "off" (turned off by the user), or "no" with the condition that is not met;
+---with a note when the table has changes of this install that were not sent yet
 function Session:SendState(tableName)
   local effective = self.parts.policy:Get(tableName)
   if not effective or not effective.enabled then
     return "off"
   end
-  return self:MayTransfer(tableName) and "yes" or ("no, needs " .. effective.when)
+  local state = self:MayTransfer(tableName) and "yes" or ("no, needs " .. effective.when)
+  if self.parts.sync.dirtySince[tableName] then
+    state = state .. ", has unsent changes"
+  end
+  return state
 end
 
 ---Builds the lines about discovery and the peers for `/oooo sync status`.
@@ -419,7 +428,7 @@ function Session:StatusLines()
   for _, peer in ipairs(peers) do
     local differing = self:DifferingTables(peer)
     lines[#lines + 1] = "  " .. peer.name .. ": last message " .. math.floor(now - peer.lastSeen) .. " s ago, "
-      .. (#differing > 0 and ("differs in " .. table.concat(differing, ", ")) or "no known difference")
+      .. (#differing > 0 and ("has newer data in " .. table.concat(differing, ", ")) or "no newer data known")
   end
   for _, line in ipairs(self:PullStatusLines()) do
     lines[#lines + 1] = line
