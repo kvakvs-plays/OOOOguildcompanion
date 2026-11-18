@@ -184,6 +184,8 @@ function Session:OnGuildStateChanged(inGuild)
   if self.helloSent or self.helloTimer then
     return
   end
+  -- Before anything is sent: what is over the age of its table is neither announced nor given to a peer
+  self:ExpireTables()
   self.helloTimer = self.parts.after(self:RandomDelay(session.HELLO_DELAY_MIN, session.HELLO_DELAY_MAX), function()
     self.helloTimer = nil
     self:SendHello()

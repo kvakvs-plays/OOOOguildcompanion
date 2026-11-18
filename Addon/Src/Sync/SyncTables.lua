@@ -20,6 +20,8 @@ local addonName, ns = ...
 ---a larger one that arrives is dropped
 ---@field writers "owner"|"anyone" Who may write a key: the character that it names, or every member
 ---@field policy OOOOSyncPolicy|nil Defaults of the send policy; omitted fields take `DEFAULT_POLICY`
+---@field maxAge number|nil Seconds for which a record is kept, counted from the time of its id; a record that
+---is older is not stored on receive and is removed by `Expire`. nil: records are kept whatever their age
 
 ---@class OOOOSync
 ---@field definitions table<string, OOOOSyncTableDefinition> Table name -> definition
@@ -41,7 +43,8 @@ local versionId = ns.versionId
 
 ---Events for feature modules and the UI, in the CallbackHandler form:
 ---`ns.sync.RegisterCallback(owner, "OnRecordChanged", function(event, tableName, key, payload, isRemote) end)`.
----`payload` is nil when the record was deleted. The event fires for local and for received changes.
+---`payload` is nil when the record was deleted or removed by the local cleanup. The event fires for local
+---and for received changes.
 sync.callbacks = LibStub("CallbackHandler-1.0"):New(sync)
 
 local NAME_PATTERN = "^[a-z][a-z0-9_]*$"
@@ -85,6 +88,10 @@ local function definitionProblem(definition)
   end
   if not isPositiveInteger(definition.maxRecordBytes) then
     return "maxRecordBytes must be a positive integer"
+  end
+  local maxAge = definition.maxAge
+  if maxAge ~= nil and (type(maxAge) ~= "number" or maxAge <= 0 or maxAge == math.huge or maxAge ~= maxAge) then
+    return "maxAge must be a positive number"
   end
   local policy = definition.policy
   if policy ~= nil then
@@ -144,6 +151,7 @@ function sync:RegisterTable(definition)
     validate = definition.validate,
     maxRecordBytes = definition.maxRecordBytes,
     writers = definition.writers,
+    maxAge = definition.maxAge,
     policy = {
       when = policy.when or DEFAULT_POLICY.when,
       pushDelay = policy.pushDelay or DEFAULT_POLICY.pushDelay,
@@ -352,6 +360,45 @@ function sync:Put(tableName, key, payload)
   return true
 end
 
+---Adds a record under its own version id as key, for a table that is a log: every entry is written once
+---and never changed, and the keys sorted with `<` give the entries in the order of time (plan section 5.3).
+---The table must have `keyKind = "free"` and `writers = "anyone"`.
+---@param tableName string
+---@param payload any As in `Put`; `validate` gets the new id as key
+---@return string|nil id The id and key of the new record; nil when the write was refused
+---@return string|nil reason Why: "unknown table", "not ready", "bad key" (the table is keyed by character),
+---"not the owner", "bad payload", or "too large"
+function sync:Append(tableName, payload)
+  local tbl, definition, reason = self:GetTable(tableName)
+  if not tbl or not definition then
+    return nil, reason
+  end
+  if definition.keyKind ~= "free" then
+    return nil, "bad key"
+  end
+  -- An id names no character, so the owner rule can never pass
+  if definition.writers ~= "anyone" then
+    return nil, "not the owner"
+  end
+  if payload == nil or not isPlainData(payload) then
+    return nil, "bad payload"
+  end
+  -- The id is made before the last checks because it is the key that they look at. One that is refused is
+  -- not used again, which costs nothing: the ids of an install only have to increase.
+  local id = self.nextId(tbl.maxId)
+  if not definition.validate(id, payload) then
+    return nil, "bad payload"
+  end
+  if store.recordSize({ key = id, payload = payload }) > definition.maxRecordBytes then
+    return nil, "too large"
+  end
+  local stored = copy(payload)
+  store.apply(tbl, id, id, stored)
+  markDirty(tableName)
+  self.callbacks:Fire("OnRecordChanged", tableName, id, stored, false)
+  return id
+end
+
 ---Deletes a record by writing a tombstone with a new version id. A key that is absent or already
 ---deleted is left alone.
 ---@param tableName string
@@ -485,6 +532,38 @@ function sync:RemoveOldTombstones(tableName, after, onDone)
   local limit = versionId.timePrefix(self.timeFn() - store.TOMBSTONE_SECONDS)
   self:Sweep(tableName, function(_key, record)
     return record.x == true and record.v < limit
+  end, after, onDone)
+end
+
+---Tells whether a write is older than its table keeps records (`maxAge` of the definition). The age is that
+---of the id, so every replica gives the same answer for a record, whenever it has received it.
+---@param definition OOOOSyncTableDefinition
+---@param id string A well-formed version id
+---@return boolean expired false for a table without `maxAge`
+function sync:IsExpired(definition, id)
+  if not definition.maxAge or not self.timeFn then
+    return false
+  end
+  return id < versionId.timePrefix(self.timeFn() - definition.maxAge)
+end
+
+---Removes the records of a table that are older than its `maxAge`, tombstones too, without a change to the
+---clock, `maxId`, or `fp`: two replicas with equal versions can then hold different numbers of old records,
+---which is intended (plan section 4.4). A table without `maxAge` is left alone.
+---@param tableName string
+---@param after (fun(seconds: number, fn: fun()): any)? As in `Sweep`
+---@param onDone (fun(removed: integer))?
+function sync:Expire(tableName, after, onDone)
+  local _, definition = self:GetTable(tableName)
+  if not definition or not definition.maxAge or not self.timeFn then
+    if onDone then
+      onDone(0)
+    end
+    return
+  end
+  local limit = versionId.timePrefix(self.timeFn() - definition.maxAge)
+  self:Sweep(tableName, function(_key, record)
+    return record.v < limit
   end, after, onDone)
 end
 

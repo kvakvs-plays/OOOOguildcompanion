@@ -279,3 +279,16 @@
     `character` record of the offline member stayed (2 records, 155 bytes).
   - Not seen: the read after `SetGuildRosterShowOffline(false)`. Closed in
     code instead: `ReadRoster` takes such a read as incomplete.
+
+## Stage 10. Guild chat table
+
+- **10.1 Engine: `Append` and `maxAge`**: in `Src/Sync/SyncTables.lua`
+  `ns.sync:Append(tableName, payload)` (the record's id is its key; only for
+  a table with `keyKind = "free"` and `writers = "anyone"`), the optional
+  `maxAge` of a definition, `IsExpired(definition, id)`, and
+  `Expire(tableName, after, onDone)` (a `Sweep`, so the clock stays).
+  `Session:CheckRecord` in `SyncPull.lua` is the one place that gives the
+  verdict `"seen"`, for the roster rule and the age rule, in a pull and in a
+  push. `Session:ExpireTables` in `SyncCleanup.lua` runs when the stay in
+  the guild starts, before the hello, and then every 3600 s.
+  `Tests/sync_maxage.lua`. Host only by design.

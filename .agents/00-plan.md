@@ -795,30 +795,7 @@ Postponed (2026-11-18): the guild has no use for equipment data yet. Stages
 
 Design in 5.3. It does not depend on stage 9.
 
-- **10.1 Engine: `Append` and `maxAge`**
-  - Substeps
-    - `ns.sync:Append(tableName, payload)`: makes a new id, stores the record
-      under that id as key, marks the table dirty, and returns the id.
-    - `maxAge` in the table definition (optional number of seconds), checked
-      in `RegisterTable`.
-    - On receive (pull and push): a record of a table with `maxAge` whose id
-      time is older than the age gets the verdict `"seen"`.
-    - `ns.sync:Expire(tableName)`: removes the stored records older than the
-      age, without a change to the clock, `maxId`, or `fp`. The work is cut
-      across frames for a large table. Called at login and once per hour with
-      `C_Timer`.
-  - Checkpoint: on the host, a fresh replica pulls from one that still holds
-    lines of 15 days ago and stores only the lines of the last 14 days.
-  - Host tests (`Tests/sync_maxage.lua`, fake clock)
-    - `Append` twice in one second gives two records in id order.
-    - A received record older than the age is not stored, and the clock rises.
-    - `Expire` removes the old records; the table version is the same before
-      and after.
-    - A pull from a replica that holds records over the age stores none of
-      them, and both replicas end with the same table version.
-    - A table without `maxAge` behaves as before (the whole host suite passes).
-  - Done when: the roster rule and the age rule share one place that gives the
-    verdict `"seen"`.
+- **10.1 Engine: `Append` and `maxAge`**: finished; see `00-finished.md`.
 - **10.2 Table `guildchat`: own lines, retention, reading** (**CLIENT**, two
   accounts)
   - Substeps

@@ -354,18 +354,25 @@ function Session:ClosePull(retrySeconds)
   end
 end
 
----The further check of a received record, after those of `sync:ApplyRemote`: in a table that is keyed by
----character, a record of a name that is not in the guild roster is not kept. Every replica removes such
----records by itself, so the clock still counts the record as seen.
+---The further check of a received record, after those of `sync:ApplyRemote`, for a pull and for a push: the
+---one place that tells whether this replica keeps a good record. It does not keep
+--- - in a table that is keyed by character, a record of a name that is not in the guild roster;
+--- - in a table with `maxAge`, a record whose id is older than that age.
+---Every replica removes such records by itself (SyncCleanup.lua), so the clock still counts the record as
+---seen, and the record does not count as dropped.
 ---@param record OOOOSyncWireRecord
 ---@param definition OOOOSyncTableDefinition
 ---@return boolean|"seen"
 function Session:CheckRecord(record, definition)
+  local sync = self.parts.sync
   if definition.keyKind == "character" then
-    local name = self.parts.sync.keyName(record.key)
+    local name = sync.keyName(record.key)
     if not name or not self.parts.guild:GetMember(name) then
       return "seen"
     end
+  end
+  if sync:IsExpired(definition, record.id) then
+    return "seen"
   end
   return true
 end
