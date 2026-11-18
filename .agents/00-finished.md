@@ -372,3 +372,52 @@
   - Whether a line is written twice: the record count of `guildchat` in
     `/oooo sync status` is then greater than the number of lines in
     `/oooo sync chat`.
+
+## Stage 11. Chat history and mentions
+
+The code of all steps was written on 2026-11-18 and checked on the host only
+(luacheck, `lua Tests/run_all.lua`). Step 11.2 is finished; the client checks
+of 11.1, 11.3, 11.4, and 11.5 are open in the plan.
+
+- **11.1 Settings and matching** (code; the client check is open in the
+  plan): `Src/Chat/Mentions.lua` (`ns.mentions`) with `parseWatchList`,
+  `hasMention`, `fragments`, and `sanitize`. `sanitize` keeps hyperlinks with
+  their text, colour codes, `|r`, and `||`, doubles every other `|`, also
+  inside the text of a link, and closes a colour that is left open. Of two
+  watch entries that match at one `@`, the longer one is taken. The defaults
+  `profile.mentions = { watch = "", notifyOnLogin = true }` are in `Core.lua`,
+  the section "Mentions" on the General tab. Tests in
+  `Tests/sync_mentions.lua`.
+- **11.2 The mention list**: `db.global.mentions = { lines, lastOnline,
+  noticed }` with the migration to `SCHEMA_VERSION` 3 (`Database.lua`).
+  `ns.mentions:Attach(parts)` reads the list at login (`Reconcile`), and
+  `OnRecordChanged` keeps it equal to the table `guildchat`. `StartsRead`
+  gives the flag of a new entry; `List`, `UnreadCount`, `MarkRead`, and the
+  callback `OnMentionsChanged` serve the window. Two records of one line
+  (5.3) are one mention, and reading it marks both. `Start` writes
+  `lastOnline` at login, on `PLAYER_LOGOUT`, and every 5 minutes; these three
+  have not run in the client. `ns.guildChat:Payload(id)` is new. The replicas
+  of the host tests connect a mention list at `Login`.
+- **11.3 Chat history window** (code; the client check is open in the
+  plan): `ns.guildChat:Page(beforeId, count)` reads the end of the sorted
+  keys and joins double records by the rule of `Lines`, read backwards; a
+  host test compares pages of 1, 3, 7, and 50 lines with `Lines` on a table
+  full of repeats. `Src/Chat/ChatHistory.lua` is the model: a line that is
+  newer than all loaded ones is added at the end, and every other change
+  marks the model for `Refresh`, which reads the newest lines again, as many
+  as were loaded. `Src/Chat/ChatHistoryWindow.lua` is the frame and
+  `/oooo chat`; it has run only against stub frames. The probe `chatframe`
+  reports the widget methods and globals that it looks up. Tests in
+  `Tests/sync_chathistory.lua`.
+- **11.4 Mentions in the window, and the notice** (code; the client check is
+  open in the plan): the lists "Unread" and "Read" are own rows with a
+  mouse-wheel offset, without a scroll template. `CheckNotice` prints when
+  an unread mention of the user has no mark in `noticed`, and marks all of
+  them; `ScheduleNotice` waits 5 seconds after the last new unread mention
+  of the user, `ScheduleLoginNotice` 10 seconds after the guild check.
+  `RegisterLink` listens on `EventRegistry` for "SetItemRef"; the probe
+  `chatlink` checks that path.
+- **11.5 Warning for a mention that nobody can copy** (code; the client
+  check is open in the plan): `ns.guildChat:WarnIfUnshared` in
+  `SyncGuildChat.lua`, called for every own line after the check for secret
+  values.
