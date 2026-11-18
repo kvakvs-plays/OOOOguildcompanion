@@ -46,7 +46,7 @@ moved, or removed.
 | `Emoji/Emoji.lua` | `ns.emoji`: builds the emoji list from index, aliases, and options. |
 | `Guild/GuildState.lua` | `ns.guildState`: `GUILD_NAME`, the guild check (`state`: `unknown`, `in`, `outside`), the roster cache `name -> { online, rankIndex }`, `normalizeName`, `NoteOnline`, the callbacks `OnGuildStateChanged` and `OnRosterChanged`, `Start` with the event frame. Host-loadable. Loads after `Core.lua`. |
 | `Emoji/EmojiChat.lua` | Replaces emoji names in guild, party, and raid chat; the filters follow `OnGuildStateChanged`. |
-| `Options/OptionsWindow.lua` | `ns.optionsWindow`: the AceConfig settings window with the General and Emoji tabs. |
+| `Options/OptionsWindow.lua` | `ns.optionsWindow`: the AceConfig settings window with the General and Emoji tabs, and the Sync tab from `Sync/SyncOptions.lua`. |
 | `Sync/Base94.lua` | `ns.base94`: `encode`, `decode`, `isValid`, the 32-bit `hash`, byte-wise `compare`. Host-testable, no WoW API. |
 | `Sync/VersionId.lua` | `ns.versionId`: `make`, `parse`, `originOf`, `isWellFormed`, `isValid`, `newOrigin`, `newGenerator`, `ZERO`. Host-testable, no WoW API. |
 | `Sync/SyncStore.lua` | `ns.syncStore`: one table of the shared database. `newTable`, `apply` (last writer wins, clock, `fp`, `maxId`), `tableVersion`, `parseTableVersion`, `rebuild`; for transfers `digest`, `parseDigest`, `selectDelta`, `splitBatches`, `applyBatch`, `clockRest`, `mergeClock`, `wants`, `estimateSize`, `versionOfClock`. Host-testable, no WoW API. |
@@ -59,6 +59,7 @@ moved, or removed.
 | `Sync/SyncSession.lua` | `ns.syncSession`: `new(parts)` gives a session: the hello 20 to 40 s after the guild check, the answer to a hello after 1 to 8 s with its suppression, the peer list, `StatusLines`; `Start()` builds the session of the game (`ns.syncSession.current`); `Session` and `handlers` are open for `SyncPull.lua` and `SyncPush.lua`. Host-loadable. |
 | `Sync/SyncPull.lua` | `ns.syncPull`: the pull, added to the session class of `SyncSession.lua`. Responder: the handler of `Q`, `Refuse`, `SendBatch`. Requester: `chooseSource`, `responderVersion`, `PumpPulls` (the queue), `StartPull`, the handlers of `D` and `B`, `FinishPull`, `CheckRecord` (roster rule). The constants of batch size, timeouts, and waits. Host-loadable. |
 | `Sync/SyncPush.lua` | `ns.syncPush`: the push, added to the session class. `SendPush` (one or several `P` with bases), `PushLocal`, `SchedulePush`, `MarkUnpushed`, `PushWanted` (after a pull), the periodic summary (`ScheduleSummary`, `SendSummary`), the handler of `P`, `NoteVersions`, `ScheduleDelayedPull`, `RememberOwnVersion`. Host-loadable. |
+| `Sync/SyncOptions.lua` | `ns.syncOptions`: the "Sync" tab of the settings window (`buildTab`), `statusText`, `ago`, `setOverride`, `getValue`. Host-loadable. |
 | `Sync/SyncProbe.lua` | `ns.syncProbe`: `/oooo sync probe <name>`, the probe registry, reports stored in `db.global.probeResults`, and the computing helpers of the probes. Host-loadable. |
 
 ## `Tests/` (host only, Lua 5.4, not packaged)

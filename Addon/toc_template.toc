@@ -39,3 +39,4 @@ Src\Sync\SyncPolicy.lua
 Src\Sync\SyncSession.lua
 Src\Sync\SyncPull.lua
 Src\Sync\SyncPush.lua
+Src\Sync\SyncOptions.lua

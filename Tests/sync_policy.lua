@@ -289,4 +289,48 @@ do
   T.eq(b.sync:Count("debug"), 0, "and no record arrives")
 end
 
+-- The options page: the status text
+do
+  local options = T.loadAll({ "Addon/Src/Sync/SyncPolicy.lua", "Addon/Src/Sync/SyncOptions.lua" }).syncOptions
+  local now = 1795000000
+  T.eq(options.statusText({ enabled = true, records = 0, now = now }), "0 records, no pull yet",
+    "the status of a table that was never synced")
+  T.eq(options.statusText({ enabled = true, records = 12, now = now, syncedAt = now - 125 }),
+    "12 records, last pull 2 min ago", "the status of a synced table")
+  T.eq(options.statusText({ enabled = true, records = 12, now = now, syncedAt = now - 125, source = "Nota Scam",
+    batch = 3 }), "12 records, pulling from Nota Scam (batch 3)", "the status during a pull")
+  T.eq(options.statusText({ enabled = false, records = 12, now = now, syncedAt = now - 125, source = "Nota Scam" }),
+    "Turned off: 12 records, neither sent nor requested", "the status of a table that is turned off")
+  T.eq(options.statusText({ enabled = true, records = 5, now = now, syncedAt = now, servingTo = "Other One",
+    servingBatch = 2, servingTotal = 7 }), "5 records, last pull 0 s ago, sending to Other One (batch 2 of 7)",
+    "the status while the table is sent to a peer")
+  for seconds, text in pairs({ [0] = "0 s ago", [59] = "59 s ago", [60] = "1 min ago", [3599] = "59 min ago",
+    [3600] = "1 h ago", [86399] = "23 h ago", [86400] = "1 d ago", [200000] = "2 d ago", [-5] = "0 s ago" }) do
+    T.eq(options.ago(seconds), text, "ago of " .. seconds .. " seconds")
+  end
+
+  -- The setters write only into the overrides, and only what differs from the definition
+  local defaults = { when = "nocombat", pushDelay = 300, minInterval = 600 }
+  local overrides = {}
+  options.setOverride(overrides, defaults, "debug", "when", "resting")
+  T.eq(overrides, { debug = { when = "resting" } }, "a changed value is stored as an override")
+  T.eq(options.getValue(overrides, defaults, "debug", "when"), "resting", "the control shows the override")
+  T.eq(options.getValue(overrides, defaults, "debug", "pushDelay"), 300, "and the definition for the other fields")
+  T.eq(options.getValue(overrides, defaults, "debug", "enabled"), true, "a table is on by default")
+  options.setOverride(overrides, defaults, "debug", "enabled", false)
+  options.setOverride(overrides, defaults, "debug", "pushDelay", 10)
+  options.setOverride(overrides, defaults, "other", "minInterval", 60)
+  T.eq(overrides, { debug = { when = "resting", enabled = false, pushDelay = 10 }, other = { minInterval = 60 } },
+    "each field and each table has its own override")
+  options.setOverride(overrides, defaults, "debug", "when", "nocombat")
+  options.setOverride(overrides, defaults, "debug", "enabled", true)
+  T.eq(overrides.debug, { pushDelay = 10 }, "a value equal to the definition removes the override")
+  options.setOverride(overrides, defaults, "debug", "pushDelay", 300)
+  T.eq(overrides, { other = { minInterval = 60 } }, "a table without overrides is removed")
+  options.setOverride(overrides, defaults, "debug", "schema", 5)
+  T.eq(overrides.debug, nil, "a field that is not a policy field is not stored")
+  T.eq(defaults, { when = "nocombat", pushDelay = 300, minInterval = 600 }, "the definition is never written")
+  T.eq(options.getValue(nil, defaults, "debug", "when"), "nocombat", "missing overrides give the definition")
+end
+
 T.finish()

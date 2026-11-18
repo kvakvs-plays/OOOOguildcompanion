@@ -616,6 +616,24 @@ Finished; see `00-finished.md`.
 
 - 6.1, 6.2, and 6.3 are finished; see `00-finished.md`.
 - **6.4 Options page** (**CLIENT**)
+  - Status: the code and the host tests are done, in
+    `Src\Sync\SyncOptions.lua` (`ns.syncOptions`); the tab is added in
+    `Options\OptionsWindow.lua`. Open: the client checkpoint below. It is also
+    the first run in the client of the push (6.2, 6.3), of the conditions
+    (6.1), and of the periodic summary.
+  - To check in the client, with two accounts:
+    - `/oooo opt` has a tab "Sync" with one group per table, and no Lua error.
+    - `/oooo sync put <key> <text>` on one account: about 10 seconds later
+      `/oooo sync get <key>` prints the text on the other, and
+      `/oooo sync status` shows equal `debug` versions on both.
+    - After a login both accounts end with equal `character` versions within
+      about two minutes (the push after the pull, or the push of the own
+      record).
+    - The checkpoint below: set `debug` to "Only in a city or an inn"; a put
+      outside a city stays local (`may send: no, needs resting`), and goes out
+      in a city.
+    - In a fight, `/oooo sync status` shows `may send: no, needs nocombat`.
+  - An override is stored only where it differs from the table definition.
   - Substeps
     - `Src\Sync\SyncOptions.lua`: an AceConfig page "Sync" with `enabled`,
       `when`, `pushDelay`, and `minInterval` for each table.

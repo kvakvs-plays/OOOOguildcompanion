@@ -50,6 +50,8 @@ local addonName, ns = ...
 ---@field syncSession OOOOSyncSessionModule
 ---@field syncPull OOOOSyncPullModule
 ---@field syncPolicy OOOOSyncPolicyModule
+---@field syncPush OOOOSyncPushModule
+---@field syncOptions OOOOSyncOptions
 ---@field dbIsNewer boolean|nil true when the saved variables are from a newer addon version and were left alone
 
 local defaults = {

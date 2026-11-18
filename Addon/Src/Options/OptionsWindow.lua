@@ -123,6 +123,8 @@ local function getOptions()
       args = {
         general = buildGeneralTab(),
         emoji = buildEmojiTab(),
+        -- The Sync tab is built in Sync/SyncOptions.lua
+        sync = ns.syncOptions.buildTab(),
       },
     }
   end
