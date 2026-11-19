@@ -616,7 +616,14 @@ ns.guildState.RegisterCallback(scan, "OnGuildStateChanged", function(_event, inG
   scan.SetListening(inGuild)
 end)
 
-ns.syncSlash:Register("prof", "prof - the stored professions of this character and the last scan", function()
+ns.syncSlash:Register("prof", "prof [names] - the stored professions of this character and the last scan; "
+  .. "names: the state of the item names", function(rest)
+  if rest:lower() == "names" then
+    -- ProfessionNames.lua loads after this file, so its loader is looked up at the call
+    local loader = ns.professionNames and ns.professionNames.current
+    ns.print(loader and loader:StatusLine() or "The item names are not started.")
+    return
+  end
   if not scan.current then
     ns.print("The profession scan runs only for a character in the guild.")
     return

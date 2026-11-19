@@ -1138,30 +1138,14 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
   - Done when: the client check is recorded.
 
 - **12.5 Recipe facts and item names** (**CLIENT**)
-  - Substeps
-    - `Src\Professions\ProfessionRecipes.lua` (`ns.professionRecipes`):
-      `Facts(recipeId)` of 5.4, with the client behind a small interface
-      so that the file runs on the host.
-    - `Src\Professions\ProfessionNames.lua` (`ns.professionNames`), by the
-      design of 5.4: `Name(itemId)`, `Prepare(itemIds)`, `Progress()`
-      (named, total), and the callback `OnNamesChanged`. The client is
-      behind a small interface (`nameOf(id)`, `request(id)`, the callback
-      for an answer) and the timer is a parameter, so the file runs on the
-      host. Nothing is saved.
-    - `/oooo sync prof names`: the counts of named, failed, and open ids.
+  - State (2026-11-19): the code and the host tests are done
+    (`ProfessionRecipes.lua`, `ProfessionNames.lua`,
+    `Tests/sync_profnames.lua`); the client check is open. Added to the
+    design: a request without an answer counts as failed after 15 seconds,
+    so that the count of open names ends.
   - Checkpoint: after a client restart, `/oooo prof` (step 12.7) shows the
     reagent names after the line "Loading names" has counted up for some
-    seconds, and `/oooo sync prof names` shows no
-    open id. Until 12.7 exists: `/oooo sync prof names` after
-    `/oooo sync prof` has prepared the reagents of the own recipes.
-  - Host tests: `Tests/sync_profnames.lua` with a stub client and the
-    fake clock: a direct answer costs no request; an id is requested once;
-    an answer gives the name and one `OnNamesChanged` for many answers; a
-    failed id is not asked again; nothing is requested before 10 seconds after the
-    login; `Prepare` of 500 ids sends at most 40 requests in every 0.2
-    seconds; a single `Name` waits in the same queue; `Facts` of a recipe gives item, count, and
-    reagents; `Facts` of an id that is no recipe gives nil; a secret value
-    gives nil.
+    seconds, and `/oooo sync prof names` shows no waiting and no open id.
   - Done when: the client check is recorded.
 
 - **12.6 Search model**

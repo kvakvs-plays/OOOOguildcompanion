@@ -73,6 +73,8 @@ local addonName, ns = ...
 ---@field professionData OOOOProfessionData
 ---@field professionProbe OOOOProfessionProbe
 ---@field professionScan OOOOProfessionScanModule
+---@field professionRecipes OOOOProfessionRecipes
+---@field professionNames OOOOProfessionNamesModule
 ---@field version string|nil Version of this release (Changelog/ChangelogData.lua, generated)
 ---@field changelog OOOOChangelogRelease[]|nil The release notes, newest first (the same file)
 ---@field changelogWindow OOOOChangelogWindow
@@ -191,6 +193,8 @@ function addon:OnEnable()
     ns.syncSession.Start()
   end
   ns.guildState:Start()
+  -- From here its start delay runs: no item name is requested in the first seconds after the login
+  ns.professionNames.Start()
   -- Does nothing unless the probe `professions login` was armed
   ns.professionProbe.StartLoginWatch()
 end
