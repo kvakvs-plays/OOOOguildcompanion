@@ -295,6 +295,15 @@ may be fixed there. Test a claim on the release client before relying on it.
     probed), so a Classic recipe id is not always valid. Forever's own
     recipes have ids above 1.2 million (1229737 Basic Campfire, in
     Cooking; 1230117 First Aid Kit).
+  - Item names (`/oooo sync probe nameload`, right after a client start):
+    `C_Item.GetItemNameByID` named few items at once (6 of 50, 5 of 200,
+    85 of 800). `C_Item.RequestLoadItemDataByID` for all the others in one
+    frame (up to 715 requests) was answered completely within 0.25
+    seconds, each by `ITEM_DATA_LOAD_RESULT` (item id, success);
+    `GET_ITEM_INFO_RECEIVED` never came. The client stayed connected. A
+    load can fail for an id that `C_Item.DoesItemExistByID` accepts (an
+    unused item); such an id has no name. `C_Spell.GetSpellName` named 50
+    of 50 spells at once.
   - `string.lower` handles UTF-8: `ÄÖÜ ПРИВЕТ Æ` gives `äöü привет æ`.
   - No profession value was secret (out of combat, outside an instance).
   - Profession links in chat cannot be clicked, so the window never showed

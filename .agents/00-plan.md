@@ -633,79 +633,42 @@ in `db.profile.professions`.
   `HandleModifiedItemClick`. The window does not whisper: opening a chat
   from addon code is a protected call (AGENTS.md).
 - **Names.** The name of a recipe is the `name` of `GetRecipeInfo`, which
-  the client gave at once in every run; it needs no cache. A reagent is an
-  item, and item names arrive asynchronously (`C_Item`; AGENTS.md "Removed
-  globals"). The search by material needs the names of all reagents of all
-  listed recipes at once, so they are kept in a local **name cache**
-  (below). Whether the cache is needed at all is decided by the `nameload`
-  runs of step 12.1: if the client names nearly every item at once, step
-  12.5 keeps only the direct question and a short retry list. An id without a name yet is
-  shown as `#<id>` and is found by no text.
-- **Name cache.** Local, not synchronized, account-wide, and per client
-  language, because a name is only right for the language that gave it:
+  the client gave at once in every run. A reagent is an item, and the
+  search by material needs the names of all reagents of all listed recipes.
+  An id without a name is shown as `#<id>` and is found by no text.
+- **Item names: asked from the client, kept for the session only** (decided
+  by the `nameload` runs of step 12.1, 2026-11-19). The plan had a saved
+  name cache per language with an expiry and two request paces, for fear of
+  slow answers and of a disconnect. The runs showed neither:
 
-  ```lua
-  db.global.professionNames = {
-    enUS = {                           -- GetLocale()
-      items  = { [7930] = { n = "Heavy Mithril Breastplate", e = 1802000000 }, ... },
-      spells = { [13920] = { n = "Enchant Shield - ...", e = 1801500000 }, ... },
-    },
-  }
-  ```
+  | Run | Named at once | Loads requested in one frame | Answered | Last answer |
+  | --- | --- | --- | --- | --- |
+  | 50 items | 6 | 44 | 44 (21 named, 23 failed) | 0.23 s |
+  | 200 items | 5 | 195 | 195 (168 named, 27 failed) | 0.24 s |
+  | 800 items | 85 | 715 | 715 (664 named, 51 failed) | 0.24 s |
+  | 50 spells | 50 | 0 | - | - |
 
-  - `e` is the server time at which the entry expires: a random time 60 to
-    90 days after the name arrived. The random part spreads the refreshes,
-    so the entries of one first scan do not all expire in the same hour.
-  - An expired entry is still shown and searched; it is only queued for a
-    refresh. An old name is better than `#<id>`.
-  - An id for which the client reports a failed load is stored without a
-    name and with an expiry of 1 to 7 days, so that it is not asked again
-    in every session.
-  - An entry whose id is in neither table any more is removed at login.
-  - The lower-case forms for the search are built in memory when the
-    window first opens; they are not saved.
-- **Filling the cache.** Wanted ids are the reagents and the items made of
-  the recipes that the table `profession` lists, that have no entry or an
-  expired one. They wait in one queue, and two paces empty
-  it:
-  - **Slow**, while the user plays: one id at a random interval of 2 to 5
-    seconds, out of combat, from 60 seconds after the guild check. A full
-    set of 800 names is in after about 45 minutes of play, and the user
-    notices nothing. New ids (a record that arrives, `OnRecordChanged`)
-    join the queue.
-  - **Fast**, while the search window is open and ids are still wanted: a
-    window of outstanding requests, not a fixed rate. At most 10 requests
-    wait for their answer; an answer, or 10 seconds without one, frees a
-    place, and at most 5 new requests start per second. A slow server
-    therefore slows the addon by itself. The window shows "Loading names:
-    310 of 800", and a search runs again when more names are in. When the
-    window closes, the pace is slow again.
-  - Before any request, the addon asks the client for the name directly.
-    Items and spells that the client already holds answer at once and
-    count against neither pace. On a modern client most item names are
-    expected to be local data; step 12.1 measures the share.
-- **Risk of a forced disconnect.** Researched on 2026-11-19; nothing
-  gives a number.
-  - Known: a loop of `GetItemInfo` over tens of thousands of uncached ids
-    hung the client and could end in a disconnect "for spamming" (forum
-    reports of 2008 to 2010). The server decides by the total traffic of
-    the client; Blizzard has published no limit for item or spell
-    requests. Other notes say that later clients stop answering instead of
-    disconnecting. No report was found of a disconnect from some hundred
-    requests spread over time, and none for
-    `C_Item.RequestLoadItemDataByID`.
-  - Nothing is known for Forever. The fast pace above is a guess on the
-    careful side: at most 5 per second and 10 outstanding, against
-    reports that speak of thousands at once.
-  - Step 12.1 measures on a test account how the client answers 50, 200,
-    and 800 requests. The numbers of the fast pace are set from that
-    result, and stay as they are when the test is not conclusive.
-  - Sources:
-    https://wowinterface.com/forums/showthread.php?p=220003,
-    https://wowinterface.com/forums/showthread.php?p=101272,
-    https://warcraft.wiki.gg/wiki/Talk:API_GetItemInfo,
-    https://warcraft.wiki.gg/wiki/Event:GET_ITEM_INFO_RECEIVED,
-    https://warcraft.wiki.gg/wiki/Event:ITEM_DATA_LOAD_RESULT.
+  - Every answer came with `ITEM_DATA_LOAD_RESULT`; `GET_ITEM_INFO_RECEIVED`
+    never came. The client stayed connected. The item data is on the disk
+    of the client; a load is no question to the server that could be
+    counted against the account.
+  - A failed load is an id that `C_Item.DoesItemExistByID` accepts but that
+    has no data (the ids of the runs were a plain range, with many unused
+    items). Such an id never gets a name.
+  - `ns.professionNames` therefore keeps `item id -> name` in memory, for
+    the session. `Name(itemId)` asks `C_Item.GetItemNameByID`; without an
+    answer it calls `C_Item.RequestLoadItemDataByID` once and takes the
+    name on `ITEM_DATA_LOAD_RESULT`. A failed id is remembered and not
+    asked again in the session. Nothing is saved, so there is no expiry,
+    no language key, and no migration.
+  - `Prepare(itemIds)` asks for many names at once, when the search window
+    opens: at most 200 requests per frame, which is below what the largest
+    run sent in one frame. The window shows "Loading names: 310 of 800"
+    until the answers are in (expected: under a second), and a search runs
+    again when names arrive (`OnNamesChanged`, at most one call in 0.2
+    seconds). The event is registered only while requests are open.
+  - Spell names (`C_Spell.GetSpellName`) answered at once for all 50; the
+    window needs them only as a fallback and asks without a cache.
 - **Index.** `recipe id -> members who know it` is built from the table
   `profession` when the window opens and kept current by `OnRecordChanged`
   while it is open. A recipe id that the client does not know is listed as
@@ -989,9 +952,10 @@ Addon\Src\Sync\SyncGuildChat.lua   the table guildchat: capture, witness rule, o
 Addon\Src\Chat\Mentions.lua        @ words, the watch list, the mention list, the notice (stage 11)
 Addon\Src\Chat\ChatHistory.lua     model of the chat history window                      (stage 11)
 Addon\Src\Chat\ChatHistoryWindow.lua  the window, its lists of mentions, two probes      (stage 11)
-Addon\Src\Professions\ProfessionData.lua    the tables profession and recipe, packing, validate  (stage 12, host-testable)
+Addon\Src\Professions\ProfessionData.lua    the table profession, packing, validate              (stage 12, host-testable)
 Addon\Src\Professions\ProfessionScan.lua    reads the client, writes the own records, the probe  (stage 12)
-Addon\Src\Professions\ProfessionNames.lua   local name cache per language, the two paces         (stage 12, host-loadable)
+Addon\Src\Professions\ProfessionRecipes.lua the facts of a recipe, from the client                (stage 12, host-loadable)
+Addon\Src\Professions\ProfessionNames.lua   item names of the session, loaded on demand          (stage 12, host-loadable)
 Addon\Src\Professions\ProfessionSearch.lua  index, the two searches; no frames                   (stage 12, host-loadable)
 Addon\Src\Professions\ProfessionWindow.lua  the window "Guild professions"                       (stage 12)
 Tests\harness.lua                  file loader, assertions, seeded random
@@ -1159,12 +1123,12 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
       the larger runs may disconnect it, and that is the result wanted.
       The same for 50 spell ids with the spell functions.
   - State (2026-11-19): the runs `before`, `open`, `closed`, `filter`,
-    `login`, and `fresh` are done on build 70959; their results are in
+    `login`, `fresh`, and `nameload` are done on build 70959; their results are in
     AGENTS.md and in section 5.4. The table `recipe` is dropped. Left:
     - Read the stored report `professions:fresh` (after a `/reload`):
       does `GetProfessionInfo(index)` give the levels in a fresh session?
-    - The `nameload` runs (50, 200, 800 items; 50 spells). Until then the
-      numbers of the fast pace stay as guessed.
+    - Done: the `nameload` runs (50, 200, 800 items; 50 spells); the
+      saved name cache and its paces are dropped (5.4).
     - Deferred: `professions spec` on a character with a specialization,
       and with it the field `s` in the scan and in the window.
     - Not possible: the run `linked`; profession links cannot be clicked.
@@ -1187,8 +1151,8 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
   - Done when: the results are in AGENTS.md under "Checked on the release
     client", the confirmed globals are in `.luacheckrc`, and section 5.4
     says which API the scan uses, whether the window must be open, whether
-    the table `recipe` stays (it does not), how foreign data is told apart, and the
-    numbers of the fast pace of the name cache.
+    the table `recipe` stays (it does not), how foreign data is told apart,
+    and how names are loaded (no saved cache).
 
 - **12.2 The table `profession`**
   - Substeps
@@ -1258,43 +1222,29 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
     that is learned again starts with an empty list.
   - Done when: the client check is recorded.
 
-- **12.5 Name cache** (**CLIENT**)
+- **12.5 Recipe facts and item names** (**CLIENT**)
   - Substeps
-    - `Src\Professions\ProfessionNames.lua` (`ns.professionNames`), by the
-      design of 5.4. The client is behind a small interface (`nameOf(kind,
-      id)`, `request(kind, id)`, the callback for an answer), and the
-      time, the random source, and the timer are parameters, so the file
-      runs on the host.
-    - `db.global.professionNames` with the migration to `SCHEMA_VERSION` 4
-      in `Database.lua`.
     - `Src\Professions\ProfessionRecipes.lua` (`ns.professionRecipes`):
       `Facts(recipeId)` of 5.4, with the client behind a small interface
       so that the file runs on the host.
-    - `Wanted()`: the items made and the reagents of the recipes that the
-      table `profession` lists, without an entry or with an expired one;
-      new ids from `OnRecordChanged`.
-    - The slow pace and the fast pace (`SetFast(on)`), the direct answer
-      before a request, the expiry of 60 to 90 days, the failed entry of 1
-      to 7 days, the removal of entries without a use at login.
-    - `Name(kind, id)`, `Progress()` (named, total), and the callback
-      `OnNamesChanged`, collected to at most one call per second.
-    - `/oooo sync prof names`: the counts of named, wanted, failed, and
-      outstanding ids, and the pace.
-  - Checkpoint: after an hour of play with the window closed,
-    `/oooo sync prof names` shows no wanted id. After a `/reload` the
-    names are there at once and nothing is requested. On an account with
-    an empty cache, opening the window fills it with the progress line
-    and without a disconnect.
+    - `Src\Professions\ProfessionNames.lua` (`ns.professionNames`), by the
+      design of 5.4: `Name(itemId)`, `Prepare(itemIds)`, `Progress()`
+      (named, total), and the callback `OnNamesChanged`. The client is
+      behind a small interface (`nameOf(id)`, `request(id)`, the callback
+      for an answer) and the timer is a parameter, so the file runs on the
+      host. Nothing is saved.
+    - `/oooo sync prof names`: the counts of named, failed, and open ids.
+  - Checkpoint: after a client restart, `/oooo prof` (step 12.7) shows the
+    reagent names within a second, and `/oooo sync prof names` shows no
+    open id. Until 12.7 exists: `/oooo sync prof names` after
+    `/oooo sync prof` has prepared the reagents of the own recipes.
   - Host tests: `Tests/sync_profnames.lua` with a stub client and the
-    fake clock: the slow pace sends one request per interval and none in
-    combat; the fast pace never has more than 10 outstanding and never
-    starts more than 5 in a second; a request without an answer frees its
-    place after 10 seconds and is asked again later; a direct answer costs
-    no request; the expiry times lie between 60 and 90 days and differ; an
-    expired entry keeps its name and is wanted; a failed id is not asked
-    again before its expiry; another client language has its own names;
-    an id that no listed recipe uses any more is removed at the next
-    login; `Facts` of an id that is no recipe gives nil.
+    fake clock: a direct answer costs no request; an id is requested once;
+    an answer gives the name and one `OnNamesChanged` for many answers; a
+    failed id is not asked again; `Prepare` of 500 ids sends at most 200
+    requests per frame; `Facts` of a recipe gives item, count, and
+    reagents; `Facts` of an id that is no recipe gives nil; a secret value
+    gives nil.
   - Done when: the client check is recorded.
 
 - **12.6 Search model**
@@ -1329,8 +1279,8 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
       rows (own rows with a mouse-wheel offset, like the mention lists of
       the chat history window), the detail part, the line "Loading
       names: ...", Escape closes it (`UISpecialFrames`), the position in
-      `db.profile.professions`. Showing the window turns the fast pace of
-      the name cache on, hiding it turns it off.
+      `db.profile.professions`. Showing the window prepares the item
+      names of all listed recipes (`ns.professionNames:Prepare`).
     - `/oooo prof` opens and closes it.
     - The item tooltip on hover; shift-click through
       `HandleModifiedItemClick`.
@@ -1361,10 +1311,8 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
   named by its craft spell id; its item and its reagents come from each
   client, not from the shared data (5.4, no table `recipe`).
   A scan only adds recipes; unlearning the profession deletes its record.
-- Names of items and spells are kept in a local cache per client language
-  for 60 to 90 days, with a random expiry. Missing names are requested
-  slowly during play, and faster, within a window of outstanding requests,
-  while the search window is open (5.4).
+- Names of items are asked from the client and kept for the session only:
+  800 names loaded in a quarter of a second, without a disconnect (5.4).
 - `guildchat` holds the guild chat of the last 14 days, with the original
   text. The length is fixed, not a setting. It is not real time: it serves the
   member who was offline. The sender's addon writes a line; a witness writes
