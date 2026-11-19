@@ -316,8 +316,7 @@ may be fixed there. Test a claim on the release client before relying on it.
     (the raids unlock on December 9, 2026), and during a boss encounter.
 - If you are not sure that an API exists on Forever, say so and write a
   capability probe. Do not invent `C_` functions. The Blizzard UI source at
-  `F:\Projects\WowAddons\BlizzardInterfaceCode\` is for Classic, not Forever, so
-  an API found there may be missing in the game.
+  `F:\Projects\WowAddons\WowInterface\Camelot\BlizzardInterfaceCode\` is for Forever.
 - Skin and inform. Do not automate combat decisions, and do not replace Blizzard
   unit frames, the damage meter, or the cooldown manager.
 

@@ -43,6 +43,7 @@ Src\Sync\SyncPush.lua
 Src\Sync\SyncCleanup.lua
 Src\Sync\SyncOptions.lua
 Src\Sync\SyncGuildChat.lua
+Src\Guild\AddonInventory.lua
 
 Src\Chat\Mentions.lua
 Src\Chat\ChatHistory.lua

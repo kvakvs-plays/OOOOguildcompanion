@@ -7,6 +7,23 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
 **bold heading** followed by the explanation. `Backticks` mark commands.
 -->
 
+## 2026.11.6 (2026-11-19)
+
+### Addon versions
+
+- **Who runs which version.** `/oooo versioncheck` prints the addon version
+  of every online guild member. In a party or raid it prints only the guild
+  members of your group. A member whose addon has been silent for some hours
+  is shown with the time it was last seen, and a member without the addon
+  as "no addon seen". Members with a version before 2026.11.6 do not tell
+  their number yet.
+
+### Guild chat
+
+- **A clicked mention is easier to find.** The line of a mention that you
+  click in the guild chat history now has a silver background and keeps its
+  green text, instead of turning yellow.
+
 ## 2026.11.5 (2026-11-19)
 
 ### One window

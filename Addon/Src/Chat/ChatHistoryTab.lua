@@ -32,9 +32,11 @@ local TAB_ID = "chat"
 local SIDE_WIDTH = 210
 ---Colour of a line: the green of the guild chat
 local LINE_COLOR = { 0.25, 1, 0.25 }
----Colour of the highlighted line
+---Background of the highlighted line: silver, with its alpha. Green text stays readable on it
+local MARK_COLOR = { 0.75, 0.75, 0.75, 0.3 }
+---Colour of the highlighted line when the client cannot show the background
 local HIGHLIGHT_COLOR = { 1, 0.82, 0 }
----Mark before the highlighted line
+---Mark before the highlighted line, in the same case
 local HIGHLIGHT_MARK = ">> "
 ---Messages that one step of the mouse wheel scrolls
 local WHEEL_STEP = 3
@@ -88,16 +90,65 @@ local function createLog()
   frame:SetScript("OnHyperlinkClick", function(clicked, link, text, button)
     clicked.obj:Fire("OnHyperlinkClick", link, text, button)
   end)
+  local mark = frame:CreateTexture(nil, "BACKGROUND")
+  mark:SetColorTexture(MARK_COLOR[1], MARK_COLOR[2], MARK_COLOR[3], MARK_COLOR[4])
+  mark:Hide()
   local widget = {
     frame = frame,
     type = LOG_TYPE,
+    ---Text of the message that has the background; nil when no message is marked
+    markedText = nil, ---@type string|nil
     OnAcquire = function(self)
       self.frame:Clear()
+      self:SetMarkedText(nil)
     end,
     OnRelease = function(self)
       self.frame:Clear()
+      self:SetMarkedText(nil)
+    end,
+    ---Tells whether the frame can show a background behind one message. The frame gives no method for that:
+    ---the background follows the font strings of the visible messages (`visibleLines` of the Retail
+    ---ScrollingMessageFrame) and is placed again after every display refresh.
+    ---@return boolean
+    CanMark = function(self)
+      return self.followsDisplay and type(self.frame.visibleLines) == "table"
+    end,
+    ---Puts the background behind the message with a text, or removes it with nil.
+    ---@param text string|nil The text as it was passed to `AddMessage`
+    SetMarkedText = function(self, text)
+      self.markedText = text
+      self:PlaceMark()
+    end,
+    ---Moves the background to the visible font string of the marked message; hides it when the message is
+    ---scrolled out of view.
+    PlaceMark = function(self)
+      mark:Hide()
+      local lines = self.frame.visibleLines
+      if not self.markedText or type(lines) ~= "table" then
+        return
+      end
+      for _, line in ipairs(lines) do
+        local info = line.messageInfo
+        if type(info) == "table" and info.message == self.markedText and line:IsShown() then
+          mark:ClearAllPoints()
+          mark:SetPoint("TOP", line, "TOP", 0, 1)
+          mark:SetPoint("BOTTOM", line, "BOTTOM", 0, -1)
+          mark:SetPoint("LEFT", self.frame, "LEFT")
+          mark:SetPoint("RIGHT", self.frame, "RIGHT")
+          mark:Show()
+          return
+        end
+      end
     end,
   }
+  -- The name of the method differs between client versions
+  local follow = frame.AddOnDisplayRefreshedCallback or frame.SetOnDisplayRefreshedCallback
+  if type(follow) == "function" then
+    follow(frame, function()
+      widget:PlaceMark()
+    end)
+    widget.followsDisplay = true
+  end
   return AceGUI:RegisterAsWidget(widget)
 end
 
@@ -148,14 +199,21 @@ function tab:Fill(offset)
     call(messages, "SetMaxLines", self.maxLines)
   end
   messages:Clear()
+  local log = messages.obj
+  local canMark = log:CanMark()
+  local markedText ---@type string|nil
   for _, line in ipairs(lines) do
     local text = history:LineText(line, now)
-    if line.id == history.highlightId then
-      messages:AddMessage(HIGHLIGHT_MARK .. text, HIGHLIGHT_COLOR[1], HIGHLIGHT_COLOR[2], HIGHLIGHT_COLOR[3])
-    else
+    if line.id ~= history.highlightId then
       messages:AddMessage(text, LINE_COLOR[1], LINE_COLOR[2], LINE_COLOR[3])
+    elseif canMark then
+      markedText = text
+      messages:AddMessage(text, LINE_COLOR[1], LINE_COLOR[2], LINE_COLOR[3])
+    else
+      messages:AddMessage(HIGHLIGHT_MARK .. text, HIGHLIGHT_COLOR[1], HIGHLIGHT_COLOR[2], HIGHLIGHT_COLOR[3])
     end
   end
+  log:SetMarkedText(markedText)
   self.shownCount = #lines
   if offset and offset > 0 then
     self:ScrollToIndex(#lines - offset)

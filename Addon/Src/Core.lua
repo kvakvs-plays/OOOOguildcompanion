@@ -66,6 +66,7 @@ local addonName, ns = ...
 ---@field syncPolicy OOOOSyncPolicyModule
 ---@field syncPush OOOOSyncPushModule
 ---@field syncOptions OOOOSyncOptions
+---@field addonInventory OOOOAddonInventory
 ---@field guildChat OOOOGuildChat
 ---@field mentions OOOOMentions
 ---@field chatHistory OOOOChatHistory
