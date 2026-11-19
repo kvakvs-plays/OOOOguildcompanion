@@ -47,5 +47,7 @@ Src\Chat\Mentions.lua
 Src\Chat\ChatHistory.lua
 Src\Chat\ChatHistoryWindow.lua
 
+Src\Professions\ProfessionScan.lua
+
 Src\Changelog\ChangelogData.lua
 Src\Changelog\ChangelogWindow.lua

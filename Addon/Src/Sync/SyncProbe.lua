@@ -98,6 +98,7 @@ local function isSecret(value)
   local check = lookup("issecretvalue")
   return check ~= nil and check(value) == true
 end
+probe.isSecret = isSecret
 
 ---Text of any value for a result line; a secret value is named, not read.
 ---@param value any
@@ -108,6 +109,7 @@ local function text(value)
   end
   return tostring(value)
 end
+probe.text = text
 
 ---Collects the result lines of one probe run: prints them and stores them in the saved variables.
 ---@class OOOOProbeReport
@@ -135,6 +137,7 @@ local function newReport(name, append)
   end
   return setmetatable({ name = name, lines = result.lines }, Report)
 end
+probe.NewReport = newReport
 
 ---Stores a result line without printing it, for long lists that would flood the chat frame.
 ---@param line string
@@ -239,6 +242,7 @@ local function listen(event, handler)
   eventFrame:RegisterEvent(event)
   return true
 end
+probe.listen = listen
 
 ---Stops the calls that `listen` started.
 ---@param event string
@@ -248,6 +252,7 @@ local function unlisten(event)
     eventFrame:UnregisterEvent(event)
   end
 end
+probe.unlisten = unlisten
 
 ---Runs `callback` after `seconds`. An error inside becomes a line of `report`.
 ---@param report OOOOProbeReport
@@ -261,6 +266,7 @@ local function later(report, seconds, callback)
     end
   end)
 end
+probe.later = later
 
 --------------------------------------------------------------------------------
 -- Local probes (plan step 1.2)

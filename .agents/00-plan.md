@@ -1146,6 +1146,21 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
       50, 200, and 800 right after a client restart, on a test account:
       the larger runs may disconnect it, and that is the result wanted.
       The same for 50 spell ids with the spell functions.
+  - State (2026-11-19): the probes are written and ran on the host with
+    stubs only. Left: the runs in the client, and "Done when" below.
+    - Each run of `professions <label>` keeps its own report
+      `professions:<label>`. Runs to do: `professions before` (after a
+      login, no window opened yet), `professions open`, `professions
+      closed`, `professions filter`, `professions linked`; recipe ids after
+      the label replace the three default ids (2330, 2660, 18560).
+    - `professions login` arms a watch; after the next login (not
+      `/reload`) the report `professions:login` says after how many seconds
+      the list was first filled and which events came.
+    - `nameload <count>` and `nameload 50 spells` take their ids from a
+      range of Classic ids (items 2300 to 24000, spells from 2000), not from
+      a list of trade goods; `C_Item.DoesItemExistByID` filters them when it
+      exists. The cursor is saved (`db.global.probeCursor`), so no run
+      repeats the ids of an earlier one. Reports: `nameload:items50`, ...
   - Checkpoint: the reports of the three runs, and of the `nameload` runs,
     are in `db.global.probeResults`.
   - Host tests: none; the probe has no computing part.
@@ -1324,7 +1339,7 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
 - The origin is one random constant per player, made at install.
 - Alt detection through the origin is a wanted feature.
 - `profession`, `equipment`, and `attunement` are written by each player for
-  their own characters only, and anyone may pass them on (5.2).
+  their own characters only, and anyone may pass them on (5.2). 
 - Professions are part of this plan (2026-11-19). The shared data holds ids
   and counts only; every client names them in its own language. A recipe is
   named by its craft spell id, with the item id in the table `recipe` (5.4).
