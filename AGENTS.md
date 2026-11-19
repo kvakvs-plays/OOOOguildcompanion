@@ -283,9 +283,13 @@ may be fixed there. Test a claim on the release client before relying on it.
     `reagents[1].itemID`. Both also answered for recipes of professions
     that the character lacks (2660, 18560), in a session in which a
     profession window had been open; not yet checked right after a login.
-    For an id that is no recipe (2330) they return a table with
-    `recipeID = 0` and an empty name, not nil. Forever's own recipes have
-    ids above 1.2 million (1229737 Basic Campfire, in Cooking).
+    For an id that is no recipe they return a table with `recipeID = 0`
+    and an empty name, not nil. That was so for 2330, the Classic craft
+    spell of Minor Healing Potion, which also has no spell name: Forever
+    moved that recipe from Alchemy to First Aid (said by the user, not
+    probed), so a Classic recipe id is not always valid. Forever's own
+    recipes have ids above 1.2 million (1229737 Basic Campfire, in
+    Cooking; 1230117 First Aid Kit).
   - `string.lower` handles UTF-8: `ÄÖÜ ПРИВЕТ Æ` gives `äöü привет æ`.
   - No profession value was secret (out of combat, outside an instance).
   - Profession links in chat cannot be clicked, so the window never showed
