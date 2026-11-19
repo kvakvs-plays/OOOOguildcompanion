@@ -176,6 +176,24 @@ do
   T.eq(b.notices, {}, "no hint when every profession with recipes has its list")
 end
 
+-- The hint waits for the levels: a first read without levels decides nothing, and the read is repeated
+do
+  local net = Fakenet.new({ random = random })
+  local a, scanner, client = withScanner(net, "Nota Scam")
+  client.professions = { { id = 171, level = 0, max = 0, name = "Alchemy" }, { id = 393, level = 0, max = 0 } }
+  scanner:SetActive(true)
+  net:Advance(1)
+  T.eq(a.notices, {}, "no hint while the client lists the professions without levels")
+  T.eq(a.sync:Get("profession", "Nota Scam:171"), nil, "and no record")
+  client.professions = { ALCHEMY, SKINNING }
+  net:Advance(6)
+  T.eq(a.sync:Get("profession", "Nota Scam:171"), { l = 275, m = 300 }, "the read is repeated without an event")
+  T.eq(a.notices, { "Open your Alchemy window once, so that the guild can see what you craft." },
+    "the hint comes with the read that shows the levels")
+  local lines = table.concat(scanner:StatusLines(), "\n")
+  T.ok(lines:find("hint: shown for the Alchemy window", 1, true), "the status tells what became of the hint")
+end
+
 -- The window: a first scan, an equal scan, a partial scan, recipes that are not learned
 do
   local net = Fakenet.new({ random = random })

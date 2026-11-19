@@ -82,6 +82,7 @@ scan.RECIPE_PROFESSIONS = {
 ---@field scanning boolean|nil true while a scan runs across frames
 ---@field scanAgain boolean|nil true when the window changed while a scan ran
 ---@field hinted boolean|nil true once the hint about windows to open was considered in this session
+---@field hintStatus string|nil What became of the hint, for `/oooo sync prof`
 ---@field listStatus string What the last read of the list did, for `/oooo sync prof`
 ---@field scanStatus string What the last scan of the window did
 ---@field recipeStatus string|nil What the last learned recipe did
@@ -199,7 +200,16 @@ function Scanner:Hint(list, name)
   if self.hinted then
     return
   end
+  -- Right after login the client can list a profession without its level. Such a read decides nothing:
+  -- the hint waits for the read that shows the levels.
+  for _, entry in ipairs(list) do
+    if entry.level < 1 then
+      self.hintStatus = "waiting for the levels"
+      return
+    end
+  end
   self.hinted = true
+  self.hintStatus = "not needed"
   local names = {}
   for _, entry in ipairs(list) do
     if scan.RECIPE_PROFESSIONS[entry.id] and entry.level >= 1 then
@@ -214,6 +224,7 @@ function Scanner:Hint(list, name)
   end
   local last = table.remove(names)
   local text = #names > 0 and (table.concat(names, ", ") .. " and " .. last .. " windows") or (last .. " window")
+  self.hintStatus = "shown for the " .. text
   self.print("Open your " .. text .. " once, so that the guild can see what you craft.")
 end
 
@@ -253,11 +264,17 @@ function Scanner:ReadProfessions()
   end
   local believed = self.seenAny
   self.seenAny = true
-  local written = 0
+  local written, withoutLevel = 0, false
   for _, entry in ipairs(list) do
     if self:WriteRecord(name, entry) then
       written = written + 1
     end
+    withoutLevel = withoutLevel or entry.level < 1
+  end
+  if withoutLevel and self.emptyReads < scan.EMPTY_RETRIES then
+    -- No event is promised for the moment when the levels arrive, so the read is repeated a few times
+    self.emptyReads = self.emptyReads + 1
+    self:ScheduleRead(scan.READ_INTERVAL)
   end
   self.listStatus = #list .. " professions, " .. written .. " records written"
   self:CheckUnlearned(name, present, believed)
@@ -447,6 +464,7 @@ function Scanner:StatusLines()
     .. (self.lastRead and string.format(" (%.0f s ago)", now - self.lastRead) or "")
   lines[#lines + 1] = "window: " .. self.scanStatus
     .. (self.lastScan and string.format(" (%.0f s ago)", now - self.lastScan) or "")
+  lines[#lines + 1] = "hint: " .. (self.hintStatus or "not considered in this session")
   if self.recipeStatus then
     lines[#lines + 1] = "learned: " .. self.recipeStatus
   end

@@ -1117,6 +1117,17 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
       after its sync (`/oooo sync status`: equal versions of `profession`).
     - The largest record arrived whole; this is the first multipart message
       seen in the client, so record it in AGENTS.md.
+  - First client run (2026-11-19, character Nota Tall): the window scan
+    works (Cooking 50, Mining 9, Fishing 1 of 3 recipes). The hint did not
+    come. The likely cause, not proven: the first read listed the
+    professions with level 0, and the hint was then decided on that read.
+    Now the hint waits for a read with levels, such a read is repeated
+    (up to 6 times, 5 s apart), and `/oooo sync prof` has a line `hint:`
+    ("waiting for the levels", "not needed", "shown for ..."). Check it
+    again after a fresh login. The second account still had 0 records of
+    `profession` while it pulled `guildchat` from another member ("waiting
+    for batch 1"): pulls run one at a time, in the order of the tables.
+    Open: how long that lasted and whether `profession` came afterwards.
   - Done when: the client check is recorded, with no Lua error and no
     "Interface action failed" entry.
 
