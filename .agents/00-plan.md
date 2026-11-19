@@ -657,16 +657,26 @@ in `db.profile.professions`.
     items). Such an id never gets a name.
   - `ns.professionNames` therefore keeps `item id -> name` in memory, for
     the session. `Name(itemId)` asks `C_Item.GetItemNameByID`; without an
-    answer it calls `C_Item.RequestLoadItemDataByID` once and takes the
-    name on `ITEM_DATA_LOAD_RESULT`. A failed id is remembered and not
+    answer it queues one `C_Item.RequestLoadItemDataByID` (the queue is
+    below) and takes the name on `ITEM_DATA_LOAD_RESULT`. A failed id is remembered and not
     asked again in the session. Nothing is saved, so there is no expiry,
     no language key, and no migration.
-  - `Prepare(itemIds)` asks for many names at once, when the search window
-    opens: at most 200 requests per frame, which is below what the largest
-    run sent in one frame. The window shows "Loading names: 310 of 800"
-    until the answers are in (expected: under a second), and a search runs
-    again when names arrive (`OnNamesChanged`, at most one call in 0.2
-    seconds). The event is registered only while requests are open.
+  - `Prepare(itemIds)` asks for many names, when the search window opens.
+    It is late and spread out on purpose (wish of the user, 2026-11-19):
+    at a first start many other addons load their data too, and the addon
+    must not add a burst to that.
+    - Nothing is requested at login. The first request waits until 10
+      seconds after `PLAYER_LOGIN`, and 0.5 seconds after the window
+      opens.
+    - Then at most 40 requests every 0.2 seconds, so 800 names take 4
+      seconds. The runs of step 12.1 sent 715 in one frame without harm,
+      so this is far on the safe side.
+    - A single `Name(itemId)` outside `Prepare` (a tooltip, the detail
+      part) joins the same queue; it is not sent at once.
+    - The window shows "Loading names: 310 of 800" until the answers are
+      in, and a search runs again when names arrive (`OnNamesChanged`, at
+      most one call in 0.5 seconds). The event is registered only while
+      requests are open.
   - Spell names (`C_Spell.GetSpellName`) answered at once for all 50; the
     window needs them only as a fallback and asks without a cache.
 - **Index.** `recipe id -> members who know it` is built from the table
@@ -1235,14 +1245,16 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
       host. Nothing is saved.
     - `/oooo sync prof names`: the counts of named, failed, and open ids.
   - Checkpoint: after a client restart, `/oooo prof` (step 12.7) shows the
-    reagent names within a second, and `/oooo sync prof names` shows no
+    reagent names after the line "Loading names" has counted up for some
+    seconds, and `/oooo sync prof names` shows no
     open id. Until 12.7 exists: `/oooo sync prof names` after
     `/oooo sync prof` has prepared the reagents of the own recipes.
   - Host tests: `Tests/sync_profnames.lua` with a stub client and the
     fake clock: a direct answer costs no request; an id is requested once;
     an answer gives the name and one `OnNamesChanged` for many answers; a
-    failed id is not asked again; `Prepare` of 500 ids sends at most 200
-    requests per frame; `Facts` of a recipe gives item, count, and
+    failed id is not asked again; nothing is requested before 10 seconds after the
+    login; `Prepare` of 500 ids sends at most 40 requests in every 0.2
+    seconds; a single `Name` waits in the same queue; `Facts` of a recipe gives item, count, and
     reagents; `Facts` of an id that is no recipe gives nil; a secret value
     gives nil.
   - Done when: the client check is recorded.
@@ -1312,7 +1324,9 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
   client, not from the shared data (5.4, no table `recipe`).
   A scan only adds recipes; unlearning the profession deletes its record.
 - Names of items are asked from the client and kept for the session only:
-  800 names loaded in a quarter of a second, without a disconnect (5.4).
+  800 names loaded in a quarter of a second, without a disconnect. They are
+  still requested late and spread over some seconds, because other addons
+  load their data at a first start too (5.4).
 - `guildchat` holds the guild chat of the last 14 days, with the original
   text. The length is fixed, not a setting. It is not real time: it serves the
   member who was offline. The sender's addon writes a line; a witness writes
