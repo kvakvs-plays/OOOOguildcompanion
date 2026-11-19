@@ -19,9 +19,8 @@ local addonName, ns = ...
 ---@field emoji OOOOEmojiSettings
 ---@field sync OOOOSyncSettings
 ---@field mentions OOOOMentionSettings
----@field chatHistory OOOOChatHistorySettings
+---@field window OOOOMainWindowSettings
 ---@field changelog OOOOChangelogSettings
----@field professions OOOOProfessionWindowSettings
 
 ---@class OOOOGlobalSettings
 ---@field changelogSeen string|nil The addon version whose "What's new" window the user has opened
@@ -70,14 +69,17 @@ local addonName, ns = ...
 ---@field guildChat OOOOGuildChat
 ---@field mentions OOOOMentions
 ---@field chatHistory OOOOChatHistory
----@field chatHistoryWindow OOOOChatHistoryWindow
+---@field mainWindow OOOOMainWindow
+---@field chatHistoryTab OOOOChatHistoryTab
 ---@field professionData OOOOProfessionData
 ---@field professionProbe OOOOProfessionProbe
 ---@field professionScan OOOOProfessionScanModule
 ---@field professionRecipes OOOOProfessionRecipes
 ---@field professionNames OOOOProfessionNamesModule
 ---@field professionSearch OOOOProfessionSearchModule
----@field professionWindow OOOOProfessionWindow
+---@field professionSearchTab OOOOProfessionSearchTab
+---@field professionRoster OOOOProfessionRoster
+---@field professionRosterTab OOOOProfessionRosterTab
 ---@field version string|nil Version of this release (Changelog/ChangelogData.lua, generated)
 ---@field changelog OOOOChangelogRelease[]|nil The release notes, newest first (the same file)
 ---@field changelogWindow OOOOChangelogWindow
@@ -99,9 +101,11 @@ local defaults = {
       watch = "",
       notifyOnLogin = true,
     },
-    chatHistory = {},
+    window = {
+      width = 860,
+      height = 540,
+    },
     changelog = {},
-    professions = {},
   },
 }
 

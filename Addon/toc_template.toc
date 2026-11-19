@@ -20,6 +20,7 @@ Src\Sync\SyncStore.lua
 Src\Database.lua
 Src\Core.lua
 Src\Guild\GuildState.lua
+Src\Window\MainWindow.lua
 
 Src\Emoji\EmojiIndex.lua
 Src\Emoji\EmojiAliases.lua
@@ -45,7 +46,7 @@ Src\Sync\SyncGuildChat.lua
 
 Src\Chat\Mentions.lua
 Src\Chat\ChatHistory.lua
-Src\Chat\ChatHistoryWindow.lua
+Src\Chat\ChatHistoryTab.lua
 
 Src\Professions\ProfessionData.lua
 Src\Professions\ProfessionProbe.lua
@@ -53,7 +54,9 @@ Src\Professions\ProfessionScan.lua
 Src\Professions\ProfessionRecipes.lua
 Src\Professions\ProfessionNames.lua
 Src\Professions\ProfessionSearch.lua
-Src\Professions\ProfessionWindow.lua
+Src\Professions\ProfessionSearchTab.lua
+Src\Professions\ProfessionRoster.lua
+Src\Professions\ProfessionRosterTab.lua
 
 Src\Changelog\ChangelogData.lua
 Src\Changelog\ChangelogWindow.lua

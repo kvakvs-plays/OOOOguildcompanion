@@ -7,6 +7,8 @@ local addonName, ns = ...
 ---@field prefix string What the user types before the word, for the usage text ("/oooo")
 ---@field handlers table<string, fun(rest: string)> Word in lower case -> handler
 ---@field help string[] Usage lines, in the order of registration
+---@field default (fun())|nil What the prefix alone does; without it the prefix alone prints the usage text
+---@field defaultHelp string|nil Usage line of the prefix alone, without the prefix: "open the window"
 local Dispatcher = {}
 Dispatcher.__index = Dispatcher
 
@@ -34,11 +36,23 @@ function Dispatcher:Register(word, help, handler)
   self.help[#self.help + 1] = help
 end
 
+---Sets what the prefix alone does, without a word after it.
+---@param help string Usage line without the prefix: "open or close the addon window"
+---@param handler fun()
+function Dispatcher:SetDefault(help, handler)
+  self.default, self.defaultHelp = handler, help
+end
+
 ---Calls the handler of the first word of `input`, or prints the usage text when no handler has that word.
+---An input without a word calls the default handler when there is one.
 ---@param input any Text after the prefix; anything that is not a string counts as empty
 ---@return boolean handled false when the usage text was printed
 function Dispatcher:Dispatch(input)
   local word, rest = (type(input) == "string" and input or ""):match("^%s*(%S*)%s*(.-)%s*$")
+  if word == "" and self.default then
+    self.default()
+    return true
+  end
   local handler = self.handlers[word:lower()]
   if not handler then
     self:PrintUsage()
@@ -51,6 +65,9 @@ end
 ---Prints one usage line per registered command.
 function Dispatcher:PrintUsage()
   ns.print("Usage:")
+  if self.defaultHelp then
+    ns.print("  " .. self.prefix .. " - " .. self.defaultHelp)
+  end
   for _, help in ipairs(self.help) do
     ns.print("  " .. self.prefix .. " " .. help)
   end

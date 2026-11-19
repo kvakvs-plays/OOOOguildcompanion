@@ -94,7 +94,7 @@ local function buildGeneralTab()
         width = "full",
         name = "@nicknames and keywords to watch (comma separated)",
         desc = "A guild chat line that has @ directly before one of these, like @nickname, is listed as a "
-          .. "mention of you in the chat history (/oooo chat). The letter case does not matter.",
+          .. "mention of you in the chat history (/oooo, tab \"Guild chat\"). The letter case does not matter.",
         get = function()
           return ns.db.profile.mentions.watch
         end,

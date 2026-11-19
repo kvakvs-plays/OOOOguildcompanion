@@ -7,6 +7,19 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
 **bold heading** followed by the explanation. `Backticks` mark commands.
 -->
 
+## 2026.11.5 (2026-11-19)
+
+### One window
+
+- **One window for everything.** `/oooo` opens the addon window. The guild
+  chat history, the recipe search, and the new member list are tabs of it.
+  The window can be moved and resized, and it opens with the tab that you
+  used last. The commands `/oooo chat` and `/oooo prof` are gone.
+- **Members and their professions.** The new tab "Members" lists every
+  member who shares professions, with each profession, its skill level, and
+  the count of shared recipes. Pick a profession to see only its members,
+  the highest skill first.
+
 ## 2026.11.4 (2026-11-19)
 
 ### Guild professions

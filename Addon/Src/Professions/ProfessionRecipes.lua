@@ -25,8 +25,28 @@ local addonName, ns = ...
 ---@class OOOOProfessionRecipes
 ---@field client OOOORecipeClient
 ---@field cache table<integer, OOOORecipeFacts|false> Recipe id -> facts of this session; false: no recipe
-local recipes = { cache = {} }
+---@field professionNames table<integer, string> Skill line id -> name, as the client gave it
+local recipes = { cache = {}, professionNames = {} }
 ns.professionRecipes = recipes
+
+---Returns the name of a profession in the language of the client.
+---@param professionId integer|nil Skill line id
+---@return string name `#<id>` when the client gives no name; empty without an id
+function recipes.ProfessionName(professionId)
+  if not professionId then
+    return ""
+  end
+  local known = recipes.professionNames[professionId]
+  if known then
+    return known
+  end
+  local name = C_TradeSkillUI.GetTradeSkillDisplayName(professionId)
+  if issecretvalue(name) or type(name) ~= "string" or name == "" then
+    return "#" .. professionId
+  end
+  recipes.professionNames[professionId] = name
+  return name
+end
 
 ---The client of the game. The id can come from a record of another member, so a call that raises on a
 ---strange id counts as no answer.

@@ -1,42 +1,35 @@
 local addonName, ns = ...
 
--- The window "Guild chat history" (.agents/00-plan.md, stage 11): the frames over the model of
--- Chat/ChatHistory.lua. `/oooo chat` opens and closes it.
+-- The tab "Guild chat" of the addon window (.agents/00-plan.md, stage 11): the widgets over the model of
+-- Chat/ChatHistory.lua, and the lists of mentions beside the lines.
 --
--- The frame is not protected, so it may be shown, hidden, and moved in combat.
---
--- Not checked on Forever when this was written: the widget ScrollingMessageFrame with its methods, and the
--- globals SetItemRef and UISpecialFrames. Each is looked up before it is used, and `/oooo sync probe
--- chatframe` reports what the client has.
+-- The lines are in a ScrollingMessageFrame, which AceGUI-3.0 has no widget for: this file registers the
+-- widget type "OOOOMessageLog" around one. `/oooo sync probe chatframe` reports what the client has of it.
 
----@class OOOOChatHistorySettings `db.profile.chatHistory`: where the user left the window
----@field point string|nil Anchor point of the window; nil until the window was moved
----@field relativePoint string|nil Anchor point of the screen
----@field x number|nil
----@field y number|nil
+---@class OOOOMentionList One list of mentions at the right side
+---@field heading table AceGUI Heading with the title and the count
+---@field scroll table AceGUI ScrollFrame with one InteractiveLabel per mention
+---@field titleText string "Unread" or "Read"
 
----@class OOOOChatHistoryWindow
----@field frame table|nil The window; nil until it is first opened
----@field messages table|nil The ScrollingMessageFrame with the lines
+---@class OOOOChatHistoryTab
+---@field messages table|nil The ScrollingMessageFrame with the lines; nil while the tab is not shown
 ---@field shownCount integer Number of lines that `messages` holds
 ---@field maxLines integer Number of lines that `messages` can hold
 ---@field refreshPending boolean|nil true while a refresh waits for its timer
----@field unreadList OOOOMentionListWidget The list "Unread" at the right side
----@field readList OOOOMentionListWidget The list "Read" below it
+---@field unreadList OOOOMentionList|nil The list "Unread" at the right side
+---@field readList OOOOMentionList|nil The list "Read" below it
 ---@field mentionsPending boolean|nil true while an update of the two lists waits for its timer
-local window = { shownCount = 0 }
-ns.chatHistoryWindow = window
+---@field tooltipShown boolean|nil true while the tooltip of a mention is shown
+local tab = { shownCount = 0, maxLines = 0 }
+ns.chatHistoryTab = tab
 
 local history = ns.chatHistory
+local AceGUI = LibStub("AceGUI-3.0")
 
----Global name of the frame: the game closes the frames of `UISpecialFrames` with Escape, by name
-local FRAME_NAME = "OOOOChatHistoryFrame"
-local WINDOW_TITLE = "Guild chat history"
-local WIDTH, HEIGHT = 760, 440
----Space at the right side for the lists of mentions
-local SIDE_WIDTH = 180
-local PADDING = 10
-local HEADER_HEIGHT = 30
+---Id of the tab in the addon window
+local TAB_ID = "chat"
+---Width of the column at the right side with the lists of mentions
+local SIDE_WIDTH = 210
 ---Colour of a line: the green of the guild chat
 local LINE_COLOR = { 0.25, 1, 0.25 }
 ---Colour of the highlighted line
@@ -47,20 +40,19 @@ local HIGHLIGHT_MARK = ">> "
 local WHEEL_STEP = 3
 ---Lines that the widget keeps at least; it is raised when more are loaded
 local MIN_MAX_LINES = 500
----Lines below a line that the window scrolls to, so that the line is not at the edge
+---Lines below a line that the tab scrolls to, so that the line is not at the edge
 local LINES_BELOW = 4
 ---Seconds for which changes of the table are collected before the lines are shown again
 local REFRESH_DELAY = 0.2
----Height of the title of a list of mentions, and of one of its rows
-local LIST_TITLE_HEIGHT, ROW_HEIGHT = 18, 16
----Anchor points that a saved position may name
-local POINTS = { TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true, CENTER = true, RIGHT = true,
-  BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true }
+---Most mentions that one list shows; its title counts all
+local LIST_MAX = 100
+---Texture under the mouse on a row of a list
+local ROW_HIGHLIGHT = "Interface\\QuestFrame\\UI-QuestTitleHighlight"
 ---Hyperlinks that a click passes to the game: those that open a tooltip. The text of a line is untrusted,
 ---and a `player` link would open a whisper through a protected function.
 local TOOLTIP_LINKS = { item = true, spell = true, enchant = true, quest = true, talent = true }
 
----Calls a method of a widget when the client has it.
+---Calls a method of a frame when the client has it.
 ---@param widget table
 ---@param method string
 ---@param ... any Arguments of the method
@@ -72,33 +64,55 @@ local function call(widget, method, ...)
   end
 end
 
----Stores where the user left the window.
----@param frame table
-local function savePosition(frame)
-  local point, _, relativePoint, x, y = frame:GetPoint(1)
-  local settings = ns.db.profile.chatHistory
-  settings.point, settings.relativePoint, settings.x, settings.y = point, relativePoint, x, y
+--------------------------------------------------------------------------------
+-- The widget type "OOOOMessageLog"
+--------------------------------------------------------------------------------
+
+local LOG_TYPE, LOG_VERSION = "OOOOMessageLog", 1
+
+---Builds a message log: an AceGUI widget whose frame is a ScrollingMessageFrame. It fires "OnMouseWheel"
+---(delta) and "OnHyperlinkClick" (link, text, button); the lines are written to `widget.frame`.
+---@return table widget
+local function createLog()
+  local frame = CreateFrame("ScrollingMessageFrame", nil, UIParent)
+  frame:Hide()
+  frame:SetFontObject(GameFontHighlight)
+  frame:SetJustifyH("LEFT")
+  call(frame, "SetFading", false)
+  call(frame, "SetIndentedWordWrap", true)
+  call(frame, "SetHyperlinksEnabled", true)
+  frame:EnableMouseWheel(true)
+  frame:SetScript("OnMouseWheel", function(scrolled, delta)
+    scrolled.obj:Fire("OnMouseWheel", delta)
+  end)
+  frame:SetScript("OnHyperlinkClick", function(clicked, link, text, button)
+    clicked.obj:Fire("OnHyperlinkClick", link, text, button)
+  end)
+  local widget = {
+    frame = frame,
+    type = LOG_TYPE,
+    OnAcquire = function(self)
+      self.frame:Clear()
+    end,
+    OnRelease = function(self)
+      self.frame:Clear()
+    end,
+  }
+  return AceGUI:RegisterAsWidget(widget)
 end
 
----Puts the window where the user left it, or in the middle of the screen.
----@param frame table
-local function restorePosition(frame)
-  local settings = ns.db.profile.chatHistory
-  frame:ClearAllPoints()
-  if POINTS[settings.point] and POINTS[settings.relativePoint] and type(settings.x) == "number"
-    and type(settings.y) == "number" then
-    frame:SetPoint(settings.point, UIParent, settings.relativePoint, settings.x, settings.y)
-  else
-    frame:SetPoint("CENTER")
-  end
-end
+AceGUI:RegisterWidgetType(LOG_TYPE, createLog, LOG_VERSION)
+
+--------------------------------------------------------------------------------
+-- The lines
+--------------------------------------------------------------------------------
 
 ---Handles a click on a hyperlink of a line as a chat frame does: `SetItemRef` shows the tooltip of the
 ---link, and puts the link into the chat edit box on a shift-click (through `HandleModifiedItemClick`).
 ---@param link string The link data: "item:4306:..."
 ---@param text string The link with its text
 ---@param button string Mouse button
-function window:OnHyperlinkClick(link, text, button)
+function tab:OnHyperlinkClick(link, text, button)
   local setItemRef = _G.SetItemRef
   local linkType = type(link) == "string" and link:match("^(%a+):")
   if linkType and TOOLTIP_LINKS[linkType] and type(setItemRef) == "function" then
@@ -108,7 +122,7 @@ end
 
 ---Scrolls the lines so that the message with an index, counted from the oldest, is the lowest visible one.
 ---@param index integer
-function window:ScrollToIndex(index)
+function tab:ScrollToIndex(index)
   local messages = self.messages
   local offset = math.max(0, self.shownCount - index)
   if type(messages.SetScrollOffset) == "function" then
@@ -125,7 +139,7 @@ end
 ---Shows the loaded lines of the model again.
 ---@param offset integer|nil Messages between the lowest visible one and the newest one, as
 ---`GetScrollOffset` counts; nil or 0 scrolls to the bottom
-function window:Fill(offset)
+function tab:Fill(offset)
   local messages = self.messages
   local lines = history.lines
   local now = ns.sync.timeFn and ns.sync.timeFn() or 0
@@ -152,13 +166,13 @@ end
 
 ---Returns how far the lines are scrolled up, in messages; 0 at the bottom.
 ---@return integer
-function window:ScrollOffset()
+function tab:ScrollOffset()
   local offset = call(self.messages, "GetScrollOffset")
   return type(offset) == "number" and offset or 0
 end
 
 ---Loads the page before the first line and keeps the visible lines where they are.
-function window:LoadOlder()
+function tab:LoadOlder()
   local offset = self:ScrollOffset()
   if history:LoadOlder() > 0 then
     -- The offset counts from the newest line, so it names the same line after older ones were added
@@ -167,9 +181,9 @@ function window:LoadOlder()
 end
 
 ---Shows the lines again after the table changed. A reader who has scrolled up keeps their place.
-function window:Refresh()
+function tab:Refresh()
   self.refreshPending = false
-  if not self.frame or not self.frame:IsShown() then
+  if not self.messages then
     return
   end
   local before = self.shownCount
@@ -182,13 +196,13 @@ function window:Refresh()
 end
 
 ---Asks for a refresh after `REFRESH_DELAY`, so that a pull of many records shows the lines once.
-function window:ScheduleRefresh()
+function tab:ScheduleRefresh()
   if self.refreshPending then
     return
   end
   self.refreshPending = true
   C_Timer.After(REFRESH_DELAY, function()
-    window:Refresh()
+    tab:Refresh()
   end)
 end
 
@@ -196,7 +210,7 @@ end
 ---the loaded ones.
 ---@param id string Id of a `guildchat` record
 ---@return boolean found false when the table does not hold the line
-function window:ShowLine(id)
+function tab:ShowLine(id)
   local index = history:Highlight(id)
   self:Fill()
   if index then
@@ -207,7 +221,7 @@ end
 
 ---Handles the mouse wheel over the lines. At the top, a step up loads the page before.
 ---@param delta number Positive: up
-function window:OnMouseWheel(delta)
+function tab:OnMouseWheel(delta)
   local messages = self.messages
   if delta > 0 then
     if history.hasOlder and call(messages, "AtTop") then
@@ -227,271 +241,203 @@ end
 -- The lists of mentions (plan step 11.4)
 --------------------------------------------------------------------------------
 
----@class OOOOMentionListWidget One list of mentions at the right side: a title and rows that the mouse
----wheel scrolls
----@field frame table
----@field title table FontString
----@field titleText string "Unread" or "Read"
----@field rows table[] The row buttons, top first; each has `label` and, while it shows one, `entry`
----@field entries OOOOMention[] What the list holds, newest first
----@field offset integer Number of entries above the first row
-
----Shows the entries of a list from its scroll offset on.
----@param list OOOOMentionListWidget
-local function updateList(list)
-  local entries = list.entries
-  list.offset = math.max(0, math.min(list.offset, #entries - #list.rows))
-  list.title:SetText(list.titleText .. " (" .. #entries .. ")")
-  for index, row in ipairs(list.rows) do
-    local entry = entries[list.offset + index]
-    row.entry = entry
-    if entry then
-      -- The fragments are parts of the text outside its escape sequences, so they have no `|`
-      row.label:SetText(table.concat(entry.fragments, " "))
-      row:Show()
-    else
-      row:Hide()
-    end
+---Hides the tooltip of a mention, when one is shown: its row is about to be released.
+function tab:HideTooltip()
+  if self.tooltipShown then
+    self.tooltipShown = false
+    GameTooltip:Hide()
   end
 end
 
 ---Shows the tooltip of a mention: the sender, the time, and the line.
----@param row table A row button with `entry`
-local function showMentionTooltip(row)
-  local entry = row.entry ---@type OOOOMention|nil
-  if not entry then
-    return
-  end
+---@param owner table The frame of the row
+---@param entry OOOOMention
+function tab:ShowTooltip(owner, entry)
   local now = ns.sync.timeFn and ns.sync.timeFn() or 0
-  GameTooltip:SetOwner(row, "ANCHOR_LEFT")
+  GameTooltip:SetOwner(owner, "ANCHOR_LEFT")
   GameTooltip:AddLine((entry.sender:gsub("|", "||")))
   GameTooltip:AddLine(history.formatTime(entry.time, now), 0.6, 0.6, 0.6)
   GameTooltip:AddLine(ns.mentions.sanitize(entry.text), 1, 1, 1, true)
   GameTooltip:Show()
+  self.tooltipShown = true
 end
 
----Builds one list of mentions.
----@param parent table The window
+---Builds one list of mentions in the side column: a heading and a scrolling list that shares the height.
+---@param side table The AceGUI group of the side column
 ---@param titleText string
----@param height number
----@return OOOOMentionListWidget
-local function createList(parent, titleText, height)
-  local frame = CreateFrame("Frame", nil, parent)
-  frame:SetSize(SIDE_WIDTH, height)
-  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  title:SetPoint("TOPLEFT")
-  ---@type OOOOMentionListWidget
-  local list = { frame = frame, title = title, titleText = titleText, rows = {}, entries = {}, offset = 0 }
-  for index = 1, math.floor((height - LIST_TITLE_HEIGHT) / ROW_HEIGHT) do
-    local row = CreateFrame("Button", nil, frame)
-    row:SetSize(SIDE_WIDTH, ROW_HEIGHT)
-    row:SetPoint("TOPLEFT", 0, -(LIST_TITLE_HEIGHT + (index - 1) * ROW_HEIGHT))
-    row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
-    local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    label:SetPoint("LEFT", 6, 0)
-    label:SetPoint("RIGHT", -2, 0)
-    label:SetJustifyH("LEFT")
-    call(label, "SetWordWrap", false)
-    row.label = label
-    row:SetScript("OnClick", function(clicked)
-      if clicked.entry then
-        window:OnMentionClick(clicked.entry)
-      end
+---@return OOOOMentionList
+local function createList(side, titleText)
+  local heading = AceGUI:Create("Heading")
+  heading:SetText(titleText)
+  side:AddChild(heading)
+  local scroll = AceGUI:Create("ScrollFrame")
+  scroll:SetLayout("List")
+  scroll:SetUserData("fill", true)
+  side:AddChild(scroll)
+  return { heading = heading, scroll = scroll, titleText = titleText }
+end
+
+---Shows mentions in a list, newest first.
+---@param list OOOOMentionList
+---@param entries OOOOMention[]
+local function fillList(list, entries)
+  list.heading:SetText(list.titleText .. " (" .. #entries .. ")")
+  local scroll = list.scroll
+  scroll:ReleaseChildren()
+  scroll:PauseLayout()
+  for index = 1, math.min(#entries, LIST_MAX) do
+    local entry = entries[index]
+    local row = AceGUI:Create("InteractiveLabel")
+    row:SetFullWidth(true)
+    -- The fragments are parts of the text outside its escape sequences, so they have no `|`
+    row:SetText(table.concat(entry.fragments, " "))
+    row:SetHighlight(ROW_HIGHLIGHT)
+    row:SetCallback("OnClick", function()
+      tab:OnMentionClick(entry)
     end)
-    row:SetScript("OnEnter", showMentionTooltip)
-    row:SetScript("OnLeave", function()
-      GameTooltip:Hide()
+    row:SetCallback("OnEnter", function(widget)
+      tab:ShowTooltip(widget.frame, entry)
     end)
-    list.rows[index] = row
+    row:SetCallback("OnLeave", function()
+      tab:HideTooltip()
+    end)
+    scroll:AddChild(row)
   end
-  frame:EnableMouseWheel(true)
-  frame:SetScript("OnMouseWheel", function(_frame, delta)
-    list.offset = list.offset - delta
-    updateList(list)
-  end)
-  return list
+  scroll:ResumeLayout()
+  scroll:DoLayout()
 end
 
 ---Fills the two lists from the mentions of the user.
-function window:UpdateMentions()
+function tab:UpdateMentions()
   self.mentionsPending = false
-  if not self.frame or not self.frame:IsShown() then
+  if not self.messages then
     return
   end
+  self:HideTooltip()
   local unread, read = {}, {}
   for _, entry in ipairs(ns.mentions:List()) do
     local target = entry.isRead and read or unread
     target[#target + 1] = entry
   end
-  self.unreadList.entries, self.readList.entries = unread, read
-  updateList(self.unreadList)
-  updateList(self.readList)
+  fillList(self.unreadList, unread)
+  fillList(self.readList, read)
 end
 
 ---Asks for `UpdateMentions` after `REFRESH_DELAY`, so that a pull with many mentions fills the lists once.
-function window:ScheduleMentions()
-  if self.mentionsPending or not self.frame or not self.frame:IsShown() then
+function tab:ScheduleMentions()
+  if self.mentionsPending or not self.messages then
     return
   end
   self.mentionsPending = true
   C_Timer.After(REFRESH_DELAY, function()
-    window:UpdateMentions()
+    tab:UpdateMentions()
   end)
 end
 
 ---Handles a click on a mention: the history scrolls to its line and highlights it, and an unread mention
 ---becomes read. Nothing else makes a mention read.
 ---@param entry OOOOMention
-function window:OnMentionClick(entry)
+function tab:OnMentionClick(entry)
   if not self:ShowLine(entry.id) then
     ns.print("The line of this mention is no longer stored.")
   end
   if not entry.isRead then
-    -- The callback of the mention list fills the two lists again
+    -- The callback of the mention list fills the two lists again, after a delay: the clicked row is
+    -- released then, not inside its own click
     ns.mentions:MarkRead(entry.id)
   end
 end
 
-ns.mentions.RegisterCallback(window, "OnMentionsChanged", function()
-  window:ScheduleMentions()
+ns.mentions.RegisterCallback(tab, "OnMentionsChanged", function()
+  tab:ScheduleMentions()
 end)
 
 --------------------------------------------------------------------------------
--- The window
+-- The tab
 --------------------------------------------------------------------------------
 
----Builds the frames of the window.
----@return table frame
-function window:Create()
-  local frame = CreateFrame("Frame", FRAME_NAME, UIParent, "BackdropTemplate")
-  self.frame = frame
-  frame:SetSize(WIDTH, HEIGHT)
-  frame:SetFrameStrata("HIGH")
-  frame:SetBackdrop({
-    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true,
-    tileSize = 16,
-    edgeSize = 16,
-    insets = { left = 4, right = 4, top = 4, bottom = 4 },
-  })
-  frame:SetBackdropColor(0, 0, 0, 0.9)
-  frame:SetClampedToScreen(true)
-  frame:SetMovable(true)
-  frame:EnableMouse(true)
-  frame:RegisterForDrag("LeftButton")
-  frame:SetScript("OnDragStart", frame.StartMoving)
-  frame:SetScript("OnDragStop", function(moved)
-    moved:StopMovingOrSizing()
-    savePosition(moved)
+---Builds the content of the tab: the lines at the left, the two lists of mentions at the right.
+---@param container table The AceGUI tab group
+function tab:Build(container)
+  history:Open()
+
+  local root = AceGUI:Create("SimpleGroup")
+  root:SetLayout("OOOOColumns")
+  root:SetAutoAdjustHeight(false)
+
+  local log = AceGUI:Create(LOG_TYPE)
+  log:SetCallback("OnMouseWheel", function(_widget, _event, delta)
+    tab:OnMouseWheel(delta)
   end)
-  frame:Hide()
-  restorePosition(frame)
-
-  local logo = frame:CreateTexture(nil, "ARTWORK")
-  logo:SetSize(20, 20)
-  logo:SetPoint("TOPLEFT", PADDING, -6)
-  logo:SetTexture("Interface\\AddOns\\" .. addonName .. "\\Icons\\Logo64.png")
-  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  title:SetPoint("LEFT", logo, "RIGHT", 6, 0)
-  title:SetText(WINDOW_TITLE)
-
-  local close = CreateFrame("Button", nil, frame)
-  close:SetSize(20, 20)
-  close:SetPoint("TOPRIGHT", -6, -6)
-  local closeText = close:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  closeText:SetAllPoints()
-  closeText:SetText("X")
-  close:SetScript("OnClick", function()
-    frame:Hide()
+  log:SetCallback("OnHyperlinkClick", function(_widget, _event, link, text, button)
+    tab:OnHyperlinkClick(link, text, button)
   end)
+  root:AddChild(log)
 
-  local messages = CreateFrame("ScrollingMessageFrame", nil, frame)
-  self.messages = messages
-  messages:SetPoint("TOPLEFT", PADDING, -HEADER_HEIGHT)
-  messages:SetPoint("BOTTOMRIGHT", -(SIDE_WIDTH + 2 * PADDING), PADDING)
-  messages:SetFontObject(GameFontHighlight)
-  messages:SetJustifyH("LEFT")
-  call(messages, "SetFading", false)
-  call(messages, "SetIndentedWordWrap", true)
-  call(messages, "SetHyperlinksEnabled", true)
+  local side = AceGUI:Create("SimpleGroup")
+  side:SetLayout("OOOORows")
+  side:SetAutoAdjustHeight(false)
+  side:SetUserData("width", SIDE_WIDTH)
+  self.unreadList = createList(side, "Unread")
+  self.readList = createList(side, "Read")
+  root:AddChild(side)
+
+  container:AddChild(root)
+  root:DoLayout()
+
+  self.messages = log.frame
   self.maxLines = MIN_MAX_LINES
-  call(messages, "SetMaxLines", self.maxLines)
-  messages:EnableMouseWheel(true)
-  messages:SetScript("OnMouseWheel", function(_messages, delta)
-    window:OnMouseWheel(delta)
-  end)
-  messages:SetScript("OnHyperlinkClick", function(_messages, link, text, button)
-    window:OnHyperlinkClick(link, text, button)
-  end)
-
-  local listHeight = (HEIGHT - HEADER_HEIGHT - 2 * PADDING) / 2
-  self.unreadList = createList(frame, "Unread", listHeight)
-  self.unreadList.frame:SetPoint("TOPRIGHT", -PADDING, -HEADER_HEIGHT)
-  self.readList = createList(frame, "Read", listHeight)
-  self.readList.frame:SetPoint("TOPRIGHT", self.unreadList.frame, "BOTTOMRIGHT", 0, -PADDING)
-
-  -- The game hides and shows the window with the whole interface too, so the model follows the frame
-  frame:SetScript("OnShow", function()
-    history:Open()
-    window:Fill()
-    window:UpdateMentions()
-  end)
-  frame:SetScript("OnHide", function()
-    history:Close()
-  end)
-
-  -- Escape closes the frames that this list names
-  local special = _G.UISpecialFrames
-  if type(special) == "table" then
-    special[#special + 1] = FRAME_NAME
-  end
-  return frame
+  call(self.messages, "SetMaxLines", self.maxLines)
+  self:Fill()
+  self:UpdateMentions()
 end
 
----Shows the window with the newest lines of the stored guild chat.
+---Forgets the widgets, which the window releases, and the loaded lines.
+function tab:Close()
+  self:HideTooltip()
+  self.messages, self.unreadList, self.readList = nil, nil, nil
+  self.shownCount = 0
+  history:Close()
+end
+
+---Shows the addon window with this tab.
 ---@return boolean opened false when the shared database is not ready
-function window:Open()
-  if not ns.sync.data then
-    ns.print("The shared database is not ready.")
-    return false
-  end
-  local frame = self.frame or self:Create()
-  frame:Show()
-  return true
-end
-
----Opens the window, or closes it when it is open.
-function window:Toggle()
-  if self.frame and self.frame:IsShown() then
-    self.frame:Hide()
-  else
-    self:Open()
-  end
+function tab:Open()
+  return ns.mainWindow:Open(TAB_ID)
 end
 
 history.onChanged = function()
-  window:ScheduleRefresh()
+  if tab.messages then
+    tab:ScheduleRefresh()
+  end
 end
 
-ns.slash:Register("chat", "chat - open or close the guild chat history", function()
-  window:Toggle()
-end)
+ns.mainWindow:RegisterTab({
+  id = TAB_ID,
+  title = "Guild chat",
+  order = 10,
+  Build = function(container)
+    tab:Build(container)
+  end,
+  Close = function()
+    tab:Close()
+  end,
+})
 
 --------------------------------------------------------------------------------
 -- Probe
 --------------------------------------------------------------------------------
 
----Methods of the ScrollingMessageFrame that the window uses; the first five are needed, the others have a
+---Methods of the ScrollingMessageFrame that the tab uses; the first five are needed, the others have a
 ---fallback
 local WIDGET_METHODS = { "AddMessage", "Clear", "SetFontObject", "SetJustifyH", "EnableMouseWheel", "SetMaxLines",
   "SetFading", "SetIndentedWordWrap", "SetHyperlinksEnabled", "SetScrollOffset", "GetScrollOffset", "ScrollUp",
   "ScrollDown", "ScrollToBottom", "AtTop", "AtBottom", "GetNumMessages" }
----Globals that the window and the notice look up
+---Globals that the tab and the notice look up
 local PROBED_GLOBALS = { "SetItemRef", "HandleModifiedItemClick", "ItemRefTooltip", "UISpecialFrames", "date",
   "EventRegistry" }
 
-ns.syncProbe.Register("chatframe", "chatframe - the widget and the globals of the chat history window",
+ns.syncProbe.Register("chatframe", "chatframe - the widget and the globals of the chat history",
   function(report)
     local lookup = ns.syncProbe.lookup
     for _, name in ipairs(PROBED_GLOBALS) do
@@ -525,8 +471,8 @@ ns.syncProbe.Register("chatframe", "chatframe - the widget and the globals of th
     call(widget, "SetScrollOffset", 1000)
     report:Add("after SetScrollOffset(1000): offset " .. tostring((call(widget, "GetScrollOffset"))) .. ", AtTop "
       .. tostring((call(widget, "AtTop"))))
-    report:Add("Not covered here: click an item link in /oooo chat, then look for \"Interface action failed\" "
-      .. "in the chat frame and in the taint log.")
+    report:Add("Not covered here: click an item link in the tab \"Guild chat\" of /oooo, then look for "
+      .. "\"Interface action failed\" in the chat frame and in the taint log.")
   end)
 
 ---The data of the hyperlink that the probe `chatlink` prints
@@ -538,7 +484,7 @@ ns.syncProbe.Register("chatlink", "chatlink - whether a click on an addon: hyper
   function(report)
     local registry = ns.syncProbe.lookup("EventRegistry")
     if type(registry) ~= "table" or type(registry.RegisterCallback) ~= "function" then
-      report:Add("EventRegistry.RegisterCallback is missing: the notice about mentions names /oooo chat")
+      report:Add("EventRegistry.RegisterCallback is missing: the notice about mentions names /oooo")
       return
     end
     if not probeLinkRegistered then

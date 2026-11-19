@@ -282,7 +282,7 @@ end
 --------------------------------------------------------------------------------
 
 local NOTICE = mentions.noticeText(false)
-T.ok(NOTICE:find("Type /oooo chat to open recent mentions.", 1, true), "without a link the notice names the command")
+T.ok(NOTICE:find("Type /oooo to open recent mentions.", 1, true), "without a link the notice names the command")
 T.ok(mentions.noticeText(true):find("|Haddon:OOOOguildcompanion:mentions|h[Click to open recent mentions]|h", 1,
   true), "with a link its last words are the link")
 

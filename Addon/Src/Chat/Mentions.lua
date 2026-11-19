@@ -491,7 +491,7 @@ function mentions.noticeText(withLink)
   if withLink then
     return text .. "|cff71d5ff|H" .. mentions.LINK .. "|h[Click to open recent mentions]|h|r."
   end
-  return text .. "Type /oooo chat to open recent mentions."
+  return text .. "Type /oooo to open recent mentions."
 end
 
 ---Prints the notice when the list holds an unread mention of the user that no notice has covered yet, and
@@ -582,7 +582,7 @@ local function onlineTick()
   C_Timer.After(mentions.ONLINE_INTERVAL, onlineTick)
 end
 
----Listens for a click on the hyperlink of the notice, which opens the chat history window. The Mainline
+---Listens for a click on the hyperlink of the notice, which opens the addon window with the chat history. The Mainline
 ---interface tells addons about a click on an `addon:` link through `EventRegistry`, event "SetItemRef".
 ---@return boolean usable false when the client has no such registry; the notice then names the slash command
 function mentions.RegisterLink()
@@ -595,7 +595,7 @@ function mentions.RegisterLink()
     for index = 1, select("#", ...) do
       local value = select(index, ...)
       if not issecretvalue(value) and value == mentions.LINK then
-        ns.chatHistoryWindow:Open()
+        ns.chatHistoryTab:Open()
         return
       end
     end

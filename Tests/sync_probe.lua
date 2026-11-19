@@ -63,6 +63,17 @@ T.eq(dispatcher:Dispatch(42), false, "an input that is not a string is not handl
 printed()
 T.eq(#calls, 2, "an unknown word calls no handler")
 T.raises(function() dispatcher:Register("ONE", "one", print) end, "a repeated word raises", "registered twice")
+-- The prefix alone, once it has a handler
+dispatcher:SetDefault("open the window", function() calls[#calls + 1] = "default" end)
+for _, input in ipairs({ "", "   " }) do
+  T.eq(dispatcher:Dispatch(input), true, "the prefix alone is handled: '" .. input .. "'")
+end
+T.eq(dispatcher:Dispatch(nil), true, "a missing input counts as the prefix alone")
+T.eq(calls, { "one:", "two:Some Name", "default", "default", "default" }, "the default handler was called")
+T.eq(printed(), "", "the default handler prints no usage text")
+T.eq(dispatcher:Dispatch("three"), false, "an unknown word is still not handled")
+T.eq(printed(), "Usage:\n  /test - open the window\n  /test one - first\n  /test two <x> - second",
+  "the usage text starts with the prefix alone")
 
 -- The real command tree: /oooo sync probe ...
 T.eq(ns.slash:Dispatch("sync probe list"), true, "/oooo sync probe list reaches the probe module")
