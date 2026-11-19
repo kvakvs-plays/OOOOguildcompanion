@@ -126,3 +126,6 @@ records) are in the git history of this file, before 2026-11-19.
   (`packRecipes`, `unpackRecipes`, `mergeRecipes`, `key`, `parseKey`,
   `validate`); a push and a pull carry a record near and over the batch
   size (`Tests/sync_profdata.lua`). Host only by design.
+- **12.6 Search model**: `Src/Professions/ProfessionSearch.lua` (the index
+  `recipe id -> crafters`, `Search`, `Detail`, `PrepareNames`);
+  `Tests/sync_profsearch.lua`. Host only by design.

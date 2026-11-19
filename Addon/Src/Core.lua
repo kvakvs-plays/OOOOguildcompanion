@@ -75,6 +75,7 @@ local addonName, ns = ...
 ---@field professionScan OOOOProfessionScanModule
 ---@field professionRecipes OOOOProfessionRecipes
 ---@field professionNames OOOOProfessionNamesModule
+---@field professionSearch OOOOProfessionSearchModule
 ---@field version string|nil Version of this release (Changelog/ChangelogData.lua, generated)
 ---@field changelog OOOOChangelogRelease[]|nil The release notes, newest first (the same file)
 ---@field changelogWindow OOOOChangelogWindow
