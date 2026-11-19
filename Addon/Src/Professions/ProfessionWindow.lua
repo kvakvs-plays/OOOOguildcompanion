@@ -45,6 +45,8 @@ local WINDOW_TITLE = "Guild professions"
 local WIDTH, HEIGHT = 760, 460
 ---Width of the detail part at the right side
 local DETAIL_WIDTH = 250
+---Space between the border of the detail part and what it shows
+local DETAIL_INSET = 8
 local PADDING = 10
 local HEADER_HEIGHT = 30
 ---Height of the line with the two search boxes
@@ -311,7 +313,7 @@ function window:UpdateDetail()
   end
   self.craftInfo:SetText(info)
 
-  local perRow = math.max(1, math.floor((DETAIL_WIDTH + REAGENT_GAP) / (REAGENT_SIZE + REAGENT_GAP)))
+  local perRow = math.max(1, math.floor((DETAIL_WIDTH - 2 * DETAIL_INSET + REAGENT_GAP) / (REAGENT_SIZE + REAGENT_GAP)))
   local reagentCount = #detail.reagents
   for index, reagent in ipairs(detail.reagents) do
     local button = self:ReagentButton(index)
@@ -597,9 +599,23 @@ function window:Create()
   status:SetJustifyH("LEFT")
   self.status = status
 
-  local pane = CreateFrame("Frame", nil, frame)
-  pane:SetPoint("TOPLEFT", list, "TOPRIGHT", PADDING, 0)
-  pane:SetPoint("BOTTOMRIGHT", -PADDING, PADDING)
+  -- The inset of the detail part: a darker field with a white border. It stays when no recipe is selected.
+  local inset = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+  inset:SetPoint("TOPLEFT", list, "TOPRIGHT", PADDING, 0)
+  inset:SetPoint("BOTTOMRIGHT", -PADDING, PADDING)
+  inset:SetBackdrop({
+    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 12,
+    insets = { left = 3, right = 3, top = 3, bottom = 3 },
+  })
+  inset:SetBackdropColor(0, 0, 0, 0.5)
+  inset:SetBackdropBorderColor(1, 1, 1, 0.8)
+  local pane = CreateFrame("Frame", nil, inset)
+  pane:SetPoint("TOPLEFT", DETAIL_INSET, -DETAIL_INSET)
+  pane:SetPoint("BOTTOMRIGHT", -DETAIL_INSET, DETAIL_INSET)
   pane:Hide()
   self.pane = pane
   local craftIcon = pane:CreateTexture(nil, "ARTWORK")
