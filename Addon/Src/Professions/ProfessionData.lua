@@ -104,7 +104,8 @@ end
 ---@param text any
 ---@return integer
 function data.recipeCount(text)
-  return data.isRecipeList(text) and #text / ID_WIDTH or 0
+  -- math.floor: the host Lua 5.4 gives a float for `/`
+  return data.isRecipeList(text) and math.floor(#text / ID_WIDTH) or 0
 end
 
 ---Joins a stored recipe list with newly found ids: a scan only adds (plan 5.4), because a scan can be partial.

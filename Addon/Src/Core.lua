@@ -72,6 +72,7 @@ local addonName, ns = ...
 ---@field chatHistoryWindow OOOOChatHistoryWindow
 ---@field professionData OOOOProfessionData
 ---@field professionProbe OOOOProfessionProbe
+---@field professionScan OOOOProfessionScanModule
 ---@field version string|nil Version of this release (Changelog/ChangelogData.lua, generated)
 ---@field changelog OOOOChangelogRelease[]|nil The release notes, newest first (the same file)
 ---@field changelogWindow OOOOChangelogWindow

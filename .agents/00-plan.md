@@ -1098,52 +1098,43 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
     `Src\Professions\ProfessionProbe.lua`.
 
 - **12.3 Scan** (**CLIENT**)
-  - Substeps
-    - `ProfessionScan.lua` (`ns.professionScan`): the reader of the client
-      behind a small interface (`readProfessions()`, `readRecipes()`,
-      `isOwnWindow()`), so that the rest runs on the host with a stub.
-    - `Scan`: for each profession build the payload (level, the merged
-      recipe list; the specialization is deferred, 5.4) and `Put` it. A
-      scan of many recipes is cut across frames with `C_Timer.After`.
-    - When it runs: the list of professions after the guild check and on
-      its events (5.4); the recipes on `TRADE_SKILL_SHOW`,
-      `TRADE_SKILL_LIST_UPDATE`, and `TRADE_SKILL_DATA_SOURCE_CHANGED`
-      while `IsTradeSkillReady()` is true, at most once in 2 seconds. Only
-      while the guild state is `in`; one event frame with a handler table.
-    - The hint "Open your <profession> window once ...", once per session
-      and only for a profession with recipes that has no recipe list yet.
-      Which professions have recipes: the six crafting ones, Cooking,
-      First Aid, and Mining.
-    - `/oooo sync prof`: the stored professions of the own character with
-      their recipe counts, and what the last scan did.
-  - Checkpoint: on a character with two professions, after opening both
-    windows, `/oooo sync prof` shows both with the recipe counts of the
-    game. A second account shows the same records after its sync
-    (`/oooo sync status`: equal versions of `profession`).
-    The largest record arrived whole; this is the first multipart message
-    seen in the client, so record it in AGENTS.md.
-  - Host tests: `Tests/sync_profscan.lua` with a stub reader: a first scan
-    writes the records; an equal scan writes nothing; a partial scan
-    removes nothing; a scan of a foreign window writes nothing; a secret
-    value ends the scan; a recipe that is not `learned` is left out.
+  - State (2026-11-19): the code and the host tests are done
+    (`ProfessionScan.lua`, `Tests/sync_profscan.lua`); the client check is
+    open. The client is behind the reader `OOOOProfessionReader`
+    (`readProfessions`, `isOwnWindow`, `readRecipes`, `isLearned`,
+    `recipeProfession`); `clientReader` is the one of the game.
+  - Checkpoint, starting with a fresh login (not `/reload`) and before any
+    profession window is opened:
+    - `/oooo sync prof` lists every profession of the character with its
+      level. This answers the open point of 12.1: whether
+      `GetProfessionInfo(index)` gives the levels in a fresh session. If the
+      line says "0 records written", it does not; note it in AGENTS.md.
+    - The hint "Open your <profession> window once ..." came once, for the
+      professions with recipes.
+    - After opening both windows, `/oooo sync prof` shows both with the
+      recipe counts of the game. A second account shows the same records
+      after its sync (`/oooo sync status`: equal versions of `profession`).
+    - The largest record arrived whole; this is the first multipart message
+      seen in the client, so record it in AGENTS.md.
   - Done when: the client check is recorded, with no Lua error and no
     "Interface action failed" entry.
 
 - **12.4 Changes: new recipe, unlearning** (**CLIENT**)
-  - Substeps
-    - Add a learned recipe on its event (5.4).
-    - Deferred with the specialization (5.4): read it again when the known
-      spells change, at most once in 5 seconds.
-    - Read the list of professions on its events (5.4); delete the
-      records of an unlearned profession by the two-reads rule of 5.4.
+  - State (2026-11-19): the code and the host tests are done (`OnNewRecipe`,
+    `CheckUnlearned`); the client check is open.
+  - A learned recipe comes with `NEW_RECIPE_LEARNED` and no window. Its
+    profession is asked from `C_TradeSkillUI.GetTradeSkillLineForRecipe`,
+    a Retail function that no probe has seen on Forever; the code uses it
+    only when it exists. Without it, or when it names no profession of the
+    character, the next scan of the window adds the recipe.
+  - Deferred with the specialization (5.4): read it again when the known
+    spells change.
   - Checkpoint: learn a recipe from a trainer: the count in
-    `/oooo sync prof` rises by one without a `/reload`, and the second
-    account gets it. Unlearn a profession on a test character: its record
-    is gone on both accounts after the sync.
-  - Host tests: in `Tests/sync_profscan.lua`: the new-recipe event adds one
-    id; an empty list right after login deletes nothing; one read without
-    the profession deletes nothing, the second one deletes; a profession
-    that is learned again starts with an empty list.
+    `/oooo sync prof` rises by one without a `/reload`, and the line
+    "learned:" says "added" (if it says "its profession is not known", the
+    function above is missing or answers otherwise: note it in AGENTS.md).
+    The second account gets the recipe. Unlearn a profession on a test
+    character: its record is gone on both accounts after the sync.
   - Done when: the client check is recorded.
 
 - **12.5 Recipe facts and item names** (**CLIENT**)
