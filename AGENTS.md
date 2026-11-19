@@ -205,7 +205,9 @@ may be fixed there. Test a claim on the release client before relying on it.
     accounts through `RegisterComm` and `SendCommMessage`. AceComm calls
     the global `Ambiguate` on every addon message, so that global exists.
     `WHISPER` through AceComm works too: a pull between two accounts
-    completed. Multipart messages (over 255 bytes) are not yet checked.
+    completed. Multipart messages (over 255 bytes) work (November 19, 2026):
+    a pull delivered a `profession` record with 50 recipes (200 bytes of
+    recipe ids plus the record frame) to a second account.
   - `CHAT_MSG_GUILD` is a valid event (November 18, 2026). Its second
     argument, the sender, is the roster name with the first and the last
     name and no realm suffix (`Nixia Ameldus`, also with a UTF-8 letter:

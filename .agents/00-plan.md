@@ -1127,7 +1127,10 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
     again after a fresh login. The second account still had 0 records of
     `profession` while it pulled `guildchat` from another member ("waiting
     for batch 1"): pulls run one at a time, in the order of the tables.
-    Open: how long that lasted and whether `profession` came afterwards.
+    The sync then finished and the second account shows the professions
+    (said by the user). Some members run the previous addon version; they
+    do not have the table `profession`. Still open here: the hint after a
+    fresh login, and the recipe counts compared on the second account.
   - Done when: the client check is recorded, with no Lua error and no
     "Interface action failed" entry.
 
