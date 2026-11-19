@@ -262,12 +262,17 @@ may be fixed there. Test a claim on the release client before relying on it.
     `isPrimaryProfession`); `skillLevel` and `maxSkillLevel` are 0 for a
     profession that the character lacks. There are no child skill lines:
     `GetChildProfessionInfo()` is empty and `expansionName` is `'Unknown'`.
-    This works without a profession window; it was first filled 1.5 seconds
-    after `PLAYER_LOGIN`. In the 60 seconds after a login `SPELLS_CHANGED`
-    came once and `SKILL_LINES_CHANGED` never.
+    Do not read the levels from it in a fresh session: for 60 seconds
+    after a login, and before any profession window was open, it showed
+    level 0 for every profession. It showed the levels only after a
+    profession window had been open.
   - `GetProfessions()` returns indexes (`7, 9, 5, 8, 6`), and
     `GetProfessionInfo(index)` returns the name, icon, level, maximum, and
-    as 7th value the skill line id.
+    as 7th value the skill line id. `GetProfessions()` gave its indexes
+    1.5 seconds after `PLAYER_LOGIN`, without a profession window. In the
+    60 seconds after a login `SPELLS_CHANGED` came once (at 1.5 seconds)
+    and `SKILL_LINES_CHANGED` never. Whether `GetProfessionInfo(index)`
+    gives the levels in a fresh session is not yet read from the report.
   - Recipes need the profession window. After a login
     `C_TradeSkillUI.GetAllRecipeIDs()` gave nothing for 60 seconds. Once a
     window was open it returns the recipes of the profession that was
@@ -281,8 +286,8 @@ may be fixed there. Test a claim on the release client before relying on it.
     gives `outputItemID`, `quantityMin`, `quantityMax`, and
     `reagentSlotSchematics[i]` with `quantityRequired` and
     `reagents[1].itemID`. Both also answered for recipes of professions
-    that the character lacks (2660, 18560), in a session in which a
-    profession window had been open; not yet checked right after a login.
+    that the character lacks (2660, 18560), also right after a login with
+    no profession window opened in the session.
     For an id that is no recipe they return a table with `recipeID = 0`
     and an empty name, not nil. That was so for 2330, the Classic craft
     spell of Minor Healing Potion, which also has no spell name: Forever

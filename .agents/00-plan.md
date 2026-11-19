@@ -297,7 +297,6 @@ API for feature modules:
 | --- | --- | --- | --- |
 | `character` | name | owner | anyone |
 | `profession` | name, profession id | owner | anyone |
-| `recipe` | recipe id | anyone; by rule a member who knows the recipe (5.4) | anyone |
 | `equipment` | name | owner | anyone |
 | `attunement` | name | owner | anyone |
 | `guildchat` | the record's own id | anyone; by rule the sender, or one witness (5.3) | anyone |
@@ -439,25 +438,23 @@ ns.sync:RegisterTable({
   shorter key are the first savings.
   The key repeats the id; sending it once is a later saving, like LibDeflate.
 
-### 5.4 Tables `profession` and `recipe`
+### 5.4 Table `profession`
 
 Who in the guild can craft what. Every character with the addon shares the
-recipes that it knows; every member can search them (stage 12). The two
-tables replace the earlier names `profession_id` and `profession_skills`: one
+recipes that it knows; every member can search them (stage 12). The table
+replaces the earlier names `profession_id` and `profession_skills`: one
 record per character and profession says both that the character has the
 profession and what it knows.
 
-**Numbers only.** The tables hold ids and counts, never a name: members play
+**Numbers only.** The table holds ids and levels, never a name: members play
 clients of different languages. Every replica turns the ids into names of its
 own language when it shows or searches them.
 
 - **Recipe id.** A recipe is named by the id of its craft spell. The item
-  that it makes is a field of the `recipe` record.
+  that it makes and its reagents are not shared: every client knows them
+  (below, "No table `recipe`").
   - Why not the item id as the name: an enchant makes no item, and two
-    recipes can make the same item. The wish was "item ids, and spell ids
-    where needed"; with the spell id as the one key and the item id beside
-    it, both are stored and no recipe needs a special case. Open for the
-    user to overrule before step 12.2.
+    recipes can make the same item.
 - **Profession id.** The skill line id of the profession (Classic data:
   164 Blacksmithing, 165 Leatherworking, 171 Alchemy, 197 Tailoring,
   202 Engineering, 333 Enchanting, 185 Cooking, 129 First Aid, 186 Mining,
@@ -480,22 +477,6 @@ ns.sync:RegisterTable({
   s = 9788,             -- specialization spell id; absent when none (deferred: not written yet)
   r = "....",           -- the known recipe ids, packed (below); absent for a profession without recipes
 }
-
-ns.sync:RegisterTable({
-  name = "recipe",
-  schema = 1,
-  keyKind = "free",                   -- key: the recipe id in decimal digits
-  validate = ...,
-  maxRecordBytes = 200,
-  writers = "anyone",
-  policy = { when = "nocombat", pushDelay = 300, minInterval = 900 },
-})
--- payload
-{ p = 164,              -- profession id
-  i = 7930,             -- item made; absent for an enchant
-  n = 1,                -- number of items made; absent when 1
-  m = { 3860, 16, 6037, 2, ... },   -- reagents: item id, count, item id, count; sorted by item id
-}
 ```
 
 - **Packed recipe list.** `r` is the recipe ids in ascending order, each as
@@ -513,39 +494,47 @@ ns.sync:RegisterTable({
   sends the whole record again. The policy collects them: one push at most
   every 15 minutes per crafter. If this proves too much traffic, the level
   moves to a record of its own.
-- **Why the table `recipe`.** To search by material, a replica must know the
-  reagents of recipes that its own character does not know. The table makes
-  the search independent of what the client gives: a member who knows a
-  recipe writes its facts once, and they are the same for everybody.
-  - Result of step 12.1: the client gave the name, the item, and the
-    reagents of recipes of professions that the character lacks (2660,
-    18560), with the window closed, but in a session in which a profession
-    window had been open. The run right after a login is still to do
-    (`professions fresh`). If the client answers there too, the table is
-    dropped and the search asks the client; until then the table stays.
-  - Rule of writing: after a scan, a replica writes the `recipe` record of
-    each recipe that it knows when the table has none or one that differs
-    from what its client says. The reagents are sorted by item id, so two
-    correct clients build the same payload and `Put` writes nothing.
-  - Trust: `writers = "anyone"`, so a modified addon can write wrong
-    reagents. The next scan of any member who knows the recipe replaces
-    them. The payload holds only numbers, each checked for type and range
-    (ids 1 to 2^31, counts 1 to 1000, at most 12 reagents), so it cannot
-    carry text.
-  - A recipe that nobody knows any more keeps its record. It costs about 60
-    bytes and is not shown, because no `profession` record lists it.
-  - Size, assumed: 1500 recipes at 60 bytes are 90 KB for the whole table.
+- **No table `recipe`** (decided by step 12.1, 2026-11-19). The plan had a
+  second shared table with the item and the reagents of every recipe, in
+  case a client could not tell them for a recipe that its character does
+  not know. The client can: right after a login, with no profession window
+  opened in the session, `GetRecipeInfo` and `GetRecipeSchematic` gave the
+  name, the item, and the reagents of recipes of professions that the
+  character lacks (2660 and 18560). So every replica reads the facts of a
+  recipe from its own client, and nothing but the id is shared.
+  - `ns.professionRecipes` (step 12.5) is the one place that asks the
+    client: `Facts(recipeId)` gives the name, the icon, the item made, the
+    number made, and the reagents (item id and count), or nil when the
+    client says that the id is no recipe (`recipeID` is not the id). The
+    answers are kept in memory for the session.
+  - An id that a foreign record lists and that the client does not know is
+    shown as `#<id>` and has no reagents. A modified addon can list such
+    ids, but it cannot give a recipe wrong reagents.
+  - Checked only for two Classic recipes. If daily play shows recipes whose
+    facts the client lacks until some window was open, the table comes
+    back; the name is free.
 
 **Scan.** The scanner reads the professions of the logged-in character and
 writes its records. It uses the Retail API `C_TradeSkillUI`; the Classic
 functions (`GetNumTradeSkills`, the `Craft` functions) do not exist on
 Forever (step 12.1; the facts are in AGENTS.md).
 
-- **The list of professions** (which, level) is readable without a window:
-  `C_TradeSkillUI.GetProfessionInfoBySkillLineID` for each of the 12 ids; a
-  `skillLevel` above 0 means that the character has the profession. It is
-  read after the guild check (it was filled 1.5 seconds after login) and on
-  `SKILL_LINES_CHANGED`.
+- **The list of professions** (which, level) is readable without a window
+  through `GetProfessions()`, which gave its indexes 1.5 seconds after
+  `PLAYER_LOGIN`, together with the first `SPELLS_CHANGED`; and
+  `GetProfessionInfo(index)`, which gives the level, the maximum, and as
+  7th value the skill line id. Every non-nil value of `GetProfessions()` is
+  a profession (the third was First Aid).
+  - Not `C_TradeSkillUI.GetProfessionInfoBySkillLineID`: in a fresh session
+    it showed no level for any profession (60 seconds after a login, and in
+    the run `fresh`); it showed the levels only after a profession window
+    had been open.
+  - To confirm from the stored report `professions:fresh`: that
+    `GetProfessionInfo(index)` gives the levels in a fresh session. The
+    chat lines of that run do not show it.
+  - It is read after the guild check, on `SPELLS_CHANGED` and
+    `SKILL_LINES_CHANGED` (at most once in 5 seconds), and at every scan of
+    a window.
 - **The recipes** are readable only with the profession window open. After
   a login `GetAllRecipeIDs()` gives nothing. With a window open it gives
   the recipes of that profession; after the window closes it still gives
@@ -560,8 +549,9 @@ Forever (step 12.1; the facts are in AGENTS.md).
   session: "Open your <profession> window once, so that the guild can see
   what you craft." The profession name comes from the client
   (`professionName`), in the user's language.
-  - The facts of a recipe come from `GetRecipeSchematic(id, false)`:
-    `outputItemID`, `quantityMin`, and per entry of `reagentSlotSchematics`
+  - The scan writes only the ids. The facts of a recipe are read when
+    they are shown, from `GetRecipeSchematic(id, false)`: `outputItemID`,
+    `quantityMin`, and per entry of `reagentSlotSchematics`
     `reagents[1].itemID` and `quantityRequired`.
   - The addon does not open the window itself: opening it from code is not
     known to be safe (taint, protected call), and a window that opens by
@@ -642,11 +632,14 @@ in `db.profile.professions`.
   tooltip. A shift-click puts the item link into the chat box through
   `HandleModifiedItemClick`. The window does not whisper: opening a chat
   from addon code is a protected call (AGENTS.md).
-- **Names.** The name of a recipe is the name of its item, or of its spell
-  when it makes no item; a reagent is always an item. Names arrive
-  asynchronously (`C_Item`, `C_Spell`; AGENTS.md "Removed globals").
-  The search needs the names of all ids of the two tables at once, so they
-  are kept in a local **name cache** (below). An id without a name yet is
+- **Names.** The name of a recipe is the `name` of `GetRecipeInfo`, which
+  the client gave at once in every run; it needs no cache. A reagent is an
+  item, and item names arrive asynchronously (`C_Item`; AGENTS.md "Removed
+  globals"). The search by material needs the names of all reagents of all
+  listed recipes at once, so they are kept in a local **name cache**
+  (below). Whether the cache is needed at all is decided by the `nameload`
+  runs of step 12.1: if the client names nearly every item at once, step
+  12.5 keeps only the direct question and a short retry list. An id without a name yet is
   shown as `#<id>` and is found by no text.
 - **Name cache.** Local, not synchronized, account-wide, and per client
   language, because a name is only right for the language that gave it:
@@ -671,8 +664,9 @@ in `db.profile.professions`.
   - An entry whose id is in neither table any more is removed at login.
   - The lower-case forms for the search are built in memory when the
     window first opens; they are not saved.
-- **Filling the cache.** Wanted ids are those of the two tables that have
-  no entry or an expired one. They wait in one queue, and two paces empty
+- **Filling the cache.** Wanted ids are the reagents and the items made of
+  the recipes that the table `profession` lists, that have no entry or an
+  expired one. They wait in one queue, and two paces empty
   it:
   - **Slow**, while the user plays: one id at a random interval of 2 to 5
     seconds, out of combat, from 60 seconds after the guild check. A full
@@ -714,8 +708,8 @@ in `db.profile.professions`.
     https://warcraft.wiki.gg/wiki/Event:ITEM_DATA_LOAD_RESULT.
 - **Index.** `recipe id -> members who know it` is built from the table
   `profession` when the window opens and kept current by `OnRecordChanged`
-  while it is open. A recipe without a `recipe` record (its writer's push
-  has not arrived) is listed by its spell name and has no reagents.
+  while it is open. A recipe id that the client does not know is listed as
+  `#<id>` and has no reagents.
 - **Not in this stage:** a filter by profession, a list of one member's
   recipes, alts joined to one player, and a link from the game's own
   profession window.
@@ -1164,13 +1158,11 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
       50, 200, and 800 right after a client restart, on a test account:
       the larger runs may disconnect it, and that is the result wanted.
       The same for 50 spell ids with the spell functions.
-  - State (2026-11-19): the runs `before`, `open`, `closed`, `filter`, and
-    `login` are done on build 70959; their results are in AGENTS.md and in
-    section 5.4. Left:
-    - `professions fresh` right after a login, before any profession
-      window: does the client give the facts of a recipe of a profession
-      that the character lacks? It decides whether the table `recipe`
-      stays.
+  - State (2026-11-19): the runs `before`, `open`, `closed`, `filter`,
+    `login`, and `fresh` are done on build 70959; their results are in
+    AGENTS.md and in section 5.4. The table `recipe` is dropped. Left:
+    - Read the stored report `professions:fresh` (after a `/reload`):
+      does `GetProfessionInfo(index)` give the levels in a fresh session?
     - The `nameload` runs (50, 200, 800 items; 50 spells). Until then the
       numbers of the fast pace stay as guessed.
     - Deferred: `professions spec` on a character with a specialization,
@@ -1195,28 +1187,25 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
   - Done when: the results are in AGENTS.md under "Checked on the release
     client", the confirmed globals are in `.luacheckrc`, and section 5.4
     says which API the scan uses, whether the window must be open, whether
-    the table `recipe` stays, how foreign data is told apart, and the
+    the table `recipe` stays (it does not), how foreign data is told apart, and the
     numbers of the fast pace of the name cache.
 
-- **12.2 The tables `profession` and `recipe`**
+- **12.2 The table `profession`**
   - Substeps
     - `Src\Professions\ProfessionData.lua` (`ns.professionData`):
       `packRecipes(ids)` and `unpackRecipes(text)`, `mergeRecipes(text,
       ids)` (the union, for "a scan only adds"), `key(name, professionId)`
-      and `parseKey(key)`, `buildRecipePayload(professionId, itemId,
-      count, reagents)` with the reagents sorted, and the two `validate`
-      functions with every check of 5.4.
-    - Register both tables at file scope. `validate` of `profession` also
-      checks the key: a name, `:`, and a profession id in digits.
+      and `parseKey(key)`, and `validate` with every check of 5.4.
+    - Register the table at file scope. `validate` also checks the key: a
+      name, `:`, and a profession id in digits.
     - Check the engine with a record near the batch size: `splitBatches`
       with a record of 1900 bytes and one over 2000, and a pull and a push
       of both between two replicas.
-  - Checkpoint: `/oooo sync status` lists `profession` and `recipe` with 0
-    records.
+  - Checkpoint: `/oooo sync status` lists `profession` with 0 records.
   - Host tests: `Tests/sync_profdata.lua`: a round trip of the packing; the
     union; `validate` refuses a wrong length, a character outside base 94,
-    a descending or repeated id, an unknown field, a fraction, a count of
-    0, 13 reagents, unsorted reagents, a key without profession id; the
+    a descending or repeated id, an unknown field, a fraction, a level of
+    0, a key without profession id; the
     owner rule on the joined key (a name with a space); the large record.
   - Done when: the tests pass. Host only by design.
 
@@ -1226,40 +1215,38 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
       behind a small interface (`readProfessions()`, `readRecipes()`,
       `isOwnWindow()`), so that the rest runs on the host with a stub.
     - `Scan`: for each profession build the payload (level, the merged
-      recipe list; the specialization is deferred, 5.4) and `Put` it; then write the `recipe` records
-      by the rule of 5.4. A scan of many recipes is cut across frames with
-      `C_Timer.After`.
-    - When it runs: after the guild check (first start: this writes all
-      that is readable without a window), and on the window events that
-      step 12.1 found valid, at most once in 2 seconds. Only while the
-      guild state is `in`; one event frame with a handler table.
+      recipe list; the specialization is deferred, 5.4) and `Put` it. A
+      scan of many recipes is cut across frames with `C_Timer.After`.
+    - When it runs: the list of professions after the guild check and on
+      its events (5.4); the recipes on `TRADE_SKILL_SHOW`,
+      `TRADE_SKILL_LIST_UPDATE`, and `TRADE_SKILL_DATA_SOURCE_CHANGED`
+      while `IsTradeSkillReady()` is true, at most once in 2 seconds. Only
+      while the guild state is `in`; one event frame with a handler table.
     - The hint "Open your <profession> window once ...", once per session
       and only for a profession with recipes that has no recipe list yet.
-      It is left out when step 12.1 shows that no window is needed.
+      Which professions have recipes: the six crafting ones, Cooking,
+      First Aid, and Mining.
     - `/oooo sync prof`: the stored professions of the own character with
       their recipe counts, and what the last scan did.
   - Checkpoint: on a character with two professions, after opening both
     windows, `/oooo sync prof` shows both with the recipe counts of the
     game. A second account shows the same records after its sync
-    (`/oooo sync status`: equal versions of `profession` and `recipe`).
+    (`/oooo sync status`: equal versions of `profession`).
     The largest record arrived whole; this is the first multipart message
     seen in the client, so record it in AGENTS.md.
   - Host tests: `Tests/sync_profscan.lua` with a stub reader: a first scan
     writes the records; an equal scan writes nothing; a partial scan
     removes nothing; a scan of a foreign window writes nothing; a secret
-    value ends the scan; the `recipe` record is written when absent or
-    different, and not when equal; two replicas that know one recipe end
-    with one record and no further write.
+    value ends the scan; a recipe that is not `learned` is left out.
   - Done when: the client check is recorded, with no Lua error and no
     "Interface action failed" entry.
 
 - **12.4 Changes: new recipe, unlearning** (**CLIENT**)
   - Substeps
-    - Add a learned recipe on its event (5.4), with its `recipe` record
-      when the client gives the facts without a window.
+    - Add a learned recipe on its event (5.4).
     - Deferred with the specialization (5.4): read it again when the known
       spells change, at most once in 5 seconds.
-    - Read the list of professions on the skill line event; delete the
+    - Read the list of professions on its events (5.4); delete the
       records of an unlearned profession by the two-reads rule of 5.4.
   - Checkpoint: learn a recipe from a trainer: the count in
     `/oooo sync prof` rises by one without a `/reload`, and the second
@@ -1280,8 +1267,11 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
       runs on the host.
     - `db.global.professionNames` with the migration to `SCHEMA_VERSION` 4
       in `Database.lua`.
-    - `Wanted()`: the ids of the two tables (items made, reagents, spells
-      of recipes without an item) without an entry or with an expired one;
+    - `Src\Professions\ProfessionRecipes.lua` (`ns.professionRecipes`):
+      `Facts(recipeId)` of 5.4, with the client behind a small interface
+      so that the file runs on the host.
+    - `Wanted()`: the items made and the reagents of the recipes that the
+      table `profession` lists, without an entry or with an expired one;
       new ids from `OnRecordChanged`.
     - The slow pace and the fast pace (`SetFast(on)`), the direct answer
       before a request, the expiry of 60 to 90 days, the failed entry of 1
@@ -1303,7 +1293,8 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
     no request; the expiry times lie between 60 and 90 days and differ; an
     expired entry keeps its name and is wanted; a failed id is not asked
     again before its expiry; another client language has its own names;
-    an id that leaves both tables is removed at the next login.
+    an id that no listed recipe uses any more is removed at the next
+    login; `Facts` of an id that is no recipe gives nil.
   - Done when: the client check is recorded.
 
 - **12.6 Search model**
@@ -1326,8 +1317,8 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
     search by recipe name, by material, by both; letter case; a text with
     pattern characters (`%`, `(`, `-`) is taken literally; fewer than 2
     characters give nothing; a name that arrives later makes its recipe
-    findable; a recipe without a `recipe` record is found by its spell
-    name and by no material; a tombstone and an unlearned profession leave
+    findable; a recipe id that the client does not know is found by no
+    text; a tombstone and an unlearned profession leave
     the index; a new remote record enters it; the cut at 200.
   - Done when: the tests pass. Host only by design.
 
@@ -1367,7 +1358,8 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
   their own characters only, and anyone may pass them on (5.2). 
 - Professions are part of this plan (2026-11-19). The shared data holds ids
   and counts only; every client names them in its own language. A recipe is
-  named by its craft spell id, with the item id in the table `recipe` (5.4).
+  named by its craft spell id; its item and its reagents come from each
+  client, not from the shared data (5.4, no table `recipe`).
   A scan only adds recipes; unlearning the profession deletes its record.
 - Names of items and spells are kept in a local cache per client language
   for 60 to 90 days, with a random expiry. Missing names are requested
