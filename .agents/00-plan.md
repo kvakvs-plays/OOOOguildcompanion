@@ -1084,104 +1084,18 @@ section; change the section and the later steps when its results differ from
 what they assume. The test files are named `Tests/sync_prof*.lua` so that
 `run_all.lua` finds them.
 
-- **12.1 Probe of the profession API** (**CLIENT**)
-  - Substeps
-    - Add the probe `professions` (`/oooo sync probe professions`) in
-      `Src\Professions\ProfessionScan.lua`. It only reads and reports.
-    - Existence of functions: `GetProfessions`, `GetProfessionInfo`;
-      in `C_TradeSkillUI`: `GetAllRecipeIDs`, `GetRecipeInfo`,
-      `GetRecipeSchematic`, `GetRecipeItemLink`, `GetBaseProfessionInfo`,
-      `GetChildProfessionInfo`, `GetProfessionInfoBySkillLineID`,
-      `GetTradeSkillDisplayName`, `IsTradeSkillReady`,
-      `IsTradeSkillLinked`, `IsTradeSkillGuild`, `IsNPCCrafting`,
-      `OpenTradeSkill`; the Classic ones `GetNumTradeSkills`,
-      `GetTradeSkillInfo`, `GetTradeSkillItemLink`,
-      `GetTradeSkillRecipeLink`, `GetTradeSkillNumReagents`,
-      `GetTradeSkillReagentItemLink`, `GetNumCrafts`, `GetCraftInfo`;
-      for names and known spells `IsPlayerSpell`, `C_SpellBook.IsSpellKnown`,
-      `C_Spell.GetSpellName`, `C_Item.GetItemNameByID`,
-      `C_Item.RequestLoadItemDataByID`. These names come from Retail and
-      Classic; none is confirmed on Forever.
-    - Validity of events (`C_EventUtils.IsEventValid`): `TRADE_SKILL_SHOW`,
-      `TRADE_SKILL_CLOSE`, `TRADE_SKILL_LIST_UPDATE`,
-      `TRADE_SKILL_DATA_SOURCE_CHANGED`, `NEW_RECIPE_LEARNED`,
-      `SKILL_LINES_CHANGED`, `SPELLS_CHANGED`, `CRAFT_SHOW`, `CRAFT_UPDATE`,
-      `GET_ITEM_INFO_RECEIVED`, `ITEM_DATA_LOAD_RESULT`.
-    - The list of professions: what it returns for the character (skill
-      line ids, levels), and how many seconds after login it is first
-      filled.
-    - The recipes: the number of recipes and of learned ones, the id of the
-      first, its item, and its reagents. Run the probe three times: after a
-      login before any profession window was open, with the window open,
-      and after it was closed. Run it also with a filter set in the window
-      and with a linked profession of another player open.
-    - A recipe that the character does not know, of a profession that it
-      does not have (the id is an argument of the probe): does the client
-      give its item, its reagents, and its name?
-    - A specialization: `IsPlayerSpell` and `C_SpellBook.IsSpellKnown` for
-      the ids of 5.4, on a character that has one.
-    - `string.lower` of a text with a Cyrillic letter and an umlaut.
-    - Report which values were secret.
-    - A second probe, `nameload <count>`, for the name cache (5.4). It
-      takes `count` item ids that the session has not touched (from a
-      fixed list of Classic trade goods and crafted items in the probe),
-      asks the client for each name directly, requests the load of those
-      without a name all at once, and reports: how many answered at once,
-      how many loads succeeded and failed, the time to the first and to
-      the last answer, and which event carried the answers. Run it with
-      50, 200, and 800 right after a client restart, on a test account:
-      the larger runs may disconnect it, and that is the result wanted.
-      The same for 50 spell ids with the spell functions.
-  - State (2026-11-19): the runs `before`, `open`, `closed`, `filter`,
-    `login`, `fresh`, and `nameload` are done on build 70959; their results are in
-    AGENTS.md and in section 5.4. The table `recipe` is dropped. Left:
-    - Read the stored report `professions:fresh` (after a `/reload`):
-      does `GetProfessionInfo(index)` give the levels in a fresh session?
-    - Done: the `nameload` runs (50, 200, 800 items; 50 spells); the
-      saved name cache and its paces are dropped (5.4).
-    - Deferred: `professions spec` on a character with a specialization,
-      and with it the field `s` in the scan and in the window.
-    - Not possible: the run `linked`; profession links cannot be clicked.
-    - Each run of `professions <label>` keeps its own report
-      `professions:<label>`. Runs to do: `professions before` (after a
-      login, no window opened yet), `professions open`, `professions
-      closed`, `professions filter`, `professions linked`; recipe ids after
-      the label replace the three default ids (2330, 2660, 18560).
-    - `professions login` arms a watch; after the next login (not
-      `/reload`) the report `professions:login` says after how many seconds
-      the list was first filled and which events came.
-    - `nameload <count>` and `nameload 50 spells` take their ids from a
-      range of Classic ids (items 2300 to 24000, spells from 2000), not from
-      a list of trade goods; `C_Item.DoesItemExistByID` filters them when it
-      exists. The cursor is saved (`db.global.probeCursor`), so no run
-      repeats the ids of an earlier one. Reports: `nameload:items50`, ...
-  - Checkpoint: the reports of the three runs, and of the `nameload` runs,
-    are in `db.global.probeResults`.
-  - Host tests: none; the probe has no computing part.
-  - Done when: the results are in AGENTS.md under "Checked on the release
-    client", the confirmed globals are in `.luacheckrc`, and section 5.4
-    says which API the scan uses, whether the window must be open, whether
-    the table `recipe` stays (it does not), how foreign data is told apart,
-    and how names are loaded (no saved cache).
-
-- **12.2 The table `profession`**
-  - Substeps
-    - `Src\Professions\ProfessionData.lua` (`ns.professionData`):
-      `packRecipes(ids)` and `unpackRecipes(text)`, `mergeRecipes(text,
-      ids)` (the union, for "a scan only adds"), `key(name, professionId)`
-      and `parseKey(key)`, and `validate` with every check of 5.4.
-    - Register the table at file scope. `validate` also checks the key: a
-      name, `:`, and a profession id in digits.
-    - Check the engine with a record near the batch size: `splitBatches`
-      with a record of 1900 bytes and one over 2000, and a pull and a push
-      of both between two replicas.
-  - Checkpoint: `/oooo sync status` lists `profession` with 0 records.
-  - Host tests: `Tests/sync_profdata.lua`: a round trip of the packing; the
-    union; `validate` refuses a wrong length, a character outside base 94,
-    a descending or repeated id, an unknown field, a fraction, a level of
-    0, a key without profession id; the
-    owner rule on the joined key (a name with a space); the large record.
-  - Done when: the tests pass. Host only by design.
+- **Left from 12.1** (the probes of the profession API; finished otherwise)
+  - The stored report `professions:fresh` is not in the saved variables
+    (looked for on 2026-11-19: only `before`, `open`, `closed`, `filter`,
+    and `login` are there). Whether `GetProfessionInfo(index)` gives the
+    levels in a fresh session is therefore answered by the client check of
+    step 12.3, which starts with a fresh login. The scan is safe either
+    way: a level of 0 gives no record (`validate` refuses it).
+  - Deferred: `/oooo sync probe professions spec` on a character with a
+    specialization, and with it the field `s` in the scan and in the
+    window.
+  - The probes `professions` and `nameload` are in
+    `Src\Professions\ProfessionProbe.lua`.
 
 - **12.3 Scan** (**CLIENT**)
   - Substeps

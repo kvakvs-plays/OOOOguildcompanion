@@ -26,7 +26,7 @@ local addonName, ns = ...
 ---@field changelogSeen string|nil The addon version whose "What's new" window the user has opened
 ---@field schemaVersion integer|nil Version of the saved variables layout, for migrations
 ---@field probeResults table<string, OOOOProbeResult>|nil Probe name -> last result, written by SyncProbe.lua
----@field probeCursor table<string, integer>|nil Next unused id per kind of the probe `nameload` (ProfessionScan.lua)
+---@field probeCursor table<string, integer>|nil Next unused id per kind of the probe `nameload` (ProfessionProbe.lua)
 ---@field professionLoginWatch boolean|nil true when `/oooo sync probe professions login` waits for the next login
 ---@field sync OOOOSyncData|nil The shared database; created by the migration to layout 2 (Database.lua)
 ---@field mentions OOOOMentionStore|nil The list of mentions; created by the migration to layout 3
@@ -70,6 +70,8 @@ local addonName, ns = ...
 ---@field mentions OOOOMentions
 ---@field chatHistory OOOOChatHistory
 ---@field chatHistoryWindow OOOOChatHistoryWindow
+---@field professionData OOOOProfessionData
+---@field professionProbe OOOOProfessionProbe
 ---@field version string|nil Version of this release (Changelog/ChangelogData.lua, generated)
 ---@field changelog OOOOChangelogRelease[]|nil The release notes, newest first (the same file)
 ---@field changelogWindow OOOOChangelogWindow
@@ -189,7 +191,7 @@ function addon:OnEnable()
   end
   ns.guildState:Start()
   -- Does nothing unless the probe `professions login` was armed
-  ns.professionScan.StartLoginWatch()
+  ns.professionProbe.StartLoginWatch()
 end
 
 ---Handles `/oooo <command>`: the first word selects a handler in `ns.slash` (Slash.lua).

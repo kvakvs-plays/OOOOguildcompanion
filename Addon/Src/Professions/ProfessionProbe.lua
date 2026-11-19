@@ -1,7 +1,7 @@
 local addonName, ns = ...
 
--- Probes of the profession API (.agents/00-plan.md, step 12.1). They only read and report; the scan of
--- step 12.3 comes into this file when the probes have shown which API Forever has.
+-- Probes of the profession API (.agents/00-plan.md, step 12.1). They only read and report; the scan itself
+-- is in ProfessionScan.lua.
 --
 --   /oooo sync probe professions [label] [recipe id ...]   one report per label, see `professions` below
 --   /oooo sync probe professions login                      measure at the next login when the list is filled
@@ -13,9 +13,9 @@ local addonName, ns = ...
 local probe = ns.syncProbe
 local lookup, isSecret = probe.lookup, probe.isSecret
 
----@class OOOOProfessionScan
+---@class OOOOProfessionProbe
 local scan = {}
-ns.professionScan = scan
+ns.professionProbe = scan
 
 --------------------------------------------------------------------------------
 -- What is probed. The names come from Retail and Classic.

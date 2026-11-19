@@ -116,3 +116,13 @@ records) are in the git history of this file, before 2026-11-19.
   checked in the client.
 - **11, left to daily play**: `lastOnline` at logout, loading older lines,
   link tooltips, Escape, the kept position, no repeated notice.
+
+## Stage 12. Professions
+
+- **12.1 Probe of the profession API**: the probes `professions` and
+  `nameload` (build 70959); the results are in AGENTS.md and in section 5.4.
+  The table `recipe` and the saved name cache are dropped.
+- **12.2 The table `profession`**: `Src/Professions/ProfessionData.lua`
+  (`packRecipes`, `unpackRecipes`, `mergeRecipes`, `key`, `parseKey`,
+  `validate`); a push and a pull carry a record near and over the batch
+  size (`Tests/sync_profdata.lua`). Host only by design.
