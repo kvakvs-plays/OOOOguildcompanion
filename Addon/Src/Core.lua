@@ -21,6 +21,7 @@ local addonName, ns = ...
 ---@field mentions OOOOMentionSettings
 ---@field chatHistory OOOOChatHistorySettings
 ---@field changelog OOOOChangelogSettings
+---@field professions OOOOProfessionWindowSettings
 
 ---@class OOOOGlobalSettings
 ---@field changelogSeen string|nil The addon version whose "What's new" window the user has opened
@@ -76,6 +77,7 @@ local addonName, ns = ...
 ---@field professionRecipes OOOOProfessionRecipes
 ---@field professionNames OOOOProfessionNamesModule
 ---@field professionSearch OOOOProfessionSearchModule
+---@field professionWindow OOOOProfessionWindow
 ---@field version string|nil Version of this release (Changelog/ChangelogData.lua, generated)
 ---@field changelog OOOOChangelogRelease[]|nil The release notes, newest first (the same file)
 ---@field changelogWindow OOOOChangelogWindow
@@ -99,6 +101,7 @@ local defaults = {
     },
     chatHistory = {},
     changelog = {},
+    professions = {},
   },
 }
 

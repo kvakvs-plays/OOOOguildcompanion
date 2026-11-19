@@ -10,7 +10,7 @@ moved, or removed.
 | `AGENTS.md` | Rules for agents: target client, API facts, style, checks. |
 | `CHANGELOG.md` | User-facing changes of each release, newest first; the source of the "What's new" window, in a fixed form (see `AGENTS.md`). |
 | `.luacheckrc` | luacheck config for the whole repository: `lua51+wow` for `Addon`, `lua54` for `Tests`; `Addon/Ace3` excluded. |
-| `.agents/00-plan.md` | Plan of the shared guild database and of the features on it: open steps (stage 12: professions). |
+| `.agents/00-plan.md` | Plan of the shared guild database and of the features on it: open steps (stage 12: professions, the client checks). |
 | `.agents/00-finished.md` | Finished steps of that plan, compacted. |
 | `.agents/project-map.md` | This file. |
 | `install.bat.txt`, `release.bat.txt` | Templates of the local, git-ignored `install.bat` and `release.bat`. |
@@ -71,6 +71,7 @@ moved, or removed.
 | `Professions/ProfessionRecipes.lua` | `ns.professionRecipes`: `Facts(recipeId)` gives the name, icon, item, count, and reagents of a recipe from the own client (`client`: `info`, `schematic`), kept for the session; nil for an id that is no recipe. Host-loadable. |
 | `Professions/ProfessionNames.lua` | `ns.professionNames`: item names for the session. `new(parts)` gives a loader: `Name(itemId)`, `Prepare(itemIds)`, `OnAnswer`, `Progress`, `StatusLine`, the callback `OnNamesChanged`; requests wait 10 s after the login and go out 40 per 0.2 s (`Pump`), a lost one fails after `TIMEOUT`. `Start()` makes the loader of the game (`current`). Host-loadable; needs CallbackHandler-1.0. |
 | `Professions/ProfessionSearch.lua` | `ns.professionSearch`: the model of the window "Guild professions", without frames. `new(parts)` gives a model: `Open`, `Close`, the index `recipe id -> record keys` (`SetRecord`, `OnRecordChanged`, `onChanged`), `Search(recipeText, materialText)` (rows and the total), `Detail(recipeId)`, `Crafters`, `PrepareNames`, `RecipeCount`; `needle`, `MAX_ROWS`. Host-loadable. |
+| `Professions/ProfessionWindow.lua` | `ns.professionWindow`: the frame "Guild professions" (`/oooo prof`): `Create`, `Open`, `Toggle`, `RunSearch`, `ScheduleSearch`, `UpdateRows`, `UpdateStatus`, `UpdateDetail`, `OnRowClick`, `ProfessionName`; position in `db.profile.professions`. Game only. |
 | `Professions/ProfessionProbe.lua` | `ns.professionProbe`: the probes of plan step 12.1. `professions [label]` (existence of the profession API, the list of professions, the window, the recipes, specializations, `lowerVerdict`; one report `professions:<label>` per label), `StartLoginWatch` (armed by `professions login`, called by `Core.lua`), and `nameload <count> [spells]` (many name requests at once; cursor in `db.global.probeCursor`); `dump`. Host-loadable. |
 | `Changelog/ChangelogData.lua` | Generated and git-ignored: `ns.version` and `ns.changelog` (the release notes), written by `scripts/release_tool.py` from `CHANGELOG.md`. |
 | `Changelog/ChangelogWindow.lua` | `ns.changelogWindow`: the frame "What's new" (`/oooo new`): `Create`, `Open`, `Toggle`, `Select`, `UpdateList`, `RenderPage`; position in `db.profile.changelog`; the line after the guild check with the link (`noticeText`, `db.global.changelogSeen`). Game only. |

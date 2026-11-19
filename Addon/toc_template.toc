@@ -53,6 +53,7 @@ Src\Professions\ProfessionScan.lua
 Src\Professions\ProfessionRecipes.lua
 Src\Professions\ProfessionNames.lua
 Src\Professions\ProfessionSearch.lua
+Src\Professions\ProfessionWindow.lua
 
 Src\Changelog\ChangelogData.lua
 Src\Changelog\ChangelogWindow.lua

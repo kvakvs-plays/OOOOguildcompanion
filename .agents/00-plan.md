@@ -6,7 +6,8 @@ in the background, when the game is quiet.
 
 Status: stages 0 to 8 are finished (`00-finished.md`). Stage 9
 is postponed. Stages 10 and 11 are finished. Stage 12 (professions: the
-tables of 5.4, the scan, and the search window) is open. The probes of stage 1
+table of 5.4, the scan, and the search window) is written; its client checks
+are open. The probes of stage 1
 ran on the release client; their results are in AGENTS.md under "Forever API
 Rules" and in the sections below.
 
@@ -1149,28 +1150,20 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
   - Done when: the client check is recorded.
 
 - **12.7 Window "Guild professions"** (**CLIENT**)
-  - Substeps
-    - `Src\Professions\ProfessionWindow.lua` (`ns.professionWindow`): the
-      frame of 5.4 with `BackdropTemplate`, the two edit boxes, the result
-      rows (own rows with a mouse-wheel offset, like the mention lists of
-      the chat history window), the detail part, the line "Loading
-      names: ...", Escape closes it (`UISpecialFrames`), the position in
-      `db.profile.professions`. Showing the window prepares the item
-      names of all listed recipes (`ns.professionNames:Prepare`).
-    - `/oooo prof` opens and closes it.
-    - The item tooltip on hover; shift-click through
-      `HandleModifiedItemClick`.
-    - The window can open in combat: it is no protected frame and calls
-      no protected function.
-    - An entry in `CHANGELOG.md`, and the files in `toc_template.toc` and
-      the project map.
+  - State (2026-11-19): the code is done (`ProfessionWindow.lua`,
+    `/oooo prof`, the entry in `CHANGELOG.md` under 2026.11.3); nothing of
+    it ran in the client yet. Not checked on Forever: `InputBoxTemplate`
+    outside AceGUI, `GameTooltip:SetItemByID` and `SetSpellByID` (looked up
+    before use), and `C_TradeSkillUI.GetRecipeItemLink` for the shift-click
+    of a recipe without an item.
   - Checkpoint: with the records of two accounts: a part of an item name
     in "Recipe" lists the recipe with both names; a material in
     "Material" lists the recipes that use it; both boxes narrow the list;
     a click shows reagents and crafters; the online member is listed
-    first. On a client of another language, if a member has one, the same
-    recipe is found by its name in that language.
-  - Host tests: none new; the model is tested in 12.6.
+    first; hovering shows the tooltip; a shift-click puts the link into
+    the chat box; Escape closes the window; the position is kept. On a
+    client of another language, if a member has one, the same recipe is
+    found by its name in that language.
   - Done when: the client check is recorded, with no Lua error and no
     "Interface action failed" entry.
 
