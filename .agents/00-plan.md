@@ -461,9 +461,8 @@ own language when it shows or searches them.
 - **Profession id.** The skill line id of the profession (Classic data:
   164 Blacksmithing, 165 Leatherworking, 171 Alchemy, 197 Tailoring,
   202 Engineering, 333 Enchanting, 185 Cooking, 129 First Aid, 186 Mining,
-  182 Herbalism, 393 Skinning, 356 Fishing). The probe of step 12.1 confirms
-  the ids on Forever and tells whether Forever has parent and child skill
-  lines like Retail; the key uses the parent.
+  182 Herbalism, 393 Skinning, 356 Fishing). Confirmed on Forever by step
+  12.1; there are no child skill lines.
 
 ```lua
 ns.sync:RegisterTable({
@@ -478,7 +477,7 @@ ns.sync:RegisterTable({
 -- payload
 { l = 275,              -- skill level, 1 to 450 (the range is wide on purpose)
   m = 300,              -- highest level of the learned rank
-  s = 9788,             -- specialization spell id; absent when none
+  s = 9788,             -- specialization spell id; absent when none (deferred: not written yet)
   r = "....",           -- the known recipe ids, packed (below); absent for a profession without recipes
 }
 
@@ -515,13 +514,15 @@ ns.sync:RegisterTable({
   every 15 minutes per crafter. If this proves too much traffic, the level
   moves to a record of its own.
 - **Why the table `recipe`.** To search by material, a replica must know the
-  reagents of recipes that its own character does not know. Whether the
-  client gives those for any recipe id, without the profession and without
-  an open window, is not known (step 12.1). The table makes the search
-  independent of that: a member who knows a recipe writes its facts once,
-  and they are the same for everybody. If the probe shows that the client
-  answers for every recipe, the table is dropped and the search asks the
-  client.
+  reagents of recipes that its own character does not know. The table makes
+  the search independent of what the client gives: a member who knows a
+  recipe writes its facts once, and they are the same for everybody.
+  - Result of step 12.1: the client gave the name, the item, and the
+    reagents of recipes of professions that the character lacks (2660,
+    18560), with the window closed, but in a session in which a profession
+    window had been open. The run right after a login is still to do
+    (`professions fresh`). If the client answers there too, the table is
+    dropped and the search asks the client; until then the table stays.
   - Rule of writing: after a scan, a replica writes the `recipe` record of
     each recipe that it knows when the table has none or one that differs
     from what its client says. The reagents are sorted by item id, so two
@@ -536,21 +537,32 @@ ns.sync:RegisterTable({
   - Size, assumed: 1500 recipes at 60 bytes are 90 KB for the whole table.
 
 **Scan.** The scanner reads the professions of the logged-in character and
-writes its records. The API is not known yet: Forever has the Retail UI
-architecture, so `C_TradeSkillUI` and `GetProfessions` are expected, and the
-Classic functions (`GetNumTradeSkills`, the `Craft` functions of Enchanting)
-may be gone. Step 12.1 finds out. The rules below hold for either API.
+writes its records. It uses the Retail API `C_TradeSkillUI`; the Classic
+functions (`GetNumTradeSkills`, the `Craft` functions) do not exist on
+Forever (step 12.1; the facts are in AGENTS.md).
 
-- **The list of professions** (which, level, specialization) is expected to
-  be readable without a window. It is read after the guild check and on
-  every change of the skill lines.
-- **The recipes** may be readable only while the profession window is open,
-  or only after it was open once in the session (Retail behaves like that).
-  The scanner tries without the window first. Where that gives nothing, it
-  scans whenever the user opens the window, and until a profession with
-  recipes has its first record the addon prints once per session: "Open
-  your <profession> window once, so that the guild can see what you craft."
-  The profession name comes from the client, in the user's language.
+- **The list of professions** (which, level) is readable without a window:
+  `C_TradeSkillUI.GetProfessionInfoBySkillLineID` for each of the 12 ids; a
+  `skillLevel` above 0 means that the character has the profession. It is
+  read after the guild check (it was filled 1.5 seconds after login) and on
+  `SKILL_LINES_CHANGED`.
+- **The recipes** are readable only with the profession window open. After
+  a login `GetAllRecipeIDs()` gives nothing. With a window open it gives
+  the recipes of that profession; after the window closes it still gives
+  them, but the client no longer says which profession they belong to. The
+  scanner therefore scans only while `IsTradeSkillReady()` is true: the
+  profession is `GetBaseProfessionInfo().professionID`, and the known
+  recipes are the ids of `GetAllRecipeIDs()` whose `GetRecipeInfo(id)` has
+  `learned == true` and `recipeID == id`. A filter in the window does not
+  change `GetAllRecipeIDs()`. It scans on `TRADE_SKILL_SHOW`,
+  `TRADE_SKILL_LIST_UPDATE`, and `TRADE_SKILL_DATA_SOURCE_CHANGED`. Until a
+  profession with recipes has its first record the addon prints once per
+  session: "Open your <profession> window once, so that the guild can see
+  what you craft." The profession name comes from the client
+  (`professionName`), in the user's language.
+  - The facts of a recipe come from `GetRecipeSchematic(id, false)`:
+    `outputItemID`, `quantityMin`, and per entry of `reagentSlotSchematics`
+    `reagents[1].itemID` and `quantityRequired`.
   - The addon does not open the window itself: opening it from code is not
     known to be safe (taint, protected call), and a window that opens by
     itself at login is unwanted.
@@ -561,13 +573,20 @@ may be gone. Step 12.1 finds out. The rules below hold for either API.
   goes when the profession is unlearned.
 - **Never scan foreign data.** The window can show the profession of another
   player (a chat link), of the guild, or of an NPC. The scanner writes only
-  when the client says that the open profession is the character's own, and
-  when its skill line is one of the character's professions. Without a way
-  to tell, the scan of that API is not built.
+  when `IsTradeSkillLinked()`, `IsTradeSkillGuild()`, and `IsNPCCrafting()`
+  are all false, and when the skill line of the window is one of the
+  character's professions. Each recipe must also be `learned`.
+  - Step 12.1 could not open foreign data: profession links in chat cannot
+    be clicked on Forever. The three functions exist and are false for the
+    own window; their answer for foreign data is unchecked.
 - **New recipe.** A learned recipe is added on the event that the client
   sends for it (Retail: `NEW_RECIPE_LEARNED` with the recipe id), without a
   window. If no such event is valid, the next scan finds it.
-- **Specialization** (Armorsmith, Weaponsmith and its three, Gnomish and
+- **Specialization** is deferred (2026-11-19): no character with a
+  specialization was at hand for step 12.1. The field `s` stays in the
+  schema and `validate` accepts it, but the scan does not write it and the
+  window does not show it until the check is done. The design, for then:
+  (Armorsmith, Weaponsmith and its three, Gnomish and
   Goblin Engineering, the three of Leatherworking). Each is a spell that a
   quest teaches. The code holds the list of these spell ids per profession
   (Classic data: 9788, 9787, 17039, 17040, 17041, 20219, 20222, 10656,
@@ -607,10 +626,9 @@ in `db.profile.professions`.
   text. With both filled, a recipe must match both. The match is a plain
   substring (no patterns), without regard to letter case, in the language
   of the client.
-  - Letter case of non-ASCII letters: `string.lower` of Lua 5.1 changes
-    only ASCII. Whether the client's version handles UTF-8 (Cyrillic,
-    umlauts) is checked in step 12.1; if not, such letters match only in
-    the case that was typed.
+  - Letter case: `string.lower` of the client handles UTF-8 (Cyrillic,
+    umlauts; step 12.1), so it serves for all letters. On the host it
+    changes only ASCII, so the host tests of the search use ASCII.
   - A search starts 0.3 seconds after the last key and needs 2 characters.
     With both boxes empty the list is empty and shows a hint.
 - **Result list.** One row per recipe that at least one member knows: the
@@ -620,7 +638,7 @@ in `db.profile.professions`.
   says so.
 - **Detail.** A click on a row shows on the right the reagents with their
   counts and all members who know the recipe, online first, each with the
-  skill level and the specialization. Hovering the recipe shows the item
+  skill level (the specialization is deferred, see the scan). Hovering the recipe shows the item
   tooltip. A shift-click puts the item link into the chat box through
   `HandleModifiedItemClick`. The window does not whisper: opening a chat
   from addon code is a protected call (AGENTS.md).
@@ -1146,8 +1164,18 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
       50, 200, and 800 right after a client restart, on a test account:
       the larger runs may disconnect it, and that is the result wanted.
       The same for 50 spell ids with the spell functions.
-  - State (2026-11-19): the probes are written and ran on the host with
-    stubs only. Left: the runs in the client, and "Done when" below.
+  - State (2026-11-19): the runs `before`, `open`, `closed`, `filter`, and
+    `login` are done on build 70959; their results are in AGENTS.md and in
+    section 5.4. Left:
+    - `professions fresh` right after a login, before any profession
+      window: does the client give the facts of a recipe of a profession
+      that the character lacks? It decides whether the table `recipe`
+      stays.
+    - The `nameload` runs (50, 200, 800 items; 50 spells). Until then the
+      numbers of the fast pace stay as guessed.
+    - Deferred: `professions spec` on a character with a specialization,
+      and with it the field `s` in the scan and in the window.
+    - Not possible: the run `linked`; profession links cannot be clicked.
     - Each run of `professions <label>` keeps its own report
       `professions:<label>`. Runs to do: `professions before` (after a
       login, no window opened yet), `professions open`, `professions
@@ -1197,8 +1225,8 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
     - `ProfessionScan.lua` (`ns.professionScan`): the reader of the client
       behind a small interface (`readProfessions()`, `readRecipes()`,
       `isOwnWindow()`), so that the rest runs on the host with a stub.
-    - `Scan`: for each profession build the payload (level, specialization,
-      the merged recipe list) and `Put` it; then write the `recipe` records
+    - `Scan`: for each profession build the payload (level, the merged
+      recipe list; the specialization is deferred, 5.4) and `Put` it; then write the `recipe` records
       by the rule of 5.4. A scan of many recipes is cut across frames with
       `C_Timer.After`.
     - When it runs: after the guild check (first start: this writes all
@@ -1225,25 +1253,22 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
   - Done when: the client check is recorded, with no Lua error and no
     "Interface action failed" entry.
 
-- **12.4 Changes: new recipe, specialization, unlearning** (**CLIENT**)
+- **12.4 Changes: new recipe, unlearning** (**CLIENT**)
   - Substeps
     - Add a learned recipe on its event (5.4), with its `recipe` record
       when the client gives the facts without a window.
-    - Read the specialization again when the known spells change, at most
-      once in 5 seconds.
+    - Deferred with the specialization (5.4): read it again when the known
+      spells change, at most once in 5 seconds.
     - Read the list of professions on the skill line event; delete the
       records of an unlearned profession by the two-reads rule of 5.4.
   - Checkpoint: learn a recipe from a trainer: the count in
     `/oooo sync prof` rises by one without a `/reload`, and the second
     account gets it. Unlearn a profession on a test character: its record
-    is gone on both accounts after the sync. The specialization is checked
-    when a character of the guild has one; until then it is left to daily
-    play.
+    is gone on both accounts after the sync.
   - Host tests: in `Tests/sync_profscan.lua`: the new-recipe event adds one
     id; an empty list right after login deletes nothing; one read without
     the profession deletes nothing, the second one deletes; a profession
-    that is learned again starts with an empty list; a specialization that
-    appears changes the record once.
+    that is learned again starts with an empty list.
   - Done when: the client check is recorded.
 
 - **12.5 Name cache** (**CLIENT**)
@@ -1293,7 +1318,7 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
       names, each with the recipe id, the item, the profession, and the
       crafters (online first, by the roster cache of `ns.guildState`),
       cut at 200 with a flag. `Detail(recipeId)`: reagents and crafters
-      with level and specialization.
+      with level.
     - The lower-case function is one local helper, so that the result of
       step 12.1 on UTF-8 changes one place.
   - Checkpoint: none in the game; the window of 12.7 shows it.

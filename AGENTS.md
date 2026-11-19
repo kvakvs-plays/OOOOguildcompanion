@@ -228,6 +228,70 @@ may be fixed there. Test a claim on the release client before relying on it.
     gets the owner, the link data (`addon:OOOOguildcompanion:probe`), the
     whole link text with its colour code, the button (`LeftButton`), and the
     chat frame. Checked with `/oooo sync probe chatlink`.
+  - Professions (November 19, 2026, build 70959, `/oooo sync probe
+    professions`). Forever has the Retail profession API. These exist:
+    `GetProfessions`, `GetProfessionInfo`, `IsPlayerSpell`, `IsSpellKnown`,
+    `C_SpellBook.IsSpellKnown`, `C_SpellBook.IsSpellInSpellBook`,
+    `C_Spell.GetSpellName`, `C_Spell.DoesSpellExist`,
+    `C_Spell.RequestLoadSpellData`, `C_Item.GetItemNameByID`,
+    `C_Item.DoesItemExistByID`, `C_Item.RequestLoadItemDataByID`,
+    `strcmputf8i`, `strlenutf8`, `debugprofilestop`, the frame
+    `ProfessionsFrame`, and in `C_TradeSkillUI`: `GetAllRecipeIDs`,
+    `GetFilteredRecipeIDs`, `GetRecipeInfo`, `GetRecipeSchematic`,
+    `GetRecipeItemLink`, `GetRecipeOutputItemData`, `GetBaseProfessionInfo`,
+    `GetChildProfessionInfo`, `GetProfessionInfoBySkillLineID`,
+    `GetAllProfessionTradeSkillLines`, `GetTradeSkillDisplayName`,
+    `IsTradeSkillReady`, `IsTradeSkillLinked`, `IsTradeSkillGuild`,
+    `IsNPCCrafting`, `OpenTradeSkill`.
+  - These are missing: `GetNumTradeSkills`, `GetTradeSkillInfo`,
+    `GetTradeSkillItemLink`, `GetTradeSkillRecipeLink`,
+    `GetTradeSkillNumReagents`, `GetTradeSkillReagentItemLink`,
+    `GetNumCrafts`, `GetCraftInfo`, and the frames `TradeSkillFrame` and
+    `CraftFrame`. The events `CRAFT_SHOW` and `CRAFT_UPDATE` are invalid.
+  - These events are valid: `TRADE_SKILL_SHOW`, `TRADE_SKILL_CLOSE`,
+    `TRADE_SKILL_LIST_UPDATE`, `TRADE_SKILL_DATA_SOURCE_CHANGED`,
+    `NEW_RECIPE_LEARNED`, `SKILL_LINES_CHANGED`, `SPELLS_CHANGED`,
+    `GET_ITEM_INFO_RECEIVED`, `ITEM_DATA_LOAD_RESULT`,
+    `SPELL_DATA_LOAD_RESULT`.
+  - Profession ids are the Classic skill line ids (164 Blacksmithing,
+    165 Leatherworking, 171 Alchemy, 197 Tailoring, 202 Engineering,
+    333 Enchanting, 185 Cooking, 129 First Aid, 186 Mining, 182 Herbalism,
+    393 Skinning, 356 Fishing).
+    `C_TradeSkillUI.GetProfessionInfoBySkillLineID(id)` always returns a
+    table (`professionID`, `professionName`, `skillLevel`, `maxSkillLevel`,
+    `isPrimaryProfession`); `skillLevel` and `maxSkillLevel` are 0 for a
+    profession that the character lacks. There are no child skill lines:
+    `GetChildProfessionInfo()` is empty and `expansionName` is `'Unknown'`.
+    This works without a profession window; it was first filled 1.5 seconds
+    after `PLAYER_LOGIN`. In the 60 seconds after a login `SPELLS_CHANGED`
+    came once and `SKILL_LINES_CHANGED` never.
+  - `GetProfessions()` returns indexes (`7, 9, 5, 8, 6`), and
+    `GetProfessionInfo(index)` returns the name, icon, level, maximum, and
+    as 7th value the skill line id.
+  - Recipes need the profession window. After a login
+    `C_TradeSkillUI.GetAllRecipeIDs()` gave nothing for 60 seconds. Once a
+    window was open it returns the recipes of the profession that was
+    opened last, also after the window is closed.
+    `GetBaseProfessionInfo()` names that profession only while the window
+    is open (`professionID` is 0 afterwards), and `IsTradeSkillReady()` is
+    true only then. A filter in the window changes only
+    `GetFilteredRecipeIDs()`, not `GetAllRecipeIDs()`.
+  - A recipe id is the craft spell id. `GetRecipeInfo(id)` gives `recipeID`,
+    `name`, `learned`, `icon`, `hyperlink`; `GetRecipeSchematic(id, false)`
+    gives `outputItemID`, `quantityMin`, `quantityMax`, and
+    `reagentSlotSchematics[i]` with `quantityRequired` and
+    `reagents[1].itemID`. Both also answered for recipes of professions
+    that the character lacks (2660, 18560), in a session in which a
+    profession window had been open; not yet checked right after a login.
+    For an id that is no recipe (2330) they return a table with
+    `recipeID = 0` and an empty name, not nil. Forever's own recipes have
+    ids above 1.2 million (1229737 Basic Campfire, in Cooking).
+  - `string.lower` handles UTF-8: `ÄÖÜ ПРИВЕТ Æ` gives `äöü привет æ`.
+  - No profession value was secret (out of combat, outside an instance).
+  - Profession links in chat cannot be clicked, so the window never showed
+    the profession of another player. `IsTradeSkillLinked()` returned
+    `false, nil`, and `IsTradeSkillGuild()` and `IsNPCCrafting()` false,
+    for the own window. How they answer for foreign data is not checked.
   - Not yet checked: addon messages in a raid group and in a raid instance
     (the raids unlock on December 9, 2026), and during a boss encounter.
 - If you are not sure that an API exists on Forever, say so and write a
