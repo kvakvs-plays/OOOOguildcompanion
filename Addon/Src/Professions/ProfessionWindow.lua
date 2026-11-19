@@ -60,8 +60,17 @@ local UNKNOWN_ICON = 134400
 local HINT = "Type a part of a recipe name, or of the name of a material,\nwith 2 letters or more."
 local ONLINE_COLOR, OFFLINE_COLOR, TITLE_COLOR = "|cffffffff", "|cff808080", "|cffffd100"
 ---Anchor points that a saved position may name
-local POINTS = { TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true, CENTER = true, RIGHT = true,
-  BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true }
+local POINTS = {
+  TOPLEFT = true,
+  TOP = true,
+  TOPRIGHT = true,
+  LEFT = true,
+  CENTER = true,
+  RIGHT = true,
+  BOTTOMLEFT = true,
+  BOTTOM = true,
+  BOTTOMRIGHT = true
+}
 
 ---Makes a text of another member safe to show: a character name comes from the key of a received record.
 ---@param text string
@@ -84,7 +93,7 @@ local function restorePosition(frame)
   local settings = ns.db.profile.professions
   frame:ClearAllPoints()
   if POINTS[settings.point] and POINTS[settings.relativePoint] and type(settings.x) == "number"
-    and type(settings.y) == "number" then
+      and type(settings.y) == "number" then
     frame:SetPoint(settings.point, UIParent, settings.relativePoint, settings.x, settings.y)
   else
     frame:SetPoint("CENTER")
@@ -211,7 +220,7 @@ function window:UpdateDetail()
   for index = 1, math.min(#detail.crafters, DETAIL_MEMBERS) do
     local crafter = detail.crafters[index]
     lines[#lines + 1] = "  " .. (crafter.online and ONLINE_COLOR or OFFLINE_COLOR) .. plain(crafter.name) .. "  "
-      .. crafter.level .. (crafter.online and "  (online)" or "") .. "|r"
+        .. "skill:" .. crafter.level .. (crafter.online and "  (online)" or "") .. "|r"
   end
   if #detail.crafters > DETAIL_MEMBERS then
     lines[#lines + 1] = OFFLINE_COLOR .. "  +" .. (#detail.crafters - DETAIL_MEMBERS) .. " more|r"

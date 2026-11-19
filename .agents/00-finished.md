@@ -129,3 +129,9 @@ records) are in the git history of this file, before 2026-11-19.
 - **12.6 Search model**: `Src/Professions/ProfessionSearch.lua` (the index
   `recipe id -> crafters`, `Search`, `Detail`, `PrepareNames`);
   `Tests/sync_profsearch.lua`. Host only by design.
+- **12.4 Changes: new recipe, unlearning**: `OnNewRecipe` and `CheckUnlearned`
+  in `ProfessionScan.lua`. Client check 2026-11-19 (said by the user):
+  learning, unlearning, and their sync to a second account work. Not
+  recorded: whether the line "learned:" said "added", so whether
+  `C_TradeSkillUI.GetTradeSkillLineForRecipe` exists on Forever is unknown.
+  The specialization stays deferred (5.4).

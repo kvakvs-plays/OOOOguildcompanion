@@ -1134,24 +1134,6 @@ what they assume. The test files are named `Tests/sync_prof*.lua` so that
   - Done when: the client check is recorded, with no Lua error and no
     "Interface action failed" entry.
 
-- **12.4 Changes: new recipe, unlearning** (**CLIENT**)
-  - State (2026-11-19): the code and the host tests are done (`OnNewRecipe`,
-    `CheckUnlearned`); the client check is open.
-  - A learned recipe comes with `NEW_RECIPE_LEARNED` and no window. Its
-    profession is asked from `C_TradeSkillUI.GetTradeSkillLineForRecipe`,
-    a Retail function that no probe has seen on Forever; the code uses it
-    only when it exists. Without it, or when it names no profession of the
-    character, the next scan of the window adds the recipe.
-  - Deferred with the specialization (5.4): read it again when the known
-    spells change.
-  - Checkpoint: learn a recipe from a trainer: the count in
-    `/oooo sync prof` rises by one without a `/reload`, and the line
-    "learned:" says "added" (if it says "its profession is not known", the
-    function above is missing or answers otherwise: note it in AGENTS.md).
-    The second account gets the recipe. Unlearn a profession on a test
-    character: its record is gone on both accounts after the sync.
-  - Done when: the client check is recorded.
-
 - **12.5 Recipe facts and item names** (**CLIENT**)
   - State (2026-11-19): the code and the host tests are done
     (`ProfessionRecipes.lua`, `ProfessionNames.lua`,
