@@ -6,8 +6,8 @@ local addonName, ns = ...
 -- The frame is not protected and calls no protected function, so it may be shown, hidden, and moved in
 -- combat. It does not whisper a crafter: opening a chat from addon code is a protected call.
 --
--- Not checked on Forever when this was written: the tooltip methods `SetItemByID` and `SetSpellByID`. Each
--- is looked up before it is used.
+-- Not checked on Forever when this was written: the tooltip methods `SetItemByID` and `SetSpellByID`, and
+-- `C_Item.GetItemIconByID` for the icons of the materials. Each is looked up before it is used.
 
 ---@class OOOOProfessionWindowSettings `db.profile.professions`: where the user left the window
 ---@field point string|nil Anchor point of the window; nil until the window was moved
@@ -27,10 +27,16 @@ local addonName, ns = ...
 ---@field selectedId integer|nil The recipe that the detail part shows
 ---@field status table FontString below the list
 ---@field hint table FontString in the empty list
----@field detail table FontString of the detail part
+---@field pane table Frame of the detail part; hidden while no recipe is selected
+---@field craftIcon table Texture: the icon of the selected recipe
+---@field craftLink table Button with the name of the selected recipe as a link; `link` is its chat link
+---@field craftInfo table FontString: the profession and how many items a craft makes
+---@field materialsTitle table FontString "Materials"
+---@field reagentButtons table[] The squares of the materials; made when first needed
+---@field detail table FontString of the detail part: the members who know the recipe
 ---@field searchToken integer Counts the scheduled searches, so that only the last one runs
 ---@field professionNames table<integer, string> Skill line id -> name, as the client gave it
-local window = { rows = {}, total = 0, offset = 0, searchToken = 0, professionNames = {} }
+local window = { rows = {}, total = 0, offset = 0, searchToken = 0, professionNames = {}, reagentButtons = {} }
 ns.professionWindow = window
 
 ---Global name of the frame: the game closes the frames of `UISpecialFrames` with Escape, by name
@@ -55,6 +61,12 @@ local REFRESH_DELAY = 0.5
 local ROW_NAMES = 4
 ---Members that the detail part lists before the rest is counted
 local DETAIL_MEMBERS = 22
+---Side of the icon of the selected recipe in the detail part
+local CRAFT_ICON_SIZE = 36
+---Side of the square of one material, and the space between two squares
+local REAGENT_SIZE, REAGENT_GAP = 36, 4
+---Size of the count in the square of a material
+local REAGENT_COUNT_FONT = 15
 ---Icon of a recipe without one: the question mark
 local UNKNOWN_ICON = 134400
 local HINT = "Type a part of a recipe name, or of the name of a material,\nwith 2 letters or more."
@@ -196,27 +208,138 @@ function window:UpdateStatus()
   self.hint:SetShown(not self.searched)
 end
 
----Shows the detail of the selected recipe: what it makes, its materials, and the members who know it.
+---Returns the chat link of an item.
+---@param itemId integer
+---@return string|nil link nil while the client has not loaded the item
+local function itemLinkOf(itemId)
+  local _name, link = C_Item.GetItemInfo(itemId)
+  if issecretvalue(link) or type(link) ~= "string" then
+    return nil
+  end
+  return link
+end
+
+---Shows the tooltip of an item, or its name when the tooltip cannot show an item id.
+---@param owner table The frame under the mouse
+---@param itemId integer
+---@param name string|nil
+local function showItemTooltip(owner, itemId, name)
+  GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+  if type(GameTooltip.SetItemByID) == "function" then
+    GameTooltip:SetItemByID(itemId)
+  else
+    GameTooltip:AddLine(name or ("#" .. itemId))
+  end
+  GameTooltip:Show()
+end
+
+---Returns the square of a material, and builds it when it is first needed: the icon of the item with the
+---count at the bottom right. The mouse shows the item, a shift-click puts its link into the chat box.
+---@param index integer Position among the materials
+---@return table button
+function window:ReagentButton(index)
+  local button = self.reagentButtons[index]
+  if button then
+    return button
+  end
+  button = CreateFrame("Button", nil, self.pane)
+  self.reagentButtons[index] = button
+  button:SetSize(REAGENT_SIZE, REAGENT_SIZE)
+  local icon = button:CreateTexture(nil, "ARTWORK")
+  icon:SetAllPoints()
+  button.icon = icon
+  local count = button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  -- The font of the template in a larger size and with an outline, so that it reads on any icon
+  local font = count:GetFont()
+  if type(font) == "string" then
+    count:SetFont(font, REAGENT_COUNT_FONT, "OUTLINE")
+  end
+  count:SetPoint("BOTTOMRIGHT", -1, 2)
+  count:SetJustifyH("RIGHT")
+  button.count = count
+  button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+  button:SetScript("OnEnter", function(entered)
+    if entered.itemId then
+      showItemTooltip(entered, entered.itemId, entered.itemName)
+    end
+  end)
+  button:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+  button:SetScript("OnClick", function(clicked)
+    local handle = _G.HandleModifiedItemClick
+    local link = clicked.itemId and itemLinkOf(clicked.itemId)
+    if link and type(handle) == "function" then
+      handle(link)
+    end
+  end)
+  return button
+end
+
+---Returns the icon of an item.
+---@param itemId integer
+---@return any texture The question mark when the client gives none
+local function itemIcon(itemId)
+  -- A Retail function that was not probed on Forever, so it is used only when it is there
+  local iconOf = C_Item.GetItemIconByID
+  local icon = type(iconOf) == "function" and iconOf(itemId) or nil
+  if icon == nil or issecretvalue(icon) then
+    return UNKNOWN_ICON
+  end
+  return icon
+end
+
+---Shows the detail of the selected recipe: its icon and its name as a link, its materials as squares with
+---counts, and the members who know it.
 function window:UpdateDetail()
   local recipeId = self.selectedId
   if not recipeId then
-    self.detail:SetText("")
+    self.pane:Hide()
     return
   end
   local detail = self.model:Detail(recipeId)
-  local lines = { TITLE_COLOR .. detail.name .. "|r", self:ProfessionName(detail.professionId) }
+  self.pane:Show()
+  self.craftIcon:SetTexture(detail.icon or UNKNOWN_ICON)
+  local craftLink = self.craftLink
+  craftLink.link = linkOf(recipeId, detail.itemId)
+  craftLink.recipeId, craftLink.itemId, craftLink.name = recipeId, detail.itemId, detail.name
+  -- Always in the yellow of a craft link, whatever colour the link of the client has
+  craftLink.text:SetText(TITLE_COLOR .. "[" .. detail.name .. "]|r")
+  local info = self:ProfessionName(detail.professionId)
   if detail.count > 1 then
-    lines[#lines + 1] = "Makes " .. detail.count
+    info = info .. (info ~= "" and ", " or "") .. "makes " .. detail.count
   end
-  if #detail.reagents > 0 then
-    lines[#lines + 1] = " "
-    lines[#lines + 1] = TITLE_COLOR .. "Materials|r"
-    for _, reagent in ipairs(detail.reagents) do
-      lines[#lines + 1] = "  " .. reagent.count .. "x " .. (reagent.name or ("#" .. reagent.itemId))
-    end
+  self.craftInfo:SetText(info)
+
+  local perRow = math.max(1, math.floor((DETAIL_WIDTH + REAGENT_GAP) / (REAGENT_SIZE + REAGENT_GAP)))
+  local reagentCount = #detail.reagents
+  for index, reagent in ipairs(detail.reagents) do
+    local button = self:ReagentButton(index)
+    button.itemId, button.itemName = reagent.itemId, reagent.name
+    button.icon:SetTexture(itemIcon(reagent.itemId))
+    button.count:SetText(reagent.count)
+    button:ClearAllPoints()
+    button:SetPoint("TOPLEFT", self.materialsTitle, "BOTTOMLEFT",
+      ((index - 1) % perRow) * (REAGENT_SIZE + REAGENT_GAP),
+      -4 - math.floor((index - 1) / perRow) * (REAGENT_SIZE + REAGENT_GAP))
+    button:Show()
   end
-  lines[#lines + 1] = " "
-  lines[#lines + 1] = TITLE_COLOR .. "Known by|r"
+  for index = reagentCount + 1, #self.reagentButtons do
+    self.reagentButtons[index]:Hide()
+  end
+  self.materialsTitle:SetShown(reagentCount > 0)
+  local reagentRows = math.ceil(reagentCount / perRow)
+  -- The list of members starts below the squares, or in their place when the recipe has no material
+  self.detail:ClearAllPoints()
+  if reagentCount > 0 then
+    self.detail:SetPoint("TOPLEFT", self.materialsTitle, "BOTTOMLEFT", 0,
+      -4 - reagentRows * (REAGENT_SIZE + REAGENT_GAP) - 6)
+  else
+    self.detail:SetPoint("TOPLEFT", self.materialsTitle, "TOPLEFT")
+  end
+  self.detail:SetPoint("BOTTOMRIGHT", self.pane, "BOTTOMRIGHT")
+
+  local lines = { TITLE_COLOR .. "Known by|r" }
   for index = 1, math.min(#detail.crafters, DETAIL_MEMBERS) do
     local crafter = detail.crafters[index]
     lines[#lines + 1] = "  " .. (crafter.online and ONLINE_COLOR or OFFLINE_COLOR) .. plain(crafter.name) .. "  "
@@ -228,6 +351,22 @@ function window:UpdateDetail()
     lines[#lines + 1] = OFFLINE_COLOR .. "  nobody any more|r"
   end
   self.detail:SetText(table.concat(lines, "\n"))
+end
+
+---Handles a click on the name of the selected recipe as the chat frame handles a click on a link: a plain
+---click opens the link in the link tooltip, a shift-click puts it into the chat box.
+---@param button table The link button, with `link`
+---@param mouseButton string
+function window:OnCraftLinkClick(button, mouseButton)
+  local link = button.link
+  if not link then
+    return
+  end
+  local data = link:match("|H(.-)|h")
+  local setItemRef = _G.SetItemRef
+  if data and type(setItemRef) == "function" then
+    setItemRef(data, link, mouseButton, self.frame)
+  end
 end
 
 ---Runs the search with the texts of the two boxes and shows the result.
@@ -458,9 +597,53 @@ function window:Create()
   status:SetJustifyH("LEFT")
   self.status = status
 
-  local detail = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  detail:SetPoint("TOPLEFT", list, "TOPRIGHT", PADDING, 0)
-  detail:SetPoint("BOTTOMRIGHT", -PADDING, PADDING)
+  local pane = CreateFrame("Frame", nil, frame)
+  pane:SetPoint("TOPLEFT", list, "TOPRIGHT", PADDING, 0)
+  pane:SetPoint("BOTTOMRIGHT", -PADDING, PADDING)
+  pane:Hide()
+  self.pane = pane
+  local craftIcon = pane:CreateTexture(nil, "ARTWORK")
+  craftIcon:SetSize(CRAFT_ICON_SIZE, CRAFT_ICON_SIZE)
+  craftIcon:SetPoint("TOPLEFT")
+  self.craftIcon = craftIcon
+  local craftLink = CreateFrame("Button", nil, pane)
+  craftLink:SetPoint("TOPLEFT", craftIcon, "TOPRIGHT", 6, 0)
+  craftLink:SetPoint("RIGHT")
+  craftLink:SetHeight(CRAFT_ICON_SIZE / 2)
+  local linkText = craftLink:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  linkText:SetAllPoints()
+  linkText:SetJustifyH("LEFT")
+  linkText:SetWordWrap(false)
+  craftLink.text = linkText
+  craftLink:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  craftLink:SetScript("OnClick", function(clicked, mouseButton)
+    window:OnCraftLinkClick(clicked, mouseButton)
+  end)
+  craftLink:SetScript("OnEnter", function(entered)
+    if entered.itemId then
+      showItemTooltip(entered, entered.itemId, entered.name)
+    elseif entered.recipeId and type(GameTooltip.SetSpellByID) == "function" then
+      GameTooltip:SetOwner(entered, "ANCHOR_RIGHT")
+      GameTooltip:SetSpellByID(entered.recipeId)
+      GameTooltip:Show()
+    end
+  end)
+  craftLink:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+  self.craftLink = craftLink
+  local craftInfo = pane:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  craftInfo:SetPoint("BOTTOMLEFT", craftIcon, "BOTTOMRIGHT", 6, 2)
+  craftInfo:SetPoint("RIGHT")
+  craftInfo:SetJustifyH("LEFT")
+  craftInfo:SetWordWrap(false)
+  self.craftInfo = craftInfo
+  local materialsTitle = pane:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  materialsTitle:SetPoint("TOPLEFT", craftIcon, "BOTTOMLEFT", 0, -10)
+  materialsTitle:SetText("Materials")
+  self.materialsTitle = materialsTitle
+
+  local detail = pane:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   detail:SetJustifyH("LEFT")
   detail:SetJustifyV("TOP")
   detail:SetWordWrap(true)
