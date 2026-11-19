@@ -31,5 +31,8 @@ stds.wow = { read_globals = {
   "UnitFullName", "UnitGUID", "UnitLevel", "UnitName", "wipe",
 } }
 
+-- Generated from CHANGELOG.md: one line per change
+files["Addon/Src/Changelog/ChangelogData.lua"] = { max_line_length = false }
+
 -- Host tests run on the development host (Lua 5.4) and never in the game
 files["Tests/**"] = { std = "lua54" }

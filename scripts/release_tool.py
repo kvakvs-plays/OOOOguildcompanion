@@ -6,11 +6,13 @@
 #     python scripts/release_tool.py --dst="<game>/_forever_/Interface/AddOns" install
 #     python scripts/release_tool.py --dst="../_Releases" zip
 #
-# Both commands first write Addon/OOOOguildcompanion.toc from Addon/toc_template.toc.
+# Both commands first write Addon/OOOOguildcompanion.toc from Addon/toc_template.toc, and
+# Addon/Src/Changelog/ChangelogData.lua from CHANGELOG.md.
 #
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -35,6 +37,8 @@ UI_VERSION_FOREVER = "16001"  # Forever; Mainline architecture, level-60 content
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ADDON_ROOT = REPO_ROOT / "Addon"  # The addon root in the repository; packaged as ADDON_NAME
 TOC_TEMPLATE = "toc_template.toc"
+CHANGELOG = REPO_ROOT / "CHANGELOG.md"  # Source of the release notes in the game
+CHANGELOG_LUA = "Src/Changelog/ChangelogData.lua"  # Generated from CHANGELOG; relative to ADDON_ROOT
 
 # Relative to ADDON_ROOT
 COPY_DIRS = ["Ace3", "Icons", "Src"]
@@ -80,6 +84,7 @@ class BuildTool:
 
         for suffix, ui_version, title in TOC_VARIANTS:
             self.create_toc(dst=f"{ADDON_NAME}{suffix}.toc", ui_version=ui_version, title=title)
+        self.create_changelog()
 
     def check_lists(self):
         """Stop when ADDON_ROOT has an entry which no list names: it would be missing in the game."""
@@ -137,6 +142,93 @@ class BuildTool:
         template = template.replace("${VERSION}", self.version)
         template = template.replace("${ADDON_TITLE}", title)
         (ADDON_ROOT / dst).write_text(template, encoding="utf-8", newline="\n")
+
+    @staticmethod
+    def create_changelog():
+        """Write the Lua file with the release notes that the "What's new" window shows."""
+        releases = parse_changelog(CHANGELOG.read_text(encoding="utf-8"))
+        lines = [
+            "local addonName, ns = ...",
+            "",
+            f"-- Do not edit - scripts/{Path(__file__).name} generates this file from {CHANGELOG.name}",
+            "",
+            "---Version of this release, without the git hash",
+            f"ns.version = {lua_string(VERSION)}",
+            "",
+            "---The release notes, newest first",
+            "---@type OOOOChangelogRelease[]",
+            "ns.changelog = {",
+        ]
+        for release in releases:
+            lines.append(f"  {{ version = {lua_string(release['version'])}, date = {lua_string(release['date'])}, "
+                         "sections = {")
+            for section in release["sections"]:
+                lines.append(f"    {{ title = {lua_string(section['title'])}, items = {{")
+                for item in section["items"]:
+                    lines.append(f"      {{ lead = {lua_string(item['lead'])}, text = {lua_string(item['text'])} }},")
+                lines.append("    } },")
+            lines.append("  } },")
+        lines.append("}")
+        target = ADDON_ROOT / CHANGELOG_LUA
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+
+
+def lua_string(text: str) -> str:
+    """Return a Lua string literal of a text."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def parse_changelog(text: str) -> list:
+    """Read the releases of CHANGELOG.md, newest first as the file has them.
+
+    A release is "## <version> (<date>)", a section is "### <title>", and an item is "- **<lead>** <text>",
+    with its further lines indented. Anything else stops the script: the window would not show it.
+    """
+    def fail(number: int, message: str):
+        sys.exit(f"{CHANGELOG.name}, line {number}: {message}")
+
+    releases = []
+    section = None
+    item = None  # The item that an indented line continues
+    # Comments are not notes; their lines stay so that the line numbers hold
+    text = re.sub(r"<!--.*?-->", lambda comment: "\n" * comment.group().count("\n"), text, flags=re.DOTALL)
+    for number, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        release = re.fullmatch(r"## (\S+) \((\d{4}-\d{2}-\d{2})\)", stripped)
+        if not stripped:
+            item = None
+        elif release:
+            releases.append({"version": release.group(1), "date": release.group(2), "sections": []})
+            section, item = None, None
+        elif stripped.startswith("### "):
+            if not releases:
+                fail(number, "a section before the first release")
+            section = {"title": stripped[4:], "items": []}
+            releases[-1]["sections"].append(section)
+            item = None
+        elif stripped.startswith("- "):
+            if section is None:
+                fail(number, "an item outside a section")
+            item = {"number": number, "source": stripped[2:]}
+            section["items"].append(item)
+        elif item is not None and line.startswith(" "):
+            item["source"] += " " + stripped
+        elif not (stripped.startswith("# ") and not releases):
+            fail(number, "not a release, a section, or an item")
+
+    for release in releases:
+        for section in release["sections"]:
+            for item in section["items"]:
+                parts = re.fullmatch(r"\*\*(.+?)\*\*\s*(.*)", item["source"])
+                if not parts:
+                    fail(item["number"], "an item starts with a **bold heading**")
+                item["lead"] = parts.group(1)
+                # The window has no bold inside a text
+                item["text"] = parts.group(2).replace("**", "")
+    if not releases:
+        fail(1, "no release")
+    return releases
 
 
 def main():

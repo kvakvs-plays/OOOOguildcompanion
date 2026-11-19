@@ -8,9 +8,9 @@ moved, or removed.
 | Path | Contents |
 | --- | --- |
 | `AGENTS.md` | Rules for agents: target client, API facts, style, checks. |
-| `CHANGELOG.md` | User-facing changes of each release, newest first. |
+| `CHANGELOG.md` | User-facing changes of each release, newest first; the source of the "What's new" window, in a fixed form (see `AGENTS.md`). |
 | `.luacheckrc` | luacheck config for the whole repository: `lua51+wow` for `Addon`, `lua54` for `Tests`; `Addon/Ace3` excluded. |
-| `.agents/00-plan.md` | Plan of the shared guild database: open steps. |
+| `.agents/00-plan.md` | Plan of the shared guild database and of the features on it: open steps (stage 12: professions). |
 | `.agents/00-finished.md` | Finished steps of that plan, compacted. |
 | `.agents/project-map.md` | This file. |
 | `install.bat.txt`, `release.bat.txt` | Templates of the local, git-ignored `install.bat` and `release.bat`. |
@@ -20,7 +20,7 @@ moved, or removed.
 
 | Path | Contents |
 | --- | --- |
-| `release_tool.py` | `install` and `zip` commands; writes the TOC from the template; holds `VERSION`, `COPY_DIRS`, `COPY_FILES`, `NOT_PACKAGED`. |
+| `release_tool.py` | `install` and `zip` commands; writes the TOC from the template and `Src/Changelog/ChangelogData.lua` from `CHANGELOG.md` (`parse_changelog`); holds `VERSION`, `COPY_DIRS`, `COPY_FILES`, `NOT_PACKAGED`. |
 | `import_discord_emoji.py` | Imports Discord emoji into `Addon/Icons/Emoji` and generates `Src/Emoji/EmojiIndex.lua`. |
 
 ## `Addon/` (the addon root, installed as `OOOOguildcompanion`)
@@ -66,6 +66,8 @@ moved, or removed.
 | `Chat/Mentions.lua` | `ns.mentions`: `@` words in guild chat (plan stage 11). `parseWatchList`, `hasMention`, `fragments` (the watched `@text` parts of a line), `sanitize` (the text of an untrusted line for the window). The mention list in `db.global.mentions` (`lines`: record id -> read, `lastOnline`): `Attach(parts)`, `Reconcile`, `OnRecordChanged`, `StartsRead`, `List`, `UnreadCount`, `MarkRead`, `NoteOnline`, `WatchChanged`, the callback `OnMentionsChanged`; the notice (`noticeText`, `CheckNotice`, `ScheduleNotice`, `ScheduleLoginNotice`, the marks in `noticed`, `LINK` with `RegisterLink`); and `Start` for the game. Host-loadable. Loads after `Sync/SyncGuildChat.lua`. |
 | `Chat/ChatHistory.lua` | `ns.chatHistory`: the model of the chat history window, without frames. `Open`, `Close`, `LoadOlder`, `LoadBackTo`, `IndexOf`, `Highlight`, `OnRecordChanged` with `Refresh` and `onChanged`, `LineText`, `formatTime`, `PAGE`. Host-loadable. |
 | `Chat/ChatHistoryWindow.lua` | `ns.chatHistoryWindow`: the frame "Guild chat history" (`/oooo chat`): `Create`, `Open`, `Toggle`, `Fill`, `ShowLine`, `ScrollToIndex`, `LoadOlder`, `OnHyperlinkClick`; the lists "Unread" and "Read" of mentions (`UpdateMentions`, `OnMentionClick`); position in `db.profile.chatHistory`; the probes `chatframe` and `chatlink`. Game only. |
+| `Changelog/ChangelogData.lua` | Generated and git-ignored: `ns.version` and `ns.changelog` (the release notes), written by `scripts/release_tool.py` from `CHANGELOG.md`. |
+| `Changelog/ChangelogWindow.lua` | `ns.changelogWindow`: the frame "What's new" (`/oooo new`): `Create`, `Open`, `Toggle`, `Select`, `UpdateList`, `RenderPage`; position in `db.profile.changelog`; the line after the guild check with the link (`noticeText`, `db.global.changelogSeen`). Game only. |
 | `Sync/SyncProbe.lua` | `ns.syncProbe`: `/oooo sync probe <name>`, the probe registry, reports stored in `db.global.probeResults`, and the computing helpers of the probes (`rosterVerdict` of the probe `roster` for plan step 8.2). Host-loadable. |
 
 ## `Tests/` (host only, Lua 5.4, not packaged)

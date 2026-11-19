@@ -20,8 +20,10 @@ local addonName, ns = ...
 ---@field sync OOOOSyncSettings
 ---@field mentions OOOOMentionSettings
 ---@field chatHistory OOOOChatHistorySettings
+---@field changelog OOOOChangelogSettings
 
 ---@class OOOOGlobalSettings
+---@field changelogSeen string|nil The addon version whose "What's new" window the user has opened
 ---@field schemaVersion integer|nil Version of the saved variables layout, for migrations
 ---@field probeResults table<string, OOOOProbeResult>|nil Probe name -> last result, written by SyncProbe.lua
 ---@field sync OOOOSyncData|nil The shared database; created by the migration to layout 2 (Database.lua)
@@ -66,6 +68,9 @@ local addonName, ns = ...
 ---@field mentions OOOOMentions
 ---@field chatHistory OOOOChatHistory
 ---@field chatHistoryWindow OOOOChatHistoryWindow
+---@field version string|nil Version of this release (Changelog/ChangelogData.lua, generated)
+---@field changelog OOOOChangelogRelease[]|nil The release notes, newest first (the same file)
+---@field changelogWindow OOOOChangelogWindow
 ---@field dbIsNewer boolean|nil true when the saved variables are from a newer addon version and were left alone
 
 local defaults = {
@@ -85,6 +90,7 @@ local defaults = {
       notifyOnLogin = true,
     },
     chatHistory = {},
+    changelog = {},
   },
 }
 

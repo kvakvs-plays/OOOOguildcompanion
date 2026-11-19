@@ -62,6 +62,13 @@ message.
   in the `Addon` folder; both commands of the script write the TOC from it, with
   the interface number, the title, and `<version>-<git hash>` filled in. A fresh
   checkout has no TOC until the script runs once.
+- `CHANGELOG.md` is the source of the "What's new" window (`/oooo new`). Both
+  commands of the script write the git-ignored
+  `Src\Changelog\ChangelogData.lua` from it, with `VERSION`. Keep its form: a
+  release is `## <version> (<date>)`, a section is `### <title>`, and every
+  item starts with a `**bold heading**` followed by the explanation; the script
+  stops on anything else. Backticks mark commands; the window has no other
+  inline formatting.
 - The script keeps the other game versions as commented-out lines. Leave them
   commented: Forever is the only target.
 
