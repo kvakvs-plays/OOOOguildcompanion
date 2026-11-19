@@ -7,10 +7,18 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
 **bold heading** followed by the explanation. `Backticks` mark commands.
 -->
 
-## 2026.11.3 (2026-11-19)
+## 2026.11.4 (2026-11-19)
 
 ### Guild professions
 
+- **A clearer recipe detail.** The detail of a clicked recipe in
+  `/oooo prof` has its own framed field. It shows the icon of the recipe and
+  its name as a link: a click opens the link, a shift-click puts it into the
+  chat box. The materials are item icons with the needed count; point at
+  one to see the item.
+- **The reminder comes reliably.** The reminder to open your profession
+  windows was sometimes skipped right after login. It now waits until the
+  game shows your skill levels.
 - **Who can craft what.** `/oooo prof` opens a window that searches the
   recipes of all guild members with the addon. Type a part of a recipe name,
   or of a material name, or both. A click on a recipe shows its materials
