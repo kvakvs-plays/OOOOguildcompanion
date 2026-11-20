@@ -7,6 +7,27 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
 **bold heading** followed by the explanation. `Backticks` mark commands.
 -->
 
+## 2026.11.7 (2026-11-20)
+
+### Members
+
+- **Profession icons.** The tab "Members" shows an icon for each profession
+  of a member instead of its name. The two numbers in the icon are the skill
+  (white) and the highest skill of the learned rank (silver). Point at an
+  icon to read the name of the profession. The icons of a member are in the
+  order of the profession names.
+- **Easier to read lines.** Every second line has a silver background, and
+  an offline member is marked with "(offline)" and grey icons.
+- **No recipe count.** The count of shared recipes in brackets is gone.
+
+### Emoji
+
+- **Choose the chats with emoji.** The settings (`/oooo opt`, tab "General")
+  have a checkbox for each kind of chat: guild, party, raid, officer, say,
+  General, and Trade. Guild, party, raid, and officer are on; turn the
+  others on when you want emoji there too. Raid warnings follow the raid
+  checkbox.
+
 ## 2026.11.6 (2026-11-19)
 
 ### Addon versions
