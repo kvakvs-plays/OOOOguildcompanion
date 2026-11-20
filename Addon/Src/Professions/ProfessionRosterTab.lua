@@ -1,7 +1,7 @@
 local addonName, ns = ...
 
--- The tab "Members" of the addon window: every member who shares professions, with each profession and its
--- skill level. AceGUI-3.0 widgets over the model of Professions/ProfessionRoster.lua.
+-- The tab "Members" of the addon window: every member who shares professions, with an icon per profession
+-- that carries the skill level. AceGUI-3.0 widgets over the model of Professions/ProfessionRoster.lua.
 --
 -- It lists the members with a record in the table `profession`: those who use the addon. A member of the
 -- guild roster without the addon is not listed, because nothing is known about their professions.
@@ -27,7 +27,58 @@ local NAME_WIDTH = 190
 local DROPDOWN_WIDTH = 220
 ---Seconds for which changes of the tables and of the roster are collected before the list is built again
 local REFRESH_DELAY = 0.5
-local OFFLINE_COLOR, ONLINE_COLOR, FILTER_COLOR, DETAIL_COLOR = "|cff808080", "|cffffffff", "|cffffd100", "|cffa0a0a0"
+local OFFLINE_COLOR, ONLINE_COLOR = "|cff808080", "|cffffffff"
+---Side of a profession icon, and of the cell that holds it with its margin
+local ICON_SIZE, ICON_CELL = 32, 36
+---Font size of the two numbers in an icon
+local NUMBER_SIZE = 10
+---Colour of the highest skill in an icon: silver
+local MAX_COLOR = { 0.75, 0.75, 0.75 }
+---Alpha of the icon of an offline member, which is also grey
+local OFFLINE_ALPHA = 0.6
+---Icon of a profession that `PROFESSION_ICONS` lacks: the question mark
+local UNKNOWN_ICON = 134400
+---Skill line id -> icon. The record of a member carries only the id, and the client gives the icon only for
+---the own professions (`GetProfessionInfo`), so the Classic icons are named here.
+---@type table<integer, string>
+local PROFESSION_ICONS = {
+  [129] = "Interface\\Icons\\Spell_Holy_SealOfSacrifice", -- First Aid
+  [164] = "Interface\\Icons\\Trade_BlackSmithing",
+  [165] = "Interface\\Icons\\Trade_LeatherWorking",
+  [171] = "Interface\\Icons\\Trade_Alchemy",
+  [182] = "Interface\\Icons\\Trade_Herbalism",
+  [185] = "Interface\\Icons\\INV_Misc_Food_15", -- Cooking
+  [186] = "Interface\\Icons\\Trade_Mining",
+  [197] = "Interface\\Icons\\Trade_Tailoring",
+  [202] = "Interface\\Icons\\Trade_Engineering",
+  [333] = "Interface\\Icons\\Trade_Engraving", -- Enchanting
+  [356] = "Interface\\Icons\\Trade_Fishing",
+  [393] = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01", -- Skinning
+}
+---Background of the odd lines of the list: silver, with its alpha
+local STRIPE_COLOR = { 0.75, 0.75, 0.75, 0.15 }
+
+---Hides the stripe of a line when AceGUI takes the line back.
+---@param line table AceGUI SimpleGroup
+local function hideStripe(line)
+  line.frame.ooooStripe:Hide()
+end
+
+---Gives a line of the list the silver background. AceGUI keeps the frame of a released group for the next
+---group of any window, so the texture is made once per frame and hidden when the line is released.
+---@param line table AceGUI SimpleGroup
+local function showStripe(line)
+  local frame = line.frame
+  local stripe = frame.ooooStripe
+  if not stripe then
+    stripe = frame:CreateTexture(nil, "BACKGROUND")
+    stripe:SetAllPoints(frame)
+    stripe:SetColorTexture(STRIPE_COLOR[1], STRIPE_COLOR[2], STRIPE_COLOR[3], STRIPE_COLOR[4])
+    frame.ooooStripe = stripe
+  end
+  stripe:Show()
+  line:SetCallback("OnRelease", hideStripe)
+end
 
 ---Makes a text of another member safe to show: a character name comes from the key of a received record.
 ---@param text string
@@ -46,29 +97,94 @@ local function nameColor(row)
   -- The class token comes from a received record, so it is only looked up
   local color = row.class and RAID_CLASS_COLORS[row.class]
   if type(color) == "table" and type(color.r) == "number" and type(color.g) == "number"
-    and type(color.b) == "number" then
+      and type(color.b) == "number" then
     return ("|cff%02x%02x%02x"):format(color.r * 255, color.g * 255, color.b * 255)
   end
   return ONLINE_COLOR
 end
 
----Builds the text with the professions of a member: name, level, and the count of shared recipes.
----@param row OOOOProfessionRosterRow
----@param filter integer|nil The profession that the list is narrowed to; it is shown in yellow
----@return string
-local function professionText(row, filter)
-  local parts = {}
-  for index, entry in ipairs(row.professions) do
-    local color = not row.online and OFFLINE_COLOR or (entry.id == filter and FILTER_COLOR or ONLINE_COLOR)
-    local text = color .. ns.professionRecipes.ProfessionName(entry.id) .. " " .. entry.level .. "/" .. entry.max
-      .. "|r"
-    if entry.recipes > 0 then
-      text = text .. " " .. (row.online and DETAIL_COLOR or OFFLINE_COLOR) .. "(" .. entry.recipes .. ")|r"
-    end
-    parts[index] = text
+--------------------------------------------------------------------------------
+-- The widget type "OOOOProfessionIcon"
+--------------------------------------------------------------------------------
+
+local ICON_TYPE, ICON_VERSION = "OOOOProfessionIcon", 1
+
+---Shows the name and the skill of the profession of an icon.
+---@param frame table The frame of the widget
+local function showIconTooltip(frame)
+  local entry = frame.obj.entry
+  if not entry then
+    return
   end
-  return table.concat(parts, "    ")
+  GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
+  GameTooltip:AddLine(ns.professionRecipes.ProfessionName(entry.id))
+  GameTooltip:AddLine(entry.level .. " / " .. entry.max, 1, 1, 1)
+  GameTooltip:Show()
 end
+
+---Hides the tooltip of an icon.
+---@param frame table The frame of the widget
+local function hideIconTooltip(frame)
+  if GameTooltip:IsOwned(frame) then
+    GameTooltip:Hide()
+  end
+end
+
+---Builds a profession icon: an AceGUI widget with the icon of a profession and, at its bottom right, the
+---skill level in white over the highest level in silver. The name is in the tooltip.
+---@return table widget
+local function createProfessionIcon()
+  local frame = CreateFrame("Frame", nil, UIParent)
+  frame:Hide()
+  frame:EnableMouse(true)
+  frame:SetScript("OnEnter", showIconTooltip)
+  frame:SetScript("OnLeave", hideIconTooltip)
+  local texture = frame:CreateTexture(nil, "ARTWORK")
+  texture:SetSize(ICON_SIZE, ICON_SIZE)
+  texture:SetPoint("CENTER")
+  -- Without the border that is part of an icon file
+  texture:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+  local font = GameFontHighlight:GetFont()
+  local max = frame:CreateFontString(nil, "OVERLAY")
+  max:SetFont(font, NUMBER_SIZE, "OUTLINE")
+  max:SetTextColor(MAX_COLOR[1], MAX_COLOR[2], MAX_COLOR[3])
+  max:SetPoint("BOTTOMRIGHT", texture, "BOTTOMRIGHT", 0, 1)
+  local level = frame:CreateFontString(nil, "OVERLAY")
+  level:SetFont(font, NUMBER_SIZE, "OUTLINE")
+  level:SetTextColor(1, 1, 1)
+  level:SetPoint("BOTTOMRIGHT", max, "TOPRIGHT")
+  local widget = {
+    frame = frame,
+    type = ICON_TYPE,
+    ---The profession that is shown; nil while the widget is not in use
+    entry = nil, ---@type OOOOProfessionRosterEntry|nil
+    OnAcquire = function(self)
+      self:SetWidth(ICON_CELL)
+      self:SetHeight(ICON_CELL)
+    end,
+    OnRelease = function(self)
+      self.entry = nil
+    end,
+    ---Shows a profession of a member.
+    ---@param entry OOOOProfessionRosterEntry
+    ---@param online boolean Whether the member is online; the icon of an offline member is grey
+    SetProfession = function(self, entry, online)
+      self.entry = entry
+      texture:SetTexture(PROFESSION_ICONS[entry.id] or UNKNOWN_ICON)
+      texture:SetDesaturated(not online)
+      texture:SetAlpha(online and 1 or OFFLINE_ALPHA)
+      level:SetText(entry.level)
+      max:SetText(entry.max)
+    end,
+  }
+  return AceGUI:RegisterAsWidget(widget)
+end
+
+AceGUI:RegisterWidgetType(ICON_TYPE, createProfessionIcon, ICON_VERSION)
+
+--------------------------------------------------------------------------------
+-- The tab
+--------------------------------------------------------------------------------
 
 ---Fills the dropdown with the professions that members have, when they have changed.
 ---@param professionIds integer[] In ascending order
@@ -110,6 +226,7 @@ function tab:Update()
     isOnline = function(name)
       return ns.guildState:IsOnline(name) == true
     end,
+    professionName = ns.professionRecipes.ProfessionName,
   }, self.filter)
   self:UpdateDropdown(professionIds)
 
@@ -123,19 +240,28 @@ function tab:Update()
       or "No member has shared a profession yet.")
     scroll:AddChild(hint)
   end
-  for _, row in ipairs(rows) do
+  for index, row in ipairs(rows) do
     local line = AceGUI:Create("SimpleGroup")
     line:SetFullWidth(true)
     line:SetLayout("OOOOLine")
+    if index % 2 == 1 then
+      showStripe(line)
+    end
     local name = AceGUI:Create("Label")
     name:SetFontObject(GameFontHighlight)
     name:SetUserData("width", NAME_WIDTH)
-    name:SetText(nameColor(row) .. plain(row.name) .. "|r")
+
+    local maybeOffline = ""
+    if not row.online then maybeOffline = " (offline)" end
+    name:SetText(nameColor(row) .. plain(row.name) .. maybeOffline .. "|r")
+
     line:AddChild(name)
-    local professions = AceGUI:Create("Label")
-    professions:SetFontObject(GameFontHighlight)
-    professions:SetText(professionText(row, self.filter))
-    line:AddChild(professions)
+    for _, entry in ipairs(row.professions) do
+      local icon = AceGUI:Create(ICON_TYPE)
+      icon:SetUserData("width", ICON_CELL)
+      icon:SetProfession(entry, row.online)
+      line:AddChild(icon)
+    end
     scroll:AddChild(line)
   end
   scroll:ResumeLayout()
@@ -144,9 +270,9 @@ function tab:Update()
   local count = #rows .. (#rows == 1 and " member" or " members")
   if self.filter then
     ns.mainWindow:SetStatus(count .. " with " .. ns.professionRecipes.ProfessionName(self.filter)
-      .. ", highest skill first. The number in brackets counts the shared recipes.")
+      .. ", highest skill first.")
   else
-    ns.mainWindow:SetStatus(count .. " with shared professions. The number in brackets counts the shared recipes.")
+    ns.mainWindow:SetStatus(count .. " with shared professions.")
   end
 end
 

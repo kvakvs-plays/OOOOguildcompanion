@@ -5,9 +5,9 @@ local addonName, ns = ...
 ---@field name string Emoji name
 ---@field caseSensitive boolean true when chat must have the exact letter case
 
----Shows emoji in guild, party, and raid chat: a word which is exactly an emoji name or one of its aliases
----is replaced by the texture of that emoji. The letter case matters only for the emoji which
----EmojiOptions.lua marks as case sensitive.
+---Shows emoji in the kinds of chat that the user chose (`CHANNELS`): a word which is exactly an emoji name or
+---one of its aliases is replaced by the texture of that emoji. The letter case matters only for the emoji
+---which EmojiOptions.lua marks as case sensitive.
 ---@class OOOOEmojiChat AceAddon-3.0 module
 ---@field filtersInstalled boolean true while the chat filters are registered
 ---@field escapes table<string, string>|nil Emoji name -> texture escape sequence; built on first use
@@ -43,13 +43,73 @@ function emojiChat:SetSize(size)
   self:ResetCache()
 end
 
-local CHAT_EVENTS = {
-  "CHAT_MSG_GUILD",
-  "CHAT_MSG_PARTY",
-  "CHAT_MSG_PARTY_LEADER",
-  "CHAT_MSG_RAID",
-  "CHAT_MSG_RAID_LEADER",
+---@class OOOOEmojiChannel A kind of chat in which emoji can be shown
+---@field key string Key of the setting in `db.profile.general.emojiChannels`
+---@field title string Name in the settings window
+
+---The kinds of chat, in the order of the settings window. The defaults are in Core.lua.
+---@type OOOOEmojiChannel[]
+emojiChat.CHANNELS = {
+  { key = "guild", title = "Guild" },
+  { key = "party", title = "Party" },
+  { key = "raid", title = "Raid" },
+  { key = "officer", title = "Officer" },
+  { key = "say", title = "Say" },
+  { key = "general", title = "General" },
+  { key = "trade", title = "Trade" },
 }
+
+---Chat event -> key of the kind of chat. `CHAT_MSG_CHANNEL` is not here: its kind follows the channel.
+---@type table<string, string>
+local EVENT_CHANNELS = {
+  CHAT_MSG_GUILD = "guild",
+  CHAT_MSG_PARTY = "party",
+  CHAT_MSG_PARTY_LEADER = "party",
+  CHAT_MSG_RAID = "raid",
+  CHAT_MSG_RAID_LEADER = "raid",
+  CHAT_MSG_RAID_WARNING = "raid",
+  CHAT_MSG_OFFICER = "officer",
+  CHAT_MSG_SAY = "say",
+}
+
+---Event of the numbered channels: General, Trade, and the channels that players make
+local CHANNEL_EVENT = "CHAT_MSG_CHANNEL"
+
+---Zone channel id (7th argument of `CHAT_MSG_CHANNEL`) -> key of the kind of chat. The ids are those of
+---Retail and Classic; that Forever uses them is not checked on the client. A channel of players has 0.
+---@type table<integer, string>
+local ZONE_CHANNELS = {
+  [1] = "general",
+  [2] = "trade",
+}
+
+---Tells whether emoji are shown in a kind of chat.
+---@param key string Key of `CHANNELS`
+---@return boolean
+function emojiChat:IsChannelEnabled(key)
+  return ns.db ~= nil and ns.db.profile.general.emojiChannels[key] == true
+end
+
+---Turns the emoji of a kind of chat on or off. Lines that the chat frames already show stay as they are.
+---@param key string Key of `CHANNELS`
+---@param enabled boolean
+function emojiChat:SetChannelEnabled(key, enabled)
+  ns.db.profile.general.emojiChannels[key] = enabled and true or false
+end
+
+---Returns the kind of chat of a chat event.
+---@param event string
+---@param zoneChannelId any 7th argument of the event
+---@return string|nil key Key of `CHANNELS`; nil for chat that never shows emoji
+local function channelOf(event, zoneChannelId)
+  if event ~= CHANNEL_EVENT then
+    return EVENT_CHANNELS[event]
+  end
+  if issecretvalue(zoneChannelId) or zoneChannelId == nil then
+    return nil
+  end
+  return ZONE_CHANNELS[zoneChannelId]
+end
 
 ---A word. Bytes above 127 are parts of UTF-8 letters: they belong to the word, which keeps an emoji name
 ---inside a non-English word from matching.
@@ -239,15 +299,20 @@ end
 
 ---Chat message filter, see ChatFrameUtil.AddMessageEventFilter.
 ---@param _chatFrame table
----@param _event string
+---@param event string
 ---@param message string
 ---@param ... any Remaining arguments of the chat event
 ---@return boolean discard Always false: the message is shown
 ---@return string|nil message New text; nothing when the text is unchanged
 ---@return any ... Remaining arguments of the chat event, after a new text
-local function chatFilter(_chatFrame, _event, message, ...)
+local function chatFilter(_chatFrame, event, message, ...)
   -- A secret string cannot be searched or compared; it is shown as it came
   if issecretvalue(message) or type(message) ~= "string" then
+    return false
+  end
+  -- `...` starts at the 2nd argument of the event, so its 6th value is the zone channel id
+  local channel = channelOf(event, (select(6, ...)))
+  if not channel or not emojiChat:IsChannelEnabled(channel) then
     return false
   end
   if message ~= lastMessage then
@@ -269,7 +334,8 @@ local function getFilterFunction(name)
   return (util and util[name]) or _G["ChatFrame_" .. name]
 end
 
----Adds or removes the chat filters.
+---Adds or removes the chat filters. They are on every event of `CHANNELS`; the filter itself asks the
+---setting of the kind of chat, so a changed setting needs no change here.
 ---@param wanted boolean
 function emojiChat:SetFiltersInstalled(wanted)
   if wanted == self.filtersInstalled then
@@ -279,9 +345,10 @@ function emojiChat:SetFiltersInstalled(wanted)
   if not change then
     return
   end
-  for _, event in ipairs(CHAT_EVENTS) do
+  for event in pairs(EVENT_CHANNELS) do
     change(event, chatFilter)
   end
+  change(CHANNEL_EVENT, chatFilter)
   self.filtersInstalled = wanted
 end
 

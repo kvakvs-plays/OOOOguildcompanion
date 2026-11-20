@@ -124,8 +124,9 @@ AceGUI:RegisterLayout("OOOORows", function(content, children)
   end
 end)
 
----One line of a list: children side by side. A child with the user data "width" has that width; one
----without it takes what is left. The container gets the height of its highest child.
+---One line of a list: children side by side, each in the middle of the height. A child with the user data
+---"width" has that width; one without it takes what is left. The container gets the height of its highest
+---child.
 AceGUI:RegisterLayout("OOOOLine", function(content, children)
   local width = sizeOf(content)
   local x, height = 0, 0
@@ -133,7 +134,7 @@ AceGUI:RegisterLayout("OOOOLine", function(content, children)
     local own = child:GetUserData("width") or math.max(0, width - x)
     local frame = child.frame
     frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", content, "TOPLEFT", x, 0)
+    frame:SetPoint("LEFT", content, "LEFT", x, 0)
     child:SetWidth(own)
     frame:Show()
     height = math.max(height, frame.height or frame:GetHeight() or 0)

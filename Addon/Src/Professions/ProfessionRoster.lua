@@ -15,12 +15,13 @@ local addonName, ns = ...
 ---@field name string Character name
 ---@field online boolean
 ---@field class string|nil Class token of the table `character`: "SHAMAN"; nil when the member has no record
----@field professions OOOOProfessionRosterEntry[] Highest level first
+---@field professions OOOOProfessionRosterEntry[] In the order of the profession names
 ---@field level integer|nil With a filter: the level of the member in that profession
 
 ---@class OOOOProfessionRosterParts What the rows are built from
 ---@field sync OOOOSync
 ---@field isOnline fun(name: string): boolean Whether the roster shows a member online
+---@field professionName fun(professionId: integer): string Name of a profession, for the order in a row
 
 ---@class OOOOProfessionRoster
 local roster = {}
@@ -68,12 +69,16 @@ function roster.rows(parts, professionId)
   end
   table.sort(professionIds)
 
+  local names = {}
+  for _, id in ipairs(professionIds) do
+    names[id] = parts.professionName(id)
+  end
   local rows = {}
   for _, row in pairs(byName) do
     if not professionId or row.level then
       table.sort(row.professions, function(left, right)
-        if left.level ~= right.level then
-          return left.level > right.level
+        if names[left.id] ~= names[right.id] then
+          return names[left.id] < names[right.id]
         end
         return left.id < right.id
       end)

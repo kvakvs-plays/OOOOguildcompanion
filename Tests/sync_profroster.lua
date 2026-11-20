@@ -35,10 +35,16 @@ do
   T.loadAll(FILES, a.ns)
   local data, roster = a.ns.professionData, a.ns.professionRoster
   local online = {}
+  -- 129 and 356 share a name, as two ids without a name of the client could
+  local professionNames = { [171] = "Alchemy", [185] = "Cooking", [197] = "Tailoring", [333] = "Enchanting",
+    [129] = "Same", [356] = "Same" }
   local parts = {
     sync = a.sync,
     isOnline = function(name)
       return online[name] == true
+    end,
+    professionName = function(id)
+      return professionNames[id]
     end,
   }
 
@@ -62,10 +68,10 @@ do
     professions = { { id = 171, level = 60, max = 75, recipes = 1 } } },
     "a row has the class of the character record and the profession with its recipe count")
   T.eq(rows[1].class, nil, "a member without a character record has no class")
-  T.eq(rows[4].professions, { { id = 197, level = 300, max = 300, recipes = 3 },
-    { id = 185, level = 120, max = 150, recipes = 1 }, { id = 333, level = 120, max = 150, recipes = 0 } },
-    "the professions of a member: the highest level first, then by id")
-  T.eq(rows[3].professions[1].id, 171, "equal levels are in the order of the ids")
+  T.eq(rows[4].professions, { { id = 185, level = 120, max = 150, recipes = 1 },
+    { id = 333, level = 120, max = 150, recipes = 0 }, { id = 197, level = 300, max = 300, recipes = 3 } },
+    "the professions of a member are in the order of their names, whatever the levels are")
+  T.eq(rows[3].professions[1].id, 171, "Alchemy is before Tailoring")
 
   local tailors, ids = roster.rows(parts, 197)
   T.eq(namesOf(tailors), { "Nota Scam", "Abe First", "Other One" },
@@ -80,9 +86,15 @@ do
     "with equal levels the online member is first")
   T.eq(namesOf(roster.rows(parts, 356)), {}, "a profession that nobody has gives no member")
 
+  foreign(a, "profession", "Some Body:356", { l = 10, m = 75 }, 7)
+  foreign(a, "profession", "Some Body:129", { l = 300, m = 300 }, 8)
+  local someBody = roster.rows(parts, 129)[1]
+  T.eq({ someBody.professions[1].id, someBody.professions[2].id, someBody.professions[3].id }, { 171, 129, 356 },
+    "professions with the same name are in the order of the ids")
+
   a.sync:Delete("profession", "Nota Scam:333")
   local _, afterDelete = roster.rows(parts)
-  T.eq(afterDelete, { 171, 185, 197 }, "a deleted record is not read")
+  T.eq(afterDelete, { 129, 171, 185, 197, 356 }, "a deleted record is not read")
 end
 
 T.finish()

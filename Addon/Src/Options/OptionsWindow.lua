@@ -41,6 +41,34 @@ local function emojiLabel(emoji)
   return label
 end
 
+---The checkboxes of the General tab that choose the kinds of chat with emoji.
+---@return table group AceConfig inline group
+local function buildEmojiChannels()
+  local args = {}
+  for index, channel in ipairs(ns.emojiChat.CHANNELS) do
+    args[channel.key] = {
+      type = "toggle",
+      order = index,
+      name = channel.title,
+      desc = "Show emoji in " .. channel.title:lower() .. " chat.",
+      arg = channel.key,
+    }
+  end
+  return {
+    type = "group",
+    order = 3,
+    inline = true,
+    name = "Show emoji in channels",
+    get = function(info)
+      return ns.emojiChat:IsChannelEnabled(info.arg)
+    end,
+    set = function(info, value)
+      ns.emojiChat:SetChannelEnabled(info.arg, value)
+    end,
+    args = args,
+  }
+end
+
 ---The General tab: settings of the addon as a whole.
 ---@return table group AceConfig group
 local function buildGeneralTab()
@@ -83,6 +111,7 @@ local function buildGeneralTab()
           ns.emojiChat:SetSize(value)
         end,
       },
+      emojiChannels = buildEmojiChannels(),
       mentionsHeader = {
         type = "header",
         order = 10,
