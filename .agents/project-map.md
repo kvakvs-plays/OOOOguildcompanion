@@ -10,8 +10,9 @@ moved, or removed.
 | `AGENTS.md` | Rules for agents: target client, API facts, style, checks. |
 | `CHANGELOG.md` | User-facing changes of each release, newest first; the source of the "What's new" window, in a fixed form (see `AGENTS.md`). |
 | `.luacheckrc` | luacheck config for the whole repository: `lua51+wow` for `Addon`, `lua54` for `Tests`; `Addon/Ace3` excluded. |
-| `.agents/00-plan.md` | Plan of the shared guild database and of the features on it: open steps (stage 12: professions, the client checks). |
-| `.agents/00-finished.md` | Finished steps of that plan, compacted. |
+| `.agents/00-plan.md` | Plan of the protected tables (officer tables, self tables) and of the gambling engine: sections 12 to 18, stages 13 to 15. |
+| `.agents/sync-design.md` | Design of what is built: the sync engine, guild chat, mentions, professions. Sections 1 to 8 and 11 of the earlier plan; code comments cite them as "plan section N". |
+| `.agents/00-finished.md` | Finished steps of the plans, compacted. |
 | `.agents/project-map.md` | This file. |
 | `install.bat.txt`, `release.bat.txt` | Templates of the local, git-ignored `install.bat` and `release.bat`. |
 | `.env` | Git-ignored; holds `DISCORD_BOT_TOKEN`. |

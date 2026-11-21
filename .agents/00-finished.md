@@ -135,3 +135,26 @@ records) are in the git history of this file, before 2026-11-19.
   recorded: whether the line "learned:" said "added", so whether
   `C_TradeSkillUI.GetTradeSkillLineForRecipe` exists on Forever is unknown.
   The specialization stays deferred (5.4).
+
+## Closed when the plan was replaced (2026-11-21)
+
+The plan of the shared database was replaced by the plan of the protected
+tables and the gambling engine. Its design is in `sync-design.md`. These
+points were open and are dropped from the plan without a recorded result;
+the full text is in the git history of `00-plan.md`.
+
+- **12.3 Scan**: code and host tests done. Not recorded in the client: the
+  hint "Open your <profession> window once" after a fresh login, the recipe
+  counts compared on a second account, and whether
+  `GetProfessionInfo(index)` gives the levels in a fresh session.
+- **12.5 Recipe facts and item names**: code and host tests done. Not
+  recorded: the line "Loading names" after a client restart, and
+  `/oooo sync prof names` without an open id.
+- **12.7 Window "Guild professions"**: code done (now the tabs "Recipes" and
+  "Members" of the addon window). The checkpoint list was not recorded.
+- **12.1, specialization**: deferred. The field `s` of `profession` is in
+  the schema and is not written (`sync-design.md`, 5.4).
+- **Stage 1, deferred probes**: `/oooo sync probe state` in a raid group, in
+  a raid instance (from December 9, 2026), and during a boss encounter. If
+  one fails, that state becomes a hard limit in `SyncPolicy.conditionMet`.
+- **Stage 9, table `equipment`**: postponed on 2026-11-18; never started.

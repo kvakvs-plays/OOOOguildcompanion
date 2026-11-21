@@ -80,17 +80,32 @@ AceGUI:RegisterLayout("OOOOColumns", function(content, children)
     end
   end
   local share = flexible > 0 and math.max(0, (width - fixed - GAP * (#children - 1)) / flexible) or 0
-  local x = 0
+  -- The width that AceGUI keeps for a content frame can differ from the width on the screen. So with one
+  -- flexible child the places come from the two edges of the content frame, not from that number: the
+  -- flexible column ends where the columns at its right begin, and the columns can never overlap.
+  local fromEdges = flexible == 1
+  local fixedTotal = fixed + GAP * (#children - 1)
+  local x, before, flexibleSeen = 0, 0, false
   for _, child in ipairs(children) do
-    local own = child:GetUserData("width") or share
+    local ownWidth = child:GetUserData("width")
+    local own = ownWidth or share
+    -- The fixed columns and the gaps at the right of this child
+    local after = fixedTotal - before - (ownWidth or 0)
     local frame = child.frame
     frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", content, "TOPLEFT", x, 0)
+    if not (fromEdges and flexibleSeen) then
+      frame:SetPoint("TOPLEFT", content, "TOPLEFT", x, 0)
+    end
+    if fromEdges and (flexibleSeen or not ownWidth) then
+      frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -after, 0)
+    end
+    flexibleSeen = flexibleSeen or not ownWidth
     child:SetWidth(own)
     child:SetHeight(height)
     frame:Show()
     layoutChild(child)
     x = x + own + GAP
+    before = before + (ownWidth or 0) + GAP
   end
 end)
 
@@ -115,6 +130,8 @@ AceGUI:RegisterLayout("OOOORows", function(content, children)
     local frame = child.frame
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
+    -- The right edge follows the content frame on the screen, as in the columns above
+    frame:SetPoint("RIGHT", content, "RIGHT", 0, 0)
     if child:GetUserData("fill") then
       child:SetHeight(share)
       layoutChild(child)

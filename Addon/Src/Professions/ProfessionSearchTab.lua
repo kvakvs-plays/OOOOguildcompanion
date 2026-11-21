@@ -53,6 +53,8 @@ local REAGENT_SIZE, REAGENT_WIDTH = 32, 46
 local UNKNOWN_ICON = 134400
 ---Texture under the mouse on a row
 local ROW_HIGHLIGHT = "Interface\\QuestFrame\\UI-QuestTitleHighlight"
+---Background of the selected row: silver, with its alpha
+local SELECTION_COLOR = { 0.75, 0.75, 0.75, 0.25 }
 local HINT = "Type a part of a recipe name, or of the name of a material, with 2 letters or more."
 local DETAIL_HINT = "Click a recipe to see its materials and the members who know it."
 local ONLINE_COLOR, OFFLINE_COLOR, TITLE_COLOR, SELECTED_COLOR = "|cffffffff", "|cff808080", "|cffffd100", "|cff40ff40"
@@ -175,6 +177,32 @@ local function rowText(row, selected)
     .. ns.professionRecipes.ProfessionName(row.professionId) .. "|r\n" .. crafterLine(row)
 end
 
+---Hides the background of a row when AceGUI takes the row back.
+---@param label table AceGUI InteractiveLabel
+local function hideSelection(label)
+  label.frame.ooooSelection:Hide()
+end
+
+---Shows or hides the silver background of a row. AceGUI keeps the frame of a released label for the next
+---label of any window, so the texture is made once per frame and hidden when the row is released.
+---@param label table AceGUI InteractiveLabel
+---@param selected boolean true for the recipe that the detail part shows
+local function setSelection(label, selected)
+  local frame = label.frame
+  local selection = frame.ooooSelection
+  if not selection then
+    if not selected then
+      return
+    end
+    selection = frame:CreateTexture(nil, "BACKGROUND")
+    selection:SetAllPoints(frame)
+    selection:SetColorTexture(SELECTION_COLOR[1], SELECTION_COLOR[2], SELECTION_COLOR[3], SELECTION_COLOR[4])
+    frame.ooooSelection = selection
+  end
+  selection:SetShown(selected)
+  label:SetCallback("OnRelease", hideSelection)
+end
+
 ---Shows the rows of the last search, or the hint while nothing was searched.
 function tab:UpdateRows()
   local scroll = self.results
@@ -197,6 +225,7 @@ function tab:UpdateRows()
     label:SetImageSize(ICON_SIZE, ICON_SIZE)
     label:SetText(rowText(row, row.id == self.selectedId))
     label:SetHighlight(ROW_HIGHLIGHT)
+    setSelection(label, row.id == self.selectedId)
     label:SetCallback("OnClick", function()
       tab:OnRowClick(row)
     end)
@@ -246,6 +275,7 @@ function tab:OnRowClick(row)
       local label = self.rowLabels[shown.id]
       if label then
         label:SetText(rowText(shown, shown.id == row.id))
+        setSelection(label, shown.id == row.id)
       end
     end
   end
@@ -298,6 +328,8 @@ end
 local function addHeading(scroll, text)
   local heading = AceGUI:Create("Heading")
   heading:SetText(text)
+  -- An AceGUI heading is not full width by itself: in the flow layout it would share a row with an icon
+  heading:SetFullWidth(true)
   scroll:AddChild(heading)
 end
 
