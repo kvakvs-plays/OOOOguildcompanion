@@ -629,30 +629,6 @@ How to read this section:
 
 ### Stage 14. Gambling model
 
-- **14.4 The book**
-  - Substeps
-    - `GambleBook.lua`: the booking of 15.4 on `OnRecordChanged`, running
-      only on an officer character: the time of receipt, the checks, the
-      delay, the skip when an entry with the same `b` is held, the delete
-      for a bet that was taken back, the waiting list for a bet without
-      its event.
-  - Checkpoint: on the host, the bet of a member shows as "accepted" on
-    that member's replica.
-  - Host tests (`Tests/sync_gamblebook.lua`)
-    - A bet before the close is booked once with two officers online.
-    - A bet that an officer receives after the close is not booked, also
-      when its id is from before the close.
-    - A hand-made push of a member with a bet under another name gives no
-      entry.
-    - A change before the close replaces the entry; a change after it
-      leaves the entry, and `BetState` says so.
-    - A bet that an officer gets from another officer is not booked a
-      second time with a later `t`.
-    - No officer online until the close: "too late".
-    - The bet arrives before its event: booked when the event arrives.
-  - Done when: no test finds a way to a valid entry without a first-hand
-    receipt before the close.
-
 - **14.5 Resolution, dues, receipts**
   - Substeps
     - `Gamble.lua`: `Resolve(eventId, results, banker)` writes the dues and
