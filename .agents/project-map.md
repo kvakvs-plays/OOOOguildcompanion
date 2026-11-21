@@ -40,7 +40,7 @@ moved, or removed.
 | Path | Contents |
 | --- | --- |
 | `Slash.lua` | `ns.newDispatcher`: command dispatch by first word, and `SetDefault` for the prefix alone; `ns.slash` (`/oooo`) and `ns.syncSlash` (`/oooo sync`); `ns.print`. No WoW API. Loads before `Core.lua`. |
-| `Database.lua` | `ns.database`: `SCHEMA_VERSION` (3: the mention list), the migration steps, `migrate(db, randomFn)`, creation of the sync origin. Host-testable, no WoW API. Loads after `Sync/VersionId.lua`. |
+| `Database.lua` | `ns.database`: `SCHEMA_VERSION` (4: `db.global.gamble`), the migration steps, `migrate(db, randomFn)`, creation of the sync origin. Host-testable, no WoW API. Loads after `Sync/VersionId.lua`. |
 | `Core.lua` | AceAddon object, AceDB setup and the call of `ns.database.migrate`, the start of the sync session and of the guild state on `PLAYER_LOGIN`, registration of `/oooo` (alone it opens the window of `Window/MainWindow.lua`) and of the `/opt` alias (`addon:SetOptAliasEnabled`), LuaLS classes of the saved variables. |
 | `Emoji/EmojiIndex.lua` | Generated list of emoji names per Discord guild (`ns.emojiIndex`). |
 | `Emoji/EmojiAliases.lua` | Hand-edited aliases per emoji (`ns.emojiAliases`). |
@@ -79,6 +79,8 @@ moved, or removed.
 | `Professions/ProfessionRoster.lua` | `ns.professionRoster`: the model of the tab "Members", without frames. `rows(parts, professionId)` lists the members of the table `profession` with their professions (in the order of the names that `parts.professionName` gives), levels, recipe counts, and the class of the table `character`; with a profession only its members, highest level first. Host-testable, no WoW API. |
 | `Professions/ProfessionRosterTab.lua` | `ns.professionRosterTab`: the tab "Members" of the addon window: the profession dropdown and one line per member with an icon per profession (the AceGUI widget type `OOOOProfessionIcon`: icon, skill and highest skill at the bottom right, name in the tooltip; `PROFESSION_ICONS`). `Build`, `Close`, `Update`, `ScheduleUpdate`, `UpdateDropdown`. Game only. |
 | `Professions/ProfessionProbe.lua` | `ns.professionProbe`: the probes of plan step 12.1. `professions [label]` (existence of the profession API, the list of professions, the window, the recipes, specializations, `lowerVerdict`; one report `professions:<label>` per label), `StartLoginWatch` (armed by `professions login`, called by `Core.lua`), and `nameload <count> [spells]` (many name requests at once; cursor in `db.global.probeCursor`); `dump`. Host-loadable. |
+| `Gamble/GambleData.lua` | `ns.gambleData`: the tables `gamble` (`writers = "officer"`: events, the book, the dues) and `gamble_player` (`writers = "self"`: bets, receipts) of plan section 15.2. Constants (`TABLE`, `PLAYER_TABLE`, `KEEP_DAYS`, `MAX_GOLD`, `CAP_BELOW`, the states), `eventKey`, `bookKey`, `dueKey`, `betKey`, `receiptKey`, `parseKey(tableName, key)` (by position), `validateGamble`, `validatePlayer`. Host-testable, no WoW API. |
+| `Gamble/GambleSettle.lua` | `ns.gambleSettle`: the settlement of plan section 15.5 on plain tables. `BANK_SHARE`, `claim(stake, outcome)` (with the cap `x`), `settle(outcomes, results, bets)` (nets, `won`, `paid`, `bank`), `dues(settlement, banker)`. Host-testable, no WoW API. |
 | `Changelog/ChangelogData.lua` | Generated and git-ignored: `ns.version` and `ns.changelog` (the release notes), written by `scripts/release_tool.py` from `CHANGELOG.md`. |
 | `Changelog/ChangelogWindow.lua` | `ns.changelogWindow`: the frame "What's new" (`/oooo new`): `Create`, `Open`, `Toggle`, `Select`, `UpdateList`, `RenderPage`; position in `db.profile.changelog`; the line after the guild check with the link (`noticeText`, `db.global.changelogSeen`). Game only. |
 | `Sync/SyncProbe.lua` | `ns.syncProbe`: `/oooo sync probe <name>`, the probe registry, reports stored in `db.global.probeResults`, and the computing helpers of the probes (`rosterVerdict` of the probe `roster` for plan step 8.2). Host-loadable. |
@@ -109,6 +111,8 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `sync_profroster.lua` | Tests of `Professions/ProfessionRoster.lua`: the members with their professions, the order of members and of professions (by name), the filter by profession, the class. |
 | `sync_inventory.lua` | Tests of `Guild/AddonInventory.lua`: `validate`, `needsWrite`, the owner rule, the rows and lines of `/oooo versioncheck`, the newest record among alts. |
 | `sync_maxage.lua` | Tests of `Append`, `maxAge`, `Expire`, and the hourly expiry of the session. |
+| `sync_gambledata.lua` | Tests of `Gamble/GambleData.lua`: keys built and read back, `validate` of every kind of record, the write rules with an officer and a member replica. |
+| `sync_gamblesettle.lua` | Tests of `Gamble/GambleSettle.lua`: the example of the plan, the cap, 500 random events, the dues. |
 | `sync_migrate.lua` | Tests of `Database.lua`: migration and origin. |
 | `sync_protocol.lua` | Tests of `Sync/SyncProtocol.lua`, with the stub serializer and with AceSerializer-3.0. |
 | `sync_pull.lua` | Tests of `Sync/SyncPull.lua`, with replicas and hand-made messages on the fake network. |
