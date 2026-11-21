@@ -81,6 +81,7 @@ local addonName, ns = ...
 ---@field gamble OOOOGambleModule
 ---@field gambleBook OOOOGambleBookModule
 ---@field gambleTab OOOOGambleTab
+---@field gambleNotice OOOOGambleNoticeModule
 ---@field professionProbe OOOOProfessionProbe
 ---@field professionScan OOOOProfessionScanModule
 ---@field professionRecipes OOOOProfessionRecipes
@@ -221,6 +222,8 @@ function addon:OnEnable()
     -- Before the session: the book of an officer must hear the first bets that the session brings
     ns.gamble.Start()
     ns.gambleBook.Start()
+    -- The notices of new bets and of the own dues; its first check runs some seconds after the login
+    ns.gambleNotice.Start()
     ns.syncSession.Start()
   end
   ns.guildState:Start()

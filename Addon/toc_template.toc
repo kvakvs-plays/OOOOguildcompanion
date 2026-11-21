@@ -65,6 +65,7 @@ Src\Gamble\GambleSettle.lua
 Src\Gamble\Gamble.lua
 Src\Gamble\GambleBook.lua
 Src\Gamble\GambleTab.lua
+Src\Gamble\GambleNotice.lua
 
 Src\Changelog\ChangelogData.lua
 Src\Changelog\ChangelogWindow.lua
