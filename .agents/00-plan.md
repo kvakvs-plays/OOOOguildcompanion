@@ -629,21 +629,6 @@ How to read this section:
 
 ### Stage 14. Gambling model
 
-- **14.3 Events and bets**
-  - Substeps
-    - `Gamble.lua`, for officers: `Open`, `Lock`, `Cancel`. For everybody:
-      `PlaceBet`, `TakeBack`. Each checks the state of the event (15.3)
-      before it writes, and returns a reason when it refuses.
-    - The reading: `Events()` in the four groups, `Detail(eventId)` with
-      the booked sums, and `BetState(eventId)` (15.4).
-  - Checkpoint: on the host, an officer replica opens an event and a member
-    replica sees it and bets.
-  - Host tests (`Tests/sync_gamble.lua`): a bet before the close is
-    written, after the close or on a cancelled event it is refused; a
-    stake over `m` is refused; a lock moves `c` to now and never later;
-    the groups of `Events()`; texts with `|` are made harmless.
-  - Done when: no function writes into a state that 15.3 forbids.
-
 - **14.4 The book**
   - Substeps
     - `GambleBook.lua`: the booking of 15.4 on `OnRecordChanged`, running
