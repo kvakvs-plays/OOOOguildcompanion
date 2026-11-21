@@ -654,6 +654,10 @@ How to read this section:
 ### Stage 15. Gambling window
 
 - **15.1 The tab and betting** (**CLIENT**)
+  - State: the code is written (`GambleTab.lua`, the start of the model and
+    the book in `Core.lua`), with luacheck only. The client check is open.
+    To look at there: the weekday of the line "open until" comes from
+    `date("%a %H:%M")` and may not be in English.
   - Substeps: `GambleTab.lua` with the list, the detail of an open event,
     the stake boxes, "Place bet", "Take back", the state of the bet, and
     `/oooo bet`. It refreshes on `OnRecordChanged`, at most once in 0.5

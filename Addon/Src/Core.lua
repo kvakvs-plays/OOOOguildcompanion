@@ -77,6 +77,10 @@ local addonName, ns = ...
 ---@field chatHistoryTab OOOOChatHistoryTab
 ---@field professionData OOOOProfessionData
 ---@field gambleData OOOOGambleData
+---@field gambleSettle GambleSettleModule
+---@field gamble OOOOGambleModule
+---@field gambleBook OOOOGambleBookModule
+---@field gambleTab OOOOGambleTab
 ---@field professionProbe OOOOProfessionProbe
 ---@field professionScan OOOOProfessionScanModule
 ---@field professionRecipes OOOOProfessionRecipes
@@ -214,6 +218,9 @@ function addon:OnEnable()
   if not ns.dbIsNewer then
     -- Before the session: the mention list follows the records that the session brings
     ns.mentions.Start()
+    -- Before the session: the book of an officer must hear the first bets that the session brings
+    ns.gamble.Start()
+    ns.gambleBook.Start()
     ns.syncSession.Start()
   end
   ns.guildState:Start()
