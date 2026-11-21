@@ -18,6 +18,8 @@ ns.syncCommands = commands
 commands.DEBUG_TABLE = "debug"
 ---Name of the test table of the officer rule: free keys, a short text, only an officer writes (plan 14.3)
 commands.DEBUG_OFFICER_TABLE = "debugofficer"
+---Name of the test table of the self rule: character keys, a short text, a character writes its own keys
+commands.DEBUG_SELF_TABLE = "debugself"
 local MAX_DEBUG_TEXT = 200
 
 ---Tells whether a payload is the short text of a developer table.
@@ -53,12 +55,14 @@ function commands.EnableDebugTable()
   registerDebugTable(commands.DEBUG_TABLE, "free", "anyone")
 end
 
----Registers the tables of the developer mode: `debug` and the protected `debugofficer`. Core.lua calls it
----after the saved variables have loaded, when the setting is on; `/oooo sync debug on` calls it at once. A
----table cannot be taken out of the registry again, so turning the setting off needs a reload.
+---Registers the tables of the developer mode: `debug` and the protected `debugofficer` and `debugself`.
+---Core.lua calls it after the saved variables have loaded, when the setting is on; `/oooo sync debug on`
+---calls it at once. A table cannot be taken out of the registry again, so turning the setting off needs a
+---reload.
 function commands.EnableDeveloperTables()
   commands.EnableDebugTable()
   registerDebugTable(commands.DEBUG_OFFICER_TABLE, "free", "officer")
+  registerDebugTable(commands.DEBUG_SELF_TABLE, "character", "self")
 end
 
 ---Tells whether the developer mode is on.
@@ -100,7 +104,44 @@ end
 
 ---The developer tables that `put`, `get`, and `del` name with their first word; without such a word they
 ---use the table `debug`, as before these tables existed
-local NAMED_TABLES = { [commands.DEBUG_OFFICER_TABLE] = true }
+local NAMED_TABLES = { [commands.DEBUG_OFFICER_TABLE] = true, [commands.DEBUG_SELF_TABLE] = true }
+---The developer tables whose key is a character name, which has a space (`Nota Scam`)
+local CHARACTER_KEYED = { [commands.DEBUG_SELF_TABLE] = true }
+
+---Reads a character key at the start of the arguments: `me` (the logged-in character), the own name, or
+---another name of two words; each may be followed by a `:suffix` without a space (`Nota Scam:2`).
+---@param rest string
+---@return string|nil key nil when the arguments do not start with a key
+---@return string tail What follows the key
+local function readCharacterKey(rest)
+  local own = ns.sync.playerNameFn and ns.sync.playerNameFn()
+  ---Adds a `:suffix` that follows the name directly.
+  local function withSuffix(name, remaining)
+    local suffix, tail = remaining:match("^(:%S*)(.*)$")
+    if suffix then
+      return name .. suffix, tail
+    end
+    return name, remaining
+  end
+  local afterMe = rest:match("^me(.*)$")
+  if afterMe and (afterMe == "" or afterMe:find("^[%s:]")) then
+    if not own then
+      return nil, ""
+    end
+    return withSuffix(own, afterMe)
+  end
+  if own and rest:sub(1, #own) == own then
+    local remaining = rest:sub(#own + 1)
+    if remaining == "" or remaining:find("^[%s:]") then
+      return withSuffix(own, remaining)
+    end
+  end
+  local first, last, remaining = rest:match("^(%S+)%s+([^%s:]+)(.*)$")
+  if not first then
+    return nil, ""
+  end
+  return withSuffix(first .. " " .. last, remaining)
+end
 
 ---Splits the arguments of `put`, `get`, and `del` into the table and the rest.
 ---@param rest string
@@ -114,20 +155,36 @@ local function splitTable(rest)
   return commands.DEBUG_TABLE, rest
 end
 
----Reads the key and the text of `put`: the first word and the rest.
----@param _tableName string
+---Reads the key and the text of `put`: the first word and the rest, or in a table keyed by character the
+---name (`readCharacterKey`) and the rest.
+---@param tableName string
 ---@param rest string
 ---@return string|nil key nil when the arguments do not fit
 ---@return string|nil text
-local function putArguments(_tableName, rest)
+local function putArguments(tableName, rest)
+  if CHARACTER_KEYED[tableName] then
+    local key, tail = readCharacterKey(rest)
+    local text = tail:match("^%s+(.-)%s*$")
+    if key and text and text ~= "" then
+      return key, text
+    end
+    return nil
+  end
   return rest:match("^(%S+)%s+(.+)$")
 end
 
----Reads the key of `get` and `del`: one word.
----@param _tableName string
+---Reads the key of `get` and `del`: one word, or in a table keyed by character the name alone.
+---@param tableName string
 ---@param rest string
 ---@return string|nil key nil when the arguments do not fit
-local function keyArgument(_tableName, rest)
+local function keyArgument(tableName, rest)
+  if CHARACTER_KEYED[tableName] then
+    local key, tail = readCharacterKey(rest)
+    if key and tail:find("^%s*$") then
+      return key
+    end
+    return nil
+  end
   return rest:match("^(%S+)$")
 end
 
@@ -175,12 +232,19 @@ ns.syncSlash:Register("status", "status - origin, the records, size, and version
   end
 end)
 
-ns.syncSlash:Register("put", "put [debugofficer] <key> <text> - write a record into a developer table "
-  .. "(default: debug)", function(rest)
+---Help line of `put`
+local PUT_HELP = "put [debugofficer|debugself] <key> <text> - write a record into a developer table (default: "
+  .. "debug); in debugself the key is a character name or me, with an optional :suffix"
+---Help line of `get`
+local GET_HELP = "get [debugofficer|debugself] <key> - read a record of a developer table"
+---Help line of `del`
+local DEL_HELP = "del [debugofficer|debugself] <key> - delete a record of a developer table"
+
+ns.syncSlash:Register("put", PUT_HELP, function(rest)
   local tableName, arguments = splitTable(rest)
   local key, text = putArguments(tableName, arguments)
   if not key or not text then
-    ns.print("Usage: /oooo sync put [debugofficer] <key> <text>")
+    ns.print("Usage: /oooo sync put [debugofficer|debugself] <key> <text>")
     return
   end
   if not hasDebugTable(tableName) then
@@ -194,11 +258,11 @@ ns.syncSlash:Register("put", "put [debugofficer] <key> <text> - write a record i
   end
 end)
 
-ns.syncSlash:Register("get", "get [debugofficer] <key> - read a record of a developer table", function(rest)
+ns.syncSlash:Register("get", GET_HELP, function(rest)
   local tableName, arguments = splitTable(rest)
   local key = keyArgument(tableName, arguments)
   if not key then
-    ns.print("Usage: /oooo sync get [debugofficer] <key>")
+    ns.print("Usage: /oooo sync get [debugofficer|debugself] <key>")
     return
   end
   if not hasDebugTable(tableName) then
@@ -208,11 +272,11 @@ ns.syncSlash:Register("get", "get [debugofficer] <key> - read a record of a deve
   ns.print(commands.escape(text and (key .. " = " .. tostring(text)) or ("no record: " .. key)))
 end)
 
-ns.syncSlash:Register("del", "del [debugofficer] <key> - delete a record of a developer table", function(rest)
+ns.syncSlash:Register("del", DEL_HELP, function(rest)
   local tableName, arguments = splitTable(rest)
   local key = keyArgument(tableName, arguments)
   if not key then
-    ns.print("Usage: /oooo sync del [debugofficer] <key>")
+    ns.print("Usage: /oooo sync del [debugofficer|debugself] <key>")
     return
   end
   if not hasDebugTable(tableName) then

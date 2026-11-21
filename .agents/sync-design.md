@@ -258,6 +258,7 @@ ns.sync:RegisterTable({
   writers = "owner",                  -- "owner": a player writes only records of their own characters (5.2)
                                       -- "anyone": every member writes every key (the debug table)
                                       -- "officer": only an officer writes; keyKind "free" (5.5)
+                                      -- "self": only the character that the key names; keyKind "character" (5.5)
   policy = { when = "nocombat", pushDelay = 300, minInterval = 600 },   -- defaults, user can override
 })
 ```
@@ -275,7 +276,13 @@ API for feature modules:
   local write (5.5). `ns.sync:GetId(tableName,
   key)`: the version id of a stored record that is not deleted, or nil.
 - `ns.sync.RegisterCallback(owner, "OnRecordChanged", fn)` (CallbackHandler):
-  fires for local and remote changes, for UI refresh.
+  fires for local and remote changes, for UI refresh, as
+  `fn(event, tableName, key, payload, isRemote, firstHand)`. `firstHand` is
+  true for a local write (`Put`, `Append`, `Delete`) and for a record of a
+  self table that arrived in a push whose sender is the character that the
+  key names; false or nil for a pull, a push of another sender, and the
+  cleanup (5.5). `sync:ApplyRemote(tableName, records, checkFn, sender)`
+  takes the sender of a push for it.
 
 ### 5.1 Built-in table `character` and alt detection
 
@@ -303,6 +310,15 @@ API for feature modules:
 | `attunement` | name | owner | anyone |
 | `guildchat` | the record's own id | anyone; by rule the sender, or one witness (5.3) | anyone |
 | `debugofficer` | free (developer mode) | officer (5.5) | an officer |
+| `debugself` | name (developer mode) | self (5.5) | an officer |
+
+Rules for `writers = "officer"`: only an officer character writes; a member
+sends nothing of the table and nothing it sends is taken. Rules for
+`writers = "self"`: a key is written only by the character that it names
+(alts do not count), with the character origin; a receiver takes from a
+member only the records that name the sender, and everything from an
+officer. Both are protected tables: only an officer is a source. The details
+are in 5.5.
 
 Rules for `writers = "owner"`:
 
@@ -725,6 +741,29 @@ protected (`sync:IsProtected`, `Session:IsProtected`).
   a member's announcement of the same version (`Session:HoldsBack`);
   another officer's still holds them back. A member's own answer and summary
   are held back as before.
+- **Self tables.** In a table with `writers = "self"` (`keyKind =
+  "character"`) `Put` and `Delete` work only for a key that names the
+  logged-in character; an alt does not count (`"not the owner"`), and
+  `Append` is refused (`"bad key"`). A push of an officer is applied with
+  every record and its clock rest. Of a push of a member only the records
+  whose key names the sender are applied, first hand, whatever the `own`
+  flag says; any other record is dropped with the later records of its
+  origin, and the member's clock rest is ignored. A member pushes only the
+  records of its character origin whose key names its character, in
+  `PushLocal` and in `PushWanted` (the wants of a pull are answered by a
+  member only for its character origin; by an officer as in every table).
+  With no such record left (they expired) it sends nothing and counts the
+  writes as pushed (`Session:PushesOwnOnly`). Sources, deltas, and announced
+  versions follow the rules of officer tables above.
+- **First hand** (`firstHand` of "OnRecordChanged", section 5): a local
+  write, or a record of a self table from a push of the character that the
+  key names. A record from an officer is vouched, not first hand, unless
+  the key names that officer.
+- **Equal data, different versions.** A member can hold a first-hand record
+  that no online officer holds; its version then differs from the
+  officers'. The rule that a merged version is not pulled again (7.2 step
+  5) keeps this from causing repeated pulls; the officer never pulls from a
+  member.
 - **Limits.** Officers are trusted; an officer with a modified addon can
   write anything. Without an officer online a protected table does not
   spread.
@@ -998,12 +1037,16 @@ Per table, with defaults from the table definition and overrides in
   `"too large"`; a received one is dropped like any bad record.
 - The developer mode is the setting `db.global.debugTable`, turned on with
   `/oooo sync debug on` and off by default. Only in it are the table `debug`
-  (`writers = "anyone"`) and the protected table `debugofficer` registered
-  (`EnableDeveloperTables`), so a release has no table that every member can
-  fill with text; and only in it is the "Sync" page shown and do its send
-  settings apply (7.4). `/oooo sync put|get|del` write the table `debug`; a
-  first word `debugofficer` names that table instead
-  (`/oooo sync put debugofficer <key> <text>`).
+  (`writers = "anyone"`) and the protected tables `debugofficer` and
+  `debugself` registered (`EnableDeveloperTables`), so a release has no
+  table that every member can fill with text; and only in it is the "Sync"
+  page shown and do its send settings apply (7.4). `/oooo sync put|get|del`
+  write the table `debug`; a first word `debugofficer` or `debugself` names
+  that table instead (`/oooo sync put debugofficer <key> <text>`). In
+  `debugself` the key is a character name with its space, or `me`, each with
+  an optional `:suffix` (`/oooo sync put debugself Nota Scam hello`,
+  `/oooo sync get debugself me:2`); another name is taken as its first two
+  words.
 - Accepted risk for owner tables: a member with a modified addon can write wrong
   data under any key. The addon cannot prove who owns a character. The damage is
   limited to wrong shared data, which a later correct write replaces; a future

@@ -60,9 +60,10 @@ return function(T)
   ---Makes a replica and joins it to the network. It is online but does nothing until `Login`.
   ---`developerTables`: also register the protected developer tables (`debugofficer`, ...), as the developer
   ---mode of the game does; the older tests leave them out, so that their hellos carry only the tables they know.
+  ---`data`: the stored database of another replica, for an alt of the same install; log only one of them in.
   ---@param net Fakenet
   ---@param name string Character name
-  ---@param options { origin: string?, random: (fun(m: integer?, n: integer?): number), rankIndex: integer?, developerTables: boolean? }
+  ---@param options { origin: string?, random: (fun(m: integer?, n: integer?): number), rankIndex: integer?, developerTables: boolean?, data: table? }
   ---@return TestReplica
   function Replica.new(net, name, options)
     made = made + 1
@@ -81,7 +82,7 @@ return function(T)
     self.mentionStore = { lines = {} }
     self.watch = ""
     self.notifyOnLogin = true
-    self.data = { origin = options.origin or ns.base94.encode(made, 4), tables = {} }
+    self.data = options.data or { origin = options.origin or ns.base94.encode(made, 4), tables = {} }
     ns.sync:Initialize(self.data, function()
       return math.floor(net:Now())
     end, options.random, function()

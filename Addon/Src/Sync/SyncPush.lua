@@ -173,10 +173,36 @@ function Session:MayPush(tableName)
   return not (definition and definition.writers == "officer") or self:IsOfficerSelf()
 end
 
+---Tells whether this character pushes only its own records of a table: a member in a self table. Its push
+---carries the records of its character origin whose key names the character, also after a pull (plan
+---section 14.3); an officer pushes as in every other table.
+---@param tableName string
+---@return boolean
+function Session:PushesOwnOnly(tableName)
+  local definition = self.parts.sync.definitions[tableName]
+  return definition ~= nil and definition.writers == "self" and not self:IsOfficerSelf()
+end
+
+---Keeps the records whose key names a character.
+---@param records OOOOSyncWireRecord[]
+---@param name string|nil
+---@return OOOOSyncWireRecord[] own In the same order
+local function recordsNaming(records, name)
+  local own = {}
+  for _, record in ipairs(records) do
+    if name ~= nil and ns.sync.keyName(record.key) == name then
+      own[#own + 1] = record
+    end
+  end
+  return own
+end
+
 ---Pushes the local changes of a table: this install's own records after its last pushed id, with that id
 ---as base. It does nothing while the table may not send, and while a pull of the table runs or is about to
 ---start: the push after that pull carries the same records, with a base that fits its responder.
 ---`SchedulePushes` tries again when the conditions change and when the pulls have ended.
+---A member in a self table pushes only the records that name its character; with none left to send (they
+---expired) it sends nothing and counts its writes as pushed.
 ---@param tableName string
 function Session:PushLocal(tableName)
   local sync = self.parts.sync
@@ -188,13 +214,19 @@ function Session:PushLocal(tableName)
   end
   local top, pushed = tbl.clock[origin], pushedId(tbl, origin, installOrigin)
   if top and top > pushed then
-    if not self:SendPush(tableName, recordsOf(tbl, origin, pushed), { [origin] = pushed }, { [origin] = top },
-      true) then
-      -- Not in the guild: the change stays unsent
-      return
+    local records = recordsOf(tbl, origin, pushed)
+    local ownOnly = self:PushesOwnOnly(tableName)
+    if ownOnly then
+      records = recordsNaming(records, self.parts.playerName())
+    end
+    if not ownOnly or #records > 0 then
+      if not self:SendPush(tableName, records, { [origin] = pushed }, { [origin] = top }, true) then
+        -- Not in the guild: the change stays unsent
+        return
+      end
+      self.lastPushAt[tableName] = self.parts.now()
     end
     setPushed(tbl, origin, installOrigin, top)
-    self.lastPushAt[tableName] = self.parts.now()
   end
   sync.dirtySince[tableName] = nil
 end
@@ -246,7 +278,8 @@ end
 
 ---Pushes, after a complete pull, the records that the responder lacks: those of the origins that it named
 ---in `wants`, with its clock values as base. All peers in the state of the responder can apply them at
----once, so none of them has to pull from this replica.
+---once, so none of them has to pull from this replica. A member in a self table answers only for its
+---character origin, with the records that name its character.
 ---@param tableName string
 ---@param wants table<string, string> Origin -> the responder's clock value; the zero id when it has none
 ---@return boolean pushed true when a push went out
@@ -256,10 +289,13 @@ function Session:PushWanted(tableName, wants)
   if not tbl or not self:MayTransfer(tableName) or not self:MayPush(tableName) then
     return false
   end
+  local own, installOrigin = sync:OriginFor(tableName), sync:GetOrigin()
+  local ownOnly = self:PushesOwnOnly(tableName)
   local base, tops = {}, {}
   for origin, theirs in pairs(wants) do
     local top = tbl.clock[origin]
-    if top and top > theirs and (theirs == versionId.ZERO or versionId.originOf(theirs) == origin) then
+    if top and top > theirs and (theirs == versionId.ZERO or versionId.originOf(theirs) == origin)
+      and (not ownOnly or origin == own) then
       base[origin], tops[origin] = theirs, top
     end
   end
@@ -276,11 +312,21 @@ function Session:PushWanted(tableName, wants)
   table.sort(records, function(a, b)
     return a.id < b.id
   end)
+  if ownOnly then
+    records = recordsNaming(records, self.parts.playerName())
+  end
+  -- A member with no record of its own left to give (they expired) sends nothing: its clock values would
+  -- not be taken
+  if ownOnly and #records == 0 then
+    if own and installOrigin and tops[own] and tops[own] > pushedId(tbl, own, installOrigin) then
+      setPushed(tbl, own, installOrigin, tops[own])
+    end
+    return false
+  end
   if not self:SendPush(tableName, records, base, tops, false) then
     return false
   end
   -- The push has carried this install's own writes up to the top: nothing of them is left to push
-  local own, installOrigin = sync:OriginFor(tableName), sync:GetOrigin()
   if own and installOrigin and tops[own] then
     if tops[own] > pushedId(tbl, own, installOrigin) then
       setPushed(tbl, own, installOrigin, tops[own])
@@ -330,7 +376,9 @@ end
 ---records are ignored, and a pull is scheduled. In a push of own writes (`own`), a record whose key does not
 ---belong to the sender is dropped with the later records of its origin.
 ---A push of a member into an officer table is ignored whole, whatever its `own` flag says: no record, no
----clock entry, no pull. Only its version is kept with the peer (plan section 14.3).
+---clock entry, no pull. Only its version is kept with the peer (plan section 14.3). Of a push of a member into
+---a self table only the records whose key names the sender are taken, first hand; any other record is dropped
+---with the later records of its origin, and the clock rest is ignored.
 ---@param self OOOOSyncSession
 ---@param sender string
 ---@param pushed OOOOSyncPush
@@ -342,9 +390,14 @@ function handlers.P(self, sender, pushed)
     return
   end
   local protected = self:IsProtected(pushed.table)
+  ---true for a push of a member into a self table: nobody vouches for it but its sender
+  local firstHandOnly = false
   if protected and not self:IsOfficerName(sender) then
-    self:NoteVersions(sender, { [pushed.table] = pushed.version }, false)
-    return
+    if definition.writers ~= "self" then
+      self:NoteVersions(sender, { [pushed.table] = pushed.version }, false)
+      return
+    end
+    firstHandOnly = true
   end
   -- This replica holds what the sender had before the push when it has, or has had, that table version
   local merged = self.merged[pushed.table]
@@ -369,17 +422,23 @@ function handlers.P(self, sender, pushed)
   local _, dropped = sync:ApplyRemote(pushed.table, accepted, function(record, recordDefinition)
     -- Own new writes come from their writer, so the owner rule can be checked. Records that the sender
     -- passes on after a pull cannot: any member may pass on the records of any other (plan section 5.2).
-    -- An officer is trusted with every record of a protected table.
-    if pushed.own and not protected and not sync:MayWrite(recordDefinition, record.key, sender, true) then
+    -- An officer is trusted with every record of a protected table. A member's push into a self table is
+    -- checked whatever its `own` flag says: a modified addon sets the flag as it likes.
+    if firstHandOnly then
+      if sync.keyName(record.key) ~= sender then
+        return false
+      end
+    elseif pushed.own and not protected and not sync:MayWrite(recordDefinition, record.key, sender, true) then
       return false
     end
     return self:CheckRecord(record, recordDefinition)
-  end)
+  end, sender)
   if dropped == 0 then
     local now = math.floor(self.parts.now())
     local rest = {}
     for origin, id in pairs(pushed.rest) do
-      if hasGap[origin] == false and versionId.isValid(id, now) then
+      -- A member's clock values of a self table stand for writes that nobody can check
+      if not firstHandOnly and hasGap[origin] == false and versionId.isValid(id, now) then
         rest[origin] = id
       else
         isWhole = false

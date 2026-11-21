@@ -51,9 +51,12 @@ local versionId = ns.versionId
 local base94 = ns.base94
 
 ---Events for feature modules and the UI, in the CallbackHandler form:
----`ns.sync.RegisterCallback(owner, "OnRecordChanged", function(event, tableName, key, payload, isRemote) end)`.
+---`ns.sync.RegisterCallback(owner, "OnRecordChanged", function(event, tableName, key, payload, isRemote,
+---firstHand) end)`.
 ---`payload` is nil when the record was deleted or removed by the local cleanup. The event fires for local
----and for received changes.
+---and for received changes. `firstHand` (plan section 14.8) is true for a local write (`Put`, `Append`,
+---`Delete`), and for a record of a table with `writers = "self"` that arrived in a push whose sender is the
+---character that the key names; false or nil otherwise (a pull, a push of another sender, the cleanup).
 sync.callbacks = LibStub("CallbackHandler-1.0"):New(sync)
 
 local NAME_PATTERN = "^[a-z][a-z0-9_]*$"
@@ -483,7 +486,7 @@ function sync:Put(tableName, key, payload)
   local stored = copy(payload)
   store.apply(tbl, key, id, stored)
   markDirty(tableName)
-  self.callbacks:Fire("OnRecordChanged", tableName, key, stored, false)
+  self.callbacks:Fire("OnRecordChanged", tableName, key, stored, false, true)
   return true
 end
 
@@ -529,7 +532,7 @@ function sync:Append(tableName, payload)
   local stored = copy(payload)
   store.apply(tbl, id, id, stored)
   markDirty(tableName)
-  self.callbacks:Fire("OnRecordChanged", tableName, id, stored, false)
+  self.callbacks:Fire("OnRecordChanged", tableName, id, stored, false, true)
   return id
 end
 
@@ -561,7 +564,7 @@ function sync:Delete(tableName, key)
   end
   store.apply(tbl, key, id, nil, true)
   markDirty(tableName)
-  self.callbacks:Fire("OnRecordChanged", tableName, key, nil, false)
+  self.callbacks:Fire("OnRecordChanged", tableName, key, nil, false, true)
   return true
 end
 
@@ -572,9 +575,11 @@ end
 ---@param records OOOOSyncWireRecord[] From `syncProtocol`: keys and ids have the right form
 ---@param checkFn (fun(record: OOOOSyncWireRecord, definition: OOOOSyncTableDefinition): boolean|"seen")? A
 ---further check of the caller, after the checks above; "seen" raises the clock without storing the record
+---@param sender string? The character that sent the records in a push: in a table with `writers = "self"`, a
+---changed record whose key names it is first hand (`firstHand` of "OnRecordChanged"). nil for a pull.
 ---@return string[] changed Keys whose stored record changed
 ---@return integer dropped Number of records that were not applied
-function sync:ApplyRemote(tableName, records, checkFn)
+function sync:ApplyRemote(tableName, records, checkFn, sender)
   local tbl, definition = self:GetTable(tableName)
   if not tbl or not definition then
     return {}, #records
@@ -602,9 +607,11 @@ function sync:ApplyRemote(tableName, records, checkFn)
     end
     return true
   end)
+  local bySelf = sender ~= nil and definition.writers == "self"
   for _, key in ipairs(changed) do
     local record = tbl.records[key]
-    self.callbacks:Fire("OnRecordChanged", tableName, key, (not record.x) and record.d or nil, true)
+    self.callbacks:Fire("OnRecordChanged", tableName, key, (not record.x) and record.d or nil, true,
+      bySelf and sync.keyName(key) == sender)
   end
   return changed, dropped
 end
