@@ -167,6 +167,7 @@ do
   local net, all = setup({}, { "Member One" })
   local member = all["Member One"]
   local zero = member.ns.versionId.ZERO
+  local olderVersion = member:Version(TABLE)
   member.sync:Put(TABLE, "Member One", "text")
   net:Advance(60)
   local rawMember, rawOfficer = net:Join("Raw Member"), net:Join("Raw Officer", OFFICER_RANK)
@@ -196,8 +197,12 @@ do
   rawOfficer:Send(codec.encode("H", {}), "GUILD")
   net:Advance(1)
   T.eq(member.session.delivery.held[TABLE]["Raw Officer"], nil, "a hello of the officer clears the held id")
-  net:Advance(130)
-  T.eq(#messages(net, "P", "Member One", since), 4, "and the count: the check pushes again")
+  net:Advance(600)
+  T.eq(#messages(net, "P", "Member One", since), 3, "an officer whose hello does not name the table gets no push")
+  -- An older version starts a pull from the officer, which never answers; the check pushes after it
+  rawOfficer:Send(codec.encode("H", { [TABLE] = olderVersion }), "GUILD")
+  net:Advance(3600)
+  T.eq(#messages(net, "P", "Member One", since), 6, "a hello that names the table clears the count: 3 more pushes")
 end
 
 -- An officer logs in with an equal version: no member pushes. With an older one: each member delivers once.
@@ -241,6 +246,124 @@ do
   T.eq(#messages(net, "P", "Member One", since), 1, "one push, and no repeated one")
   T.eq(all["Member Two"].sync:Get(TABLE, "Member One"), "text", "the member online has the record")
   T.eq(all["Member One"].session:HeldStatus(TABLE), "held by 0 of 0 officers online", "the status says so")
+end
+
+---Joins an endpoint without an addon that sends raw messages and keeps the whispers that it gets.
+---@param net Fakenet
+---@param name string
+---@param rankIndex integer?
+---@return table raw With `endpoint`, `got` (the decoded whispers), `Send`, and `Whispers`
+local function joinRaw(net, name, rankIndex)
+  local raw = { endpoint = net:Join(name, rankIndex), got = {} }
+  raw.endpoint.receive = function(text, distribution)
+    local messageType, fields = codec.decode(text)
+    if distribution == "WHISPER" then
+      raw.got[#raw.got + 1] = { type = messageType, fields = fields }
+    end
+  end
+  ---Sends a message on the channel of its type.
+  ---@param messageType string
+  ---@param target string|nil The receiver of a whisper
+  function raw:Send(messageType, target, ...)
+    self.endpoint:Send(codec.encode(messageType, ...), Replica.protocol.CHANNELS[messageType], target)
+  end
+  ---Returns the whispers of one type that the endpoint got.
+  ---@param messageType string
+  ---@return table[] fields
+  function raw:Whispers(messageType)
+    local list = {}
+    for _, message in ipairs(self.got) do
+      if message.type == messageType then
+        list[#list + 1] = message.fields
+      end
+    end
+    return list
+  end
+  return raw
+end
+
+-- An officer peer that never names the table (an older addon, or the table turned off) sends no K: it does not
+-- count, and the member pushes nothing again for it
+do
+  local net, all = setup({}, { "Member One" })
+  local member = all["Member One"]
+  local rawOfficer = joinRaw(net, "Raw Officer", OFFICER_RANK)
+  rawOfficer:Send("H", nil, {})
+  net:Advance(10)
+  T.ok(member.session.peers["Raw Officer"], "the officer is a peer")
+  local since = net:Now()
+  member.sync:Put(TABLE, "Member One", "text")
+  net:Advance(3600)
+  T.eq(#messages(net, "P", "Member One", since), 1, "one push, and no repeated one for that officer")
+  T.eq(member.session:HeldStatus(TABLE), "held by 0 of 0 officers online", "the officer does not count")
+end
+
+-- One push of a member costs one K per member and table, for the origin of its last record that names the
+-- sender; a later push before the K replaces the origin
+do
+  local net, all = setup({ "Officer One" }, {})
+  local officer = all["Officer One"]
+  local versionId, base94 = officer.ns.versionId, officer.ns.base94
+  local rawMember = joinRaw(net, "Raw Member")
+  local now = math.floor(net:Now())
+  local version = "!!!!!RRRR!!!!!!!"
+  ---Makes a push of records of the raw member, one per origin.
+  ---@param first integer The number of the first origin
+  ---@param count integer
+  ---@return table base, string packed, string lastOrigin
+  local function forged(first, count)
+    local records, base, origin = {}, {}, nil
+    for index = first, first + count - 1 do
+      origin = base94.encode(1000 + index, 4)
+      records[#records + 1] = { key = "Raw Member", id = versionId.make(now - 200 + index, origin, 0), payload = "x" }
+      base[origin] = versionId.ZERO
+    end
+    return base, Replica.protocol.packRecords(records), origin
+  end
+  local base, packed, lastOrigin = forged(1, 60)
+  rawMember:Send("P", nil, TABLE, 1, version, version, true, base, packed, {})
+  net:Advance(30)
+  local held = rawMember:Whispers("K")
+  T.eq(#held, 1, "a push with 60 origins gets one K")
+  T.eq(held[1].origin, lastOrigin, "for the origin of the last record")
+  local firstBase, firstPacked = forged(70, 1)
+  local secondBase, secondPacked, secondOrigin = forged(80, 1)
+  rawMember:Send("P", nil, TABLE, 1, version, version, true, firstBase, firstPacked, {})
+  rawMember:Send("P", nil, TABLE, 1, version, version, true, secondBase, secondPacked, {})
+  net:Advance(30)
+  held = rawMember:Whispers("K")
+  T.eq(#held, 2, "two pushes in a row get one K more")
+  T.eq(held[2].origin, secondOrigin, "for the origin of the later push")
+end
+
+-- A member's push into a self table never makes its version merged: an empty push that names the version of an
+-- officer does not stop the pull from that officer. An honest push causes no pull.
+do
+  for _, forge in ipairs({ false, true }) do
+    local net, all = setup({ "Officer One" }, {})
+    local officer = all["Officer One"]
+    local versionId = officer.ns.versionId
+    local rawOfficer, rawMember = joinRaw(net, "Raw Officer", OFFICER_RANK), joinRaw(net, "Raw Member")
+    local announced = versionId.make(math.floor(net:Now()) - 50, "OOOO", 0) .. "!!!!!"
+    rawOfficer:Send("S", nil, { [TABLE] = announced })
+    if forge then
+      rawMember:Send("P", nil, TABLE, 1, announced, officer:Version(TABLE), true, {}, Replica.protocol.packRecords({}),
+        {})
+    end
+    net:Advance(200)
+    local label = forge and "after an empty member push that names it: " or "without a member push: "
+    local merged = officer.session.merged[TABLE]
+    T.eq(merged and merged[announced], nil, label .. "the officer's version is not counted as merged")
+    T.eq(#rawOfficer:Whispers("Q"), 1, label .. "the officer pulls from the officer that announced it")
+  end
+  local net, all = setup({ "Officer One" }, { "Member One", "Member Two" })
+  local since = net:Now()
+  all["Member One"].sync:Put(TABLE, "Member One", "text")
+  net:Advance(600)
+  T.eq(#messages(net, "Q", nil, since), 0, "an honest member's push causes no pull")
+  T.eq({ all["Officer One"].sync:Get(TABLE, "Member One"), all["Member Two"].sync:Get(TABLE, "Member One") },
+    { "text", "text" }, "and its record arrives")
+  T.eq(all["Officer One"].sync:IsBehind(TABLE), false, "the officer is not behind")
 end
 
 -- IsBehind: true for an officer after a member announced a newer maxId that no online officer holds

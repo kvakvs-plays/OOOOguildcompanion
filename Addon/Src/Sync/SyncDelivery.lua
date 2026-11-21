@@ -13,7 +13,7 @@ local addonName, ns = ...
 ---@class OOOOSyncHeldOwed A `K` that an officer owes a member
 ---@field member string Character name of the member
 ---@field table string
----@field origin string The character origin of the member's writes
+---@field origin string The character origin of the member's writes, from its last push
 ---@field timer OOOOSyncTimer|nil Runs until the `K` is sent; nil while it waits for the conditions
 
 ---@class OOOOSyncDeliveryState What the session knows about the delivery, for the session only
@@ -21,7 +21,7 @@ local addonName, ns = ...
 ---officer holds the own writes of the character origin
 ---@field repeats table<string, table<string, integer>> Member side: table -> officer -> repeated pushes for it
 ---@field ownPushAt table<string, number> Table -> server time of the last push of own records
----@field owed table<string, OOOOSyncHeldOwed> Officer side: member, table, and origin -> the `K` to send
+---@field owed table<string, OOOOSyncHeldOwed> Officer side: member and table -> the `K` to send
 ---@field timer OOOOSyncTimer|nil Runs until the next check of the repeated push
 
 ---@class OOOOSyncDeliveryModule
@@ -62,12 +62,16 @@ function Session:Delivery()
   return state
 end
 
----Lists the online officer peers: the officers whose addon has announced itself.
+---Lists the online officer peers that have announced a version of a table. An officer whose addon is older
+---than the protected tables, or has the table turned off, never names it, and it never sends a `K`: it does
+---not count, or a member would push its own records to it for nothing.
+---@param tableName string
 ---@return string[] names In the arrival order of the peers
-function Session:OnlineOfficers()
+function Session:OnlineOfficers(tableName)
   local names = {}
   for _, peer in ipairs(self:PeerList()) do
-    if self:IsOfficerName(peer.name) and self.parts.guild:IsOnline(peer.name) then
+    if peer.versions[tableName] ~= nil and self:IsOfficerName(peer.name)
+      and self.parts.guild:IsOnline(peer.name) then
       names[#names + 1] = peer.name
     end
   end
@@ -78,10 +82,11 @@ end
 -- Officer side: the whisper `K`
 --------------------------------------------------------------------------------
 
----Takes note, on an officer, of a member's push into a self table: for each origin of its records that name
----the sender, the officer whispers `K` after a random 1 to 5 seconds. It does so also when it held the records
----already or ignored them for a gap; the id then is its older clock value, or the zero id. One `K` is
----pending per member, table, and origin.
+---Takes note, on an officer, of a member's push into a self table: the officer whispers `K` after a random 1
+---to 5 seconds. It does so also when it held the records already or ignored them for a gap; the id then is
+---its older clock value, or the zero id. An honest member writes a self table under one character origin, so
+---one `K` is pending per member and table, for the origin of the last record of the push that names the
+---sender: a push with many origins costs one whisper, and a later push replaces the origin.
 ---@param sender string The member who pushed
 ---@param pushed OOOOSyncPush
 function Session:OweHeld(sender, pushed)
@@ -89,24 +94,28 @@ function Session:OweHeld(sender, pushed)
     return
   end
   local sync = self.parts.sync
-  local origins = {}
+  local origin
   for _, record in ipairs(pushed.records) do
     if sync.keyName(record.key) == sender then
-      origins[versionId.originOf(record.id)] = true
+      origin = versionId.originOf(record.id)
     end
+  end
+  if not origin then
+    return
   end
   local owed = self:Delivery().owed
-  for origin in pairs(origins) do
-    local key = sender .. "\0" .. pushed.table .. "\0" .. origin
-    if not owed[key] then
-      local entry = { member = sender, table = pushed.table, origin = origin }
-      owed[key] = entry
-      entry.timer = self.parts.after(self:RandomDelay(delivery.HELD_DELAY_MIN, delivery.HELD_DELAY_MAX), function()
-        entry.timer = nil
-        self:SendHeld(key)
-      end)
-    end
+  local key = sender .. "\0" .. pushed.table
+  local entry = owed[key]
+  if entry then
+    entry.origin = origin
+    return
   end
+  entry = { member = sender, table = pushed.table, origin = origin }
+  owed[key] = entry
+  entry.timer = self.parts.after(self:RandomDelay(delivery.HELD_DELAY_MIN, delivery.HELD_DELAY_MAX), function()
+    entry.timer = nil
+    self:SendHeld(key)
+  end)
 end
 
 ---Whispers a `K` that is owed, with the clock value that the officer holds now. While the table may not send,
@@ -292,7 +301,7 @@ function Session:CheckDelivery()
       if top then
         local held, repeats = state.held[name] or {}, state.repeats[name] or {}
         local from, officers = nil, {}
-        for _, officer in ipairs(self:OnlineOfficers()) do
+        for _, officer in ipairs(self:OnlineOfficers(name)) do
           local value = held[officer]
           if (repeats[officer] or 0) < delivery.MAX_REPEATS and (not value or value < top) then
             officers[#officers + 1] = officer
@@ -342,7 +351,7 @@ function Session:IsBehind(tableName)
   if not newest then
     return false
   end
-  for _, officer in ipairs(self:OnlineOfficers()) do
+  for _, officer in ipairs(self:OnlineOfficers(tableName)) do
     local version = self.peers[officer].versions[tableName]
     if version and version:sub(1, versionId.LENGTH) >= newest then
       return false
@@ -351,7 +360,8 @@ function Session:IsBehind(tableName)
   return true
 end
 
----Tells for `/oooo sync status` how many online officers hold the own writes of a self table.
+---Tells for `/oooo sync status` how many online officers hold the own writes of a self table. Only officers
+---that have announced a version of the table count.
 ---@param tableName string
 ---@return string|nil text "held by N of M officers online"; nil when the character is an officer, the table
 ---is no self table, or the character has no write there
@@ -366,7 +376,7 @@ function Session:HeldStatus(tableName)
     return nil
   end
   local held = self.delivery and self.delivery.held[tableName] or {}
-  local officers, holding = self:OnlineOfficers(), 0
+  local officers, holding = self:OnlineOfficers(tableName), 0
   for _, officer in ipairs(officers) do
     if held[officer] and held[officer] >= top then
       holding = holding + 1

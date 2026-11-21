@@ -428,7 +428,7 @@ end
 ---A push of a member into an officer table is ignored whole, whatever its `own` flag says: no record, no
 ---clock entry, no pull. Only its version is kept with the peer (plan section 14.3). Of a push of a member into
 ---a self table only the records whose key names the sender are taken, first hand; any other record is dropped
----with the later records of its origin, and the clock rest is ignored.
+---with the later records of its origin, and the clock rest is ignored; its version is never counted as merged.
 ---@param self OOOOSyncSession
 ---@param sender string
 ---@param pushed OOOOSyncPush
@@ -495,7 +495,9 @@ function handlers.P(self, sender, pushed)
       end
     end
     store.mergeClock(tbl, rest)
-    if isWhole and heldBefore then
+    -- A member's push into a self table proves nothing of its version: a member could name a version that
+    -- an officer has announced, with nothing in the push, and this replica would never pull that officer
+    if isWhole and heldBefore and not firstHandOnly then
       -- All of the push was taken on top of what the sender had before: this replica holds the sender's
       -- version, also when other writes have made its own version another one
       self:RememberOwnVersion(pushed.table, pushed.version)

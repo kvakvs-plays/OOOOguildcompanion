@@ -957,7 +957,10 @@ Three rules keep the peer list from causing pulls that transfer nothing:
 - Every table version that a replica has had itself counts as merged. A peer
   whose last announced version is one of them is only out of date.
 - A push names the version before it (6.1), so a receiver knows that it holds
-  the announced version also after other pushes.
+  the announced version also after other pushes. Not so for a member's push
+  into a self table: the version is the member's claim, which proves nothing.
+  An empty push naming the version of an officer would otherwise stop the
+  pull of that officer's new data.
 - A responder whose table version has changed since it last told the guild
   sends `S` when a pull request arrives. The request shows that a peer acts
   on the old version; the summary stops the others before they ask too.
@@ -978,9 +981,12 @@ that the online officers hold its own writes:
 
 - An officer that handles a member's push into a self table (applied,
   already held, or ignored for a gap) whispers `K(table, origin, its clock
-  value of that origin or the zero id)` after a random 1 to 5 seconds, per
-  origin of the records whose key names the sender. One `K` is pending per
-  member, table, and origin; in combat it waits for the conditions.
+  value of that origin or the zero id)` after a random 1 to 5 seconds, for
+  the origin of the last record of the push whose key names the sender. One
+  `K` is pending per member and table; a later push before it is sent
+  replaces the origin. An honest member writes a self table under one
+  character origin, so a push with many origins still costs one whisper. In
+  combat the `K` waits for the conditions.
 - A member keeps `held[table][officer] = id` for its character origin for
   the session. It learns it from a `K`; from an officer that announces
   exactly the member's own table version (held = own top); and from a
@@ -995,6 +1001,11 @@ that the online officers hold its own writes:
   unsent changes, a pending pull, or an own push in the last 30 seconds. At
   most 3 repeated pushes per officer and table in a session. The timers stop
   with the session.
+- Only an officer peer that has announced a version of the table counts as
+  online for the check and for the status line. An officer whose addon is
+  older than the protected tables, or has the table turned off, never names
+  it and never sends a `K`; counting it would make every member push its
+  whole own slice 3 times per session for nothing.
 - Cost: one push and one `K` per online officer for a new write; nothing at
   a login when the versions are equal. Without an officer online nothing is
   sent again.
@@ -1003,7 +1014,8 @@ that the online officers hold its own writes:
   merged) with a greater `maxId` than the own table, and no online officer
   peer has announced a version with a `maxId` at least as great.
 - `/oooo sync status` adds to the line of a self table, for a member with own
-  writes, "held by N of M officers online" (`Session:HeldStatus`).
+  writes, "held by N of M officers online" (`Session:HeldStatus`), M counting
+  the officers that have announced the table.
 
 ### 7.4 Conditions and policy
 

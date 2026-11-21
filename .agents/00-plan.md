@@ -229,8 +229,8 @@ New message, a whisper from an officer to a member:
 | `K` held | WHISPER | table, origin, id | "I hold your writes of this origin up to this id." |
 
 - An officer that handles a push of a member in a self table whispers `K`
-  for each origin of the records that name the sender, after a random 1 to
-  5 seconds. It does so also when it already held the records, and when it
+  for the origin of the last record that names the sender, after a random
+  1 to 5 seconds: one `K` per member and table. It does so also when it already held the records, and when it
   ignored them for a gap; the id is then its older clock value, or the zero
   id.
 - A `K` from a sender that is no officer is ignored. Receivers before this
@@ -242,8 +242,8 @@ New message, a whisper from an officer to a member:
     holds everything;
   - a finished pull from an officer: the officer holds the own writes when
     the `wants` do not name the own origin.
-- A member pushes its own records again when an online officer peer holds
-  less than the member's newest own write:
+- A member pushes its own records again when an online officer peer that
+  has announced the table holds less than the member's newest own write:
   - after a `K` with an older id: at once (by the policy), from that id;
   - otherwise by a check every 120 seconds, when no pull from that officer
     is planned or running: from the smallest held id among those officers,
