@@ -53,7 +53,7 @@ The result of implementing the plan should be
 | Term | Meaning |
 | --- | --- |
 | Replica | One installed copy of the database: one player's account-wide saved variables. |
-| Origin | A 4-character id of the player (not the character) who wrote a record. It is characters 6 to 9 of every version id. |
+| Origin | A 4-character id of the player (not the character) who wrote a record. It is characters 6 to 9 of every version id. In a self table it is the character origin instead: one per install and character (5.5). |
 | Record | `key -> { v = versionId, d = payload }` inside a table. |
 | Clock | Per table: `origin -> greatest version id received from that origin`. |
 | Table version | `maxId .. fingerprint`, 16 characters. See 4.3. |
@@ -131,6 +131,8 @@ db.global.sync = {
       maxId = "<id>",             -- greatest value in clock
       fp = 123456789,             -- fingerprint of clock, see 4.3
       syncedAt = 1795000000,      -- server time of the last completed pull
+      pushed = "<id>",            -- push mark: the last pushed write of the install origin (7.3)
+      pushedBy = { ["xY1#"] = "<id>" },  -- push marks of the character origins of a self table (5.5)
       freshAt = 1795000000,       -- server time of the last contact, see 4.4
       records = {
         ["Charname"] = { v = "<id>", d = { ... } },
@@ -268,7 +270,9 @@ API for feature modules:
 - `ns.sync:Delete(tableName, key)`, `ns.sync:Get(tableName, key)`,
   `ns.sync:Iterate(tableName)`.
 - `ns.sync:NewId(tableName)`: a fresh version id of the table, for a key that
-  must be unique; nil when the table cannot be used. `ns.sync:GetId(tableName,
+  must be unique; nil when the table cannot be used. Its origin is
+  `ns.sync:OriginFor(tableName)`, the one place that decides the origin of a
+  local write (5.5). `ns.sync:GetId(tableName,
   key)`: the version id of a stored record that is not deleted, or nil.
 - `ns.sync.RegisterCallback(owner, "OnRecordChanged", fn)` (CallbackHandler):
   fires for local and remote changes, for UI refresh.
@@ -724,6 +728,26 @@ protected (`sync:IsProtected`, `Session:IsProtected`).
 - **Limits.** Officers are trusted; an officer with a modified addon can
   write anything. Without an officer online a protected table does not
   spread.
+
+**Character origins.** A table with `writers = "self"` needs
+`keyKind = "character"`. Its local writes carry the character origin
+`base94(hash(install origin .. ":" .. character name) mod 94^4, 4)`
+(`sync:OriginFor`), every other table the install origin. A clock value
+covers every write of its origin (4.2); with one origin per install, an
+unsent write of an alt would lie below a clock value that the others already
+hold, and no pull would fetch it. With one origin per character the unsent
+writes of an alt wait under their own clock entry until that alt logs in.
+
+- One id generator per origin (`sync.generators`), made when first used.
+- While the name of the character is unknown there is no character origin:
+  a write into a self table gives `nil, "not ready"`, and `NewId` gives nil.
+- The push mark is kept per origin: `tbl.pushed` for the install origin, as
+  before, and `tbl.pushedBy[origin]` for a character origin. `PushLocal`,
+  `MarkUnpushed`, and `PushWanted` take the origin from `OriginFor`. An
+  emptied table keeps both marks.
+- Nothing checks that an origin belongs to a name: a modified addon can
+  write under its own name with the origin of another character, and delay
+  that character's writes for up to 5 minutes (`00-plan.md`, 14.4).
 
 ## 6. Transport
 

@@ -16,7 +16,10 @@ local addonName, ns = ...
 ---@field fp integer Fingerprint of `clock`: sum of the hashes of its ids, modulo 2^32
 ---@field records table<string, OOOOSyncRecord> Key -> record
 ---@field syncedAt integer|nil Server time of the last completed pull; nil when there was none
----@field pushed string|nil The id of this install's last write that was pushed to the guild (plan section 7.3)
+---@field pushed string|nil The id of this install's last write that was pushed to the guild (plan section 7.3):
+---the push mark of the install origin
+---@field pushedBy table<string, string>|nil Origin -> the push mark of a character origin of this install, in a
+---table with `writers = "self"` (plan section 14.4); made when first needed
 ---@field freshAt integer|nil Server time at which the table last could hold no record whose tombstone is gone
 ---everywhere: it was level with a peer, completed a pull, was emptied, or took its first records from others
 
@@ -69,7 +72,7 @@ function store.isStale(tbl, now)
   return type(freshAt) == "number" and now - freshAt > store.STALE_SECONDS
 end
 
----Empties a table and its clock in place. The id of the last pushed write stays: the peers hold what was
+---Empties a table and its clock in place. The push marks (`pushed`, `pushedBy`) stay: the peers hold what was
 ---pushed, and a later push must name it as base.
 ---@param tbl OOOOSyncTable
 ---@param now integer Server time; an empty table is fresh

@@ -130,12 +130,37 @@ local function recordsOf(tbl, origin, after)
   return records
 end
 
----Returns the id of this install's last pushed write in a table.
+---Returns the push mark of a local origin in a table: the id of its last write that was pushed. The install
+---origin keeps it in `tbl.pushed`, as before character origins; a character origin in `tbl.pushedBy`.
 ---@param tbl OOOOSyncTable
+---@param origin string An origin of this install (`sync:OriginFor`)
+---@param installOrigin string `sync:GetOrigin()`
 ---@return string id `versionId.ZERO` when nothing was pushed
-local function pushedId(tbl)
+local function pushedId(tbl, origin, installOrigin)
+  local id
+  if origin == installOrigin then
+    id = tbl.pushed
+  elseif type(tbl.pushedBy) == "table" then
+    id = tbl.pushedBy[origin]
+  end
   -- The value comes from the saved variables
-  return versionId.isWellFormed(tbl.pushed) and tbl.pushed or versionId.ZERO
+  return versionId.isWellFormed(id) and id or versionId.ZERO
+end
+
+---Sets the push mark of a local origin in a table.
+---@param tbl OOOOSyncTable
+---@param origin string
+---@param installOrigin string
+---@param id string
+local function setPushed(tbl, origin, installOrigin, id)
+  if origin == installOrigin then
+    tbl.pushed = id
+    return
+  end
+  if type(tbl.pushedBy) ~= "table" then
+    tbl.pushedBy = {}
+  end
+  tbl.pushedBy[origin] = id
 end
 
 ---Tells whether this character may push records of a table at all. A member sends nothing of an officer
@@ -156,19 +181,19 @@ end
 function Session:PushLocal(tableName)
   local sync = self.parts.sync
   local tbl = sync:GetTable(tableName)
-  local origin = sync:GetOrigin()
-  if not tbl or not origin or not sync.dirtySince[tableName] or not self:MayTransfer(tableName)
-    or self:IsPullPending(tableName) or not self:MayPush(tableName) then
+  local origin, installOrigin = sync:OriginFor(tableName), sync:GetOrigin()
+  if not tbl or not origin or not installOrigin or not sync.dirtySince[tableName]
+    or not self:MayTransfer(tableName) or self:IsPullPending(tableName) or not self:MayPush(tableName) then
     return
   end
-  local top, pushed = tbl.clock[origin], pushedId(tbl)
+  local top, pushed = tbl.clock[origin], pushedId(tbl, origin, installOrigin)
   if top and top > pushed then
     if not self:SendPush(tableName, recordsOf(tbl, origin, pushed), { [origin] = pushed }, { [origin] = top },
       true) then
       -- Not in the guild: the change stays unsent
       return
     end
-    tbl.pushed = top
+    setPushed(tbl, origin, installOrigin, top)
     self.lastPushAt[tableName] = self.parts.now()
   end
   sync.dirtySince[tableName] = nil
@@ -203,14 +228,16 @@ function Session:SchedulePushes()
 end
 
 ---Finds the tables in which this install has writes that were never pushed, after a login: the mark of
----an unsent change lives in memory only, the last pushed id in the saved variables.
+---an unsent change lives in memory only, the last pushed id in the saved variables. In a self table only the
+---writes of the logged-in character count: those of an alt wait until the alt logs in.
 function Session:MarkUnpushed()
   local sync = self.parts.sync
-  local origin = sync:GetOrigin()
+  local installOrigin = sync:GetOrigin()
   for _, name in ipairs(sync.names) do
     local tbl = sync:GetTable(name)
+    local origin = sync:OriginFor(name)
     local top = tbl and origin and tbl.clock[origin]
-    if tbl and top and top > pushedId(tbl) then
+    if tbl and origin and top and installOrigin and top > pushedId(tbl, origin, installOrigin) then
       sync.dirtySince[name] = sync.dirtySince[name] or math.floor(self.parts.now())
     end
   end
@@ -253,10 +280,10 @@ function Session:PushWanted(tableName, wants)
     return false
   end
   -- The push has carried this install's own writes up to the top: nothing of them is left to push
-  local own = sync:GetOrigin()
-  if own and tops[own] then
-    if tops[own] > pushedId(tbl) then
-      tbl.pushed = tops[own]
+  local own, installOrigin = sync:OriginFor(tableName), sync:GetOrigin()
+  if own and installOrigin and tops[own] then
+    if tops[own] > pushedId(tbl, own, installOrigin) then
+      setPushed(tbl, own, installOrigin, tops[own])
     end
     sync.dirtySince[tableName] = nil
     self.lastPushAt[tableName] = self.parts.now()

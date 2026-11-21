@@ -611,22 +611,6 @@ How to read this section:
 
 ### Stage 13. Protected tables
 
-- **13.3 Character origins**
-  - Substeps
-    - `sync:OriginFor(tableName)` and one id generator per origin (14.4).
-      The character origin needs the name of the character; before it is
-      known, a write to a self table is refused with `"not ready"`.
-    - `tbl.pushedBy[origin]` in place of `tbl.pushed`, read with the old
-      field as fallback; `PushLocal`, `MarkUnpushed`, and the handler of the
-      own push use `OriginFor`.
-  - Checkpoint: the existing tests pass unchanged; no stored table changes.
-  - Host tests (`Tests/sync_self.lua`): two characters of one install have
-    different origins in a self table and the install origin elsewhere;
-    the origin of a character is the same in every session; ids of one
-    origin increase.
-  - Done when: no code outside `OriginFor` decides which origin a local
-    write gets.
-
 - **13.4 Self tables**
   - Substeps
     - The registry accepts `writers = "self"` and requires

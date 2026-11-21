@@ -19,8 +19,9 @@ local addonName, ns = ...
 ---@field validate fun(key: string, payload: any): boolean Rejects a payload with wrong types or ranges
 ---@field maxRecordBytes integer Largest record, by `syncStore.recordSize`: `Put` refuses a larger one, and
 ---a larger one that arrives is dropped
----@field writers "owner"|"anyone"|"officer" Who may write a key: the character that it names, every member, or
----only an officer (a protected table, plan section 14)
+---@field writers "owner"|"anyone"|"officer"|"self" Who may write a key: the character that it names, every
+---member, only an officer, or only the character that it names with a write of its own character origin
+---("officer" and "self" are protected tables, plan section 14)
 ---@field policy OOOOSyncPolicy|nil Defaults of the send policy; omitted fields take `DEFAULT_POLICY`
 ---@field maxAge number|nil Seconds for which a record is kept, counted from the time of its id; a record that
 ---is older is not stored on receive and is removed by `Expire`. nil: records are kept whatever their age
@@ -30,7 +31,10 @@ local addonName, ns = ...
 ---@field names string[] Table names in the order of registration
 ---@field data OOOOSyncData|nil The stored database; nil until `Initialize`
 ---@field timeFn (fun(): integer)|nil Server time in seconds
----@field nextId (fun(maxId: string?): string)|nil Id source of this install
+---@field randomFn (fun(m: integer, n: integer): integer)|nil Random source of the id generators
+---@field nextId (fun(maxId: string?): string)|nil Id source of this install's origin
+---@field generators table<string, fun(maxId: string?): string> Origin -> its id source, made when first used;
+---the install origin and the character origins of self tables (plan section 14.4)
 ---@field playerNameFn (fun(): string|nil)|nil Gives the name of the logged-in character, for the owner rule
 ---@field isOfficerFn (fun(): boolean)|nil Tells whether the logged-in character is an officer
 ---@field IsAltOf (fun(self: OOOOSync, name: string, other: string): boolean)|nil Added by SyncCharacter.lua
@@ -39,11 +43,12 @@ local addonName, ns = ...
 ---@field RegisterCallback fun(owner: any, event: string, handler: function|string, ...: any)
 ---@field UnregisterCallback fun(owner: any, event: string)
 ---@field UnregisterAllCallbacks fun(owner: any)
-local sync = { definitions = {}, names = {} }
+local sync = { definitions = {}, names = {}, generators = {} }
 ns.sync = sync
 
 local store = ns.syncStore
 local versionId = ns.versionId
+local base94 = ns.base94
 
 ---Events for feature modules and the UI, in the CallbackHandler form:
 ---`ns.sync.RegisterCallback(owner, "OnRecordChanged", function(event, tableName, key, payload, isRemote) end)`.
@@ -54,9 +59,9 @@ sync.callbacks = LibStub("CallbackHandler-1.0"):New(sync)
 local NAME_PATTERN = "^[a-z][a-z0-9_]*$"
 local MAX_NAME_LENGTH = store.MAX_TABLE_NAME_LENGTH
 local KEY_KINDS = { character = true, free = true }
----The values of `writers`. "officer" makes a protected table: only an officer writes it, and only what an
----officer sends is taken (plan section 14.3)
-local WRITERS = { owner = true, anyone = true, officer = true }
+---The values of `writers`. "officer" and "self" make a protected table: only an officer, or only the character
+---that a key names, writes it, and only what an officer or that character sends is taken (plan section 14.3)
+local WRITERS = { owner = true, anyone = true, officer = true, self = true }
 local WHEN = { nocombat = true, noraid = true, resting = true }
 ---Send policy of a table that names none (plan section 5)
 local DEFAULT_POLICY = { when = "nocombat", pushDelay = 300, minInterval = 600 }
@@ -86,7 +91,11 @@ local function definitionProblem(definition)
     return "keyKind must be \"character\" or \"free\""
   end
   if not WRITERS[definition.writers] then
-    return "writers must be \"owner\", \"anyone\", or \"officer\""
+    return "writers must be \"owner\", \"anyone\", \"officer\", or \"self\""
+  end
+  -- A key of a self table names its writer
+  if definition.writers == "self" and definition.keyKind ~= "character" then
+    return "writers = \"self\" needs keyKind = \"character\""
   end
   -- The roster cleanup is a local delete: it must not take away what an officer stands for (a due of a member
   -- who left stays visible), so an officer table names characters inside free keys
@@ -186,9 +195,11 @@ end
 function sync:Initialize(data, timeFn, randomFn, playerNameFn, isOfficerFn)
   self.data = data
   self.timeFn = timeFn
+  self.randomFn = randomFn
   self.playerNameFn = playerNameFn
   self.isOfficerFn = isOfficerFn
   self.nextId = versionId.newGenerator(data.origin, timeFn, randomFn)
+  self.generators = { [data.origin] = self.nextId }
   for _, name in ipairs(self.names) do
     prepareStorage(name)
   end
@@ -198,6 +209,33 @@ end
 ---@return string|nil
 function sync:GetOrigin()
   return self.data and self.data.origin
+end
+
+---94^4: the number of origins, written out so that the modulo stays an integer on Lua 5.4
+local ORIGIN_VALUES = 78074896
+
+---Returns the origin of the local writes in a table. It is the one place that decides it:
+--- - in a table with `writers = "self"`, the character origin: `base94(hash(install origin .. ":" .. name)
+---   mod 94^4, 4)`. A clock value then covers the writes of one character only, so the unsent writes of an alt
+---   wait under their own clock entry until that alt logs in (plan section 14.4);
+--- - in every other table, the install origin.
+---@param tableName string
+---@return string|nil origin nil before `Initialize`, for a table that is not registered, and in a self table
+---while the name of the character is unknown
+function sync:OriginFor(tableName)
+  local definition = self.definitions[tableName]
+  local installOrigin = self:GetOrigin()
+  if not definition or not installOrigin then
+    return nil
+  end
+  if definition.writers ~= "self" then
+    return installOrigin
+  end
+  local name = self.playerNameFn and self.playerNameFn()
+  if type(name) ~= "string" or name == "" then
+    return nil
+  end
+  return base94.encode(base94.hash(installOrigin .. ":" .. name) % ORIGIN_VALUES, 4)
 end
 
 ---Tells whether the logged-in character is an officer (plan section 14.2). The answer follows the roster:
@@ -260,9 +298,11 @@ end
 ---@param withAlts boolean? true: also accept a key of a character that the table `character` lists under
 ---an origin of the writer's own record
 ---@return boolean allowed true for a table with `writers = "anyone"` or `"officer"`: the rank rule of an officer
----table is checked by `WriteRefusal` and by the receivers, not by the key
+---table is checked by `WriteRefusal` and by the receivers, not by the key. In a table with `writers = "self"`
+---the key must name the writer itself; `withAlts` is ignored there.
 function sync:MayWrite(definition, key, writer, withAlts)
-  if definition.writers ~= "owner" then
+  local writers = definition.writers
+  if writers ~= "owner" and writers ~= "self" then
     return true
   end
   local name = sync.keyName(key)
@@ -272,7 +312,7 @@ function sync:MayWrite(definition, key, writer, withAlts)
   if name == writer then
     return true
   end
-  return withAlts == true and self.IsAltOf ~= nil and self:IsAltOf(name, writer)
+  return writers == "owner" and withAlts == true and self.IsAltOf ~= nil and self:IsAltOf(name, writer)
 end
 
 ---Tells whether a table is protected (plan section 14): only what an officer sends is taken from others, and
@@ -288,10 +328,14 @@ end
 ---the rank in an officer table, the owner rule otherwise. `Put`, `Delete`, and `Append` share it.
 ---@param definition OOOOSyncTableDefinition
 ---@param key string
----@return string|nil reason nil when the write is allowed; "not an officer" or "not the owner"
+---@return string|nil reason nil when the write is allowed; "not an officer", "not the owner", or "not ready"
+---(a self table while the name of the character, and with it the character origin, is unknown)
 function sync:WriteRefusal(definition, key)
   if definition.writers == "officer" then
     return (not self:IsOfficer()) and "not an officer" or nil
+  end
+  if definition.writers == "self" and not self:OriginFor(definition.name) then
+    return "not ready"
   end
   if not self:MayWrite(definition, key, self.playerNameFn and self.playerNameFn()) then
     return "not the owner"
@@ -299,16 +343,23 @@ function sync:WriteRefusal(definition, key)
   return nil
 end
 
----Makes a fresh version id for a table: greater than every id that the table has seen. A feature uses it for
----a key that must be unique (an event id); `Put`, `Append`, and `Delete` take the id of a write from here.
+---Makes a fresh version id for a table: greater than every id that the table has seen, of the origin that
+---`OriginFor` gives. A feature uses it for a key that must be unique (an event id); `Put`, `Append`, and
+---`Delete` take the id of a write from here. Each origin has one generator, so its ids always increase.
 ---@param tableName string
----@return string|nil id nil when the table cannot be used
+---@return string|nil id nil when the table cannot be used, or its origin is not known yet
 function sync:NewId(tableName)
   local tbl = self:GetTable(tableName)
-  if not tbl then
+  local origin = tbl and self:OriginFor(tableName)
+  if not tbl or not origin then
     return nil
   end
-  return self.nextId(tbl.maxId)
+  local generator = self.generators[origin]
+  if not generator then
+    generator = versionId.newGenerator(origin, self.timeFn, self.randomFn)
+    self.generators[origin] = generator
+  end
+  return generator(tbl.maxId)
 end
 
 ---Returns the version id of a stored record that is not deleted.
