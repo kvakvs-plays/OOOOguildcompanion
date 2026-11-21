@@ -197,6 +197,52 @@ local function recordsNaming(records, name)
   return own
 end
 
+---Returns the records of this character in a table: those of its local origin (`OriginFor`) after an id
+---whose key names the character, in ascending id order. It is what a member of a self table pushes.
+---@param tableName string
+---@param after string An id; `versionId.ZERO` for all
+---@return OOOOSyncWireRecord[] records Empty when the table or the origin is unknown
+---@return string|nil origin The local origin of the table
+---@return string|nil top The clock value of that origin
+function Session:OwnSlice(tableName, after)
+  local sync = self.parts.sync
+  local tbl, origin = sync:GetTable(tableName), sync:OriginFor(tableName)
+  if not tbl or not origin then
+    return {}, nil, nil
+  end
+  return recordsNaming(recordsOf(tbl, origin, after), self.parts.playerName()), origin, tbl.clock[origin]
+end
+
+---Returns the push mark of the local origin of a table: the id of its last write that was pushed.
+---@param tableName string
+---@return string id `versionId.ZERO` when nothing was pushed or the origin is unknown
+function Session:PushMark(tableName)
+  local sync = self.parts.sync
+  local tbl, origin, installOrigin = sync:GetTable(tableName), sync:OriginFor(tableName), sync:GetOrigin()
+  if not tbl or not origin or not installOrigin then
+    return versionId.ZERO
+  end
+  return pushedId(tbl, origin, installOrigin)
+end
+
+---Raises the push mark of the local origin of a table to an id that a push has carried, and ends the mark of
+---unsent changes when nothing is left above it.
+---@param tableName string
+---@param id string
+function Session:MarkOwnPushed(tableName, id)
+  local sync = self.parts.sync
+  local tbl, origin, installOrigin = sync:GetTable(tableName), sync:OriginFor(tableName), sync:GetOrigin()
+  if not tbl or not origin or not installOrigin then
+    return
+  end
+  if id > pushedId(tbl, origin, installOrigin) then
+    setPushed(tbl, origin, installOrigin, id)
+  end
+  if not tbl.clock[origin] or tbl.clock[origin] <= id then
+    sync.dirtySince[tableName] = nil
+  end
+end
+
 ---Pushes the local changes of a table: this install's own records after its last pushed id, with that id
 ---as base. It does nothing while the table may not send, and while a pull of the table runs or is about to
 ---start: the push after that pull carries the same records, with a base that fits its responder.
@@ -225,6 +271,7 @@ function Session:PushLocal(tableName)
         return
       end
       self.lastPushAt[tableName] = self.parts.now()
+      self:NoteOwnPush(tableName)
     end
     setPushed(tbl, origin, installOrigin, top)
   end
@@ -325,6 +372,9 @@ function Session:PushWanted(tableName, wants)
   end
   if not self:SendPush(tableName, records, base, tops, false) then
     return false
+  end
+  if ownOnly then
+    self:NoteOwnPush(tableName)
   end
   -- The push has carried this install's own writes up to the top: nothing of them is left to push
   if own and installOrigin and tops[own] then
@@ -452,6 +502,10 @@ function handlers.P(self, sender, pushed)
     end
   end
   self:NoteVersions(sender, { [pushed.table] = pushed.version }, false)
+  if firstHandOnly then
+    -- An officer tells the member what it holds now, also when it held the records or had a gap (SyncDelivery.lua)
+    self:OweHeld(sender, pushed)
+  end
 end
 
 --------------------------------------------------------------------------------
@@ -486,6 +540,8 @@ function Session:NoteVersions(sender, versions, isComplete)
   end
   self:SuppressAnswer(heard, own)
   self:TouchPeer(sender, versions, isComplete)
+  -- An officer that announces the version of this replica holds every own write (SyncDelivery.lua)
+  self:NoteHeldVersions(sender, versions, own)
   for name, version in pairs(own) do
     self:RememberOwnVersion(name, version)
     if heard[name] == version then

@@ -842,6 +842,7 @@ writes of an alt wait under their own clock entry until that alt logs in.
 | `P` push | GUILD | table, schema, table version, version before, own flag, base, records, clock rest | New records for everybody. |
 | `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal: busy, unknown table, other schema, or `source` (a member and a protected table, 5.5). |
 | `A` here | WHISPER | none | Answer to a hello: the sender has the addon. Tells nothing about tables. |
+| `K` held | WHISPER | table, origin, id | An officer tells a member up to which id it holds the member's writes of a character origin in a self table (7.3). The id is the zero id or an id of that origin. Ignored from a non-officer; older receivers drop it as an unknown type. |
 
 - A record on the wire is `key, id, payload` (or `key, id` with a tombstone
   marker).
@@ -970,6 +971,39 @@ whose only known source went offline during a pull find another source.
 
 A push of local changes waits while a pull of the same table runs or is about
 to start: the push after that pull carries the same records.
+
+**Delivery to the officers** (`SyncDelivery.lua`, plan 14.6). In a self
+table an officer cannot pull a member's records, so the member makes sure
+that the online officers hold its own writes:
+
+- An officer that handles a member's push into a self table (applied,
+  already held, or ignored for a gap) whispers `K(table, origin, its clock
+  value of that origin or the zero id)` after a random 1 to 5 seconds, per
+  origin of the records whose key names the sender. One `K` is pending per
+  member, table, and origin; in combat it waits for the conditions.
+- A member keeps `held[table][officer] = id` for its character origin for
+  the session. It learns it from a `K`; from an officer that announces
+  exactly the member's own table version (held = own top); and from a
+  finished pull from an officer (wants without the own origin: own top;
+  otherwise the officer's value, and `PushWanted` pushes the rest). A hello
+  of an officer forgets what was known of that officer and its repeat count.
+- After a `K` with an id below the own top the member pushes its own records
+  after that id at once, when the policy allows (not when a due push of
+  unsent changes brings them). Otherwise a check every 120 seconds pushes
+  from the smallest held id of the online officer peers that hold less than
+  the own top (the zero id for one that is unknown); it skips a table with
+  unsent changes, a pending pull, or an own push in the last 30 seconds. At
+  most 3 repeated pushes per officer and table in a session. The timers stop
+  with the session.
+- Cost: one push and one `K` per online officer for a new write; nothing at
+  a login when the versions are equal. Without an officer online nothing is
+  sent again.
+- `ns.sync:IsBehind(table)` (`Session:IsBehind`): for a protected table,
+  true when a peer of any rank has announced a version (not the own, not
+  merged) with a greater `maxId` than the own table, and no online officer
+  peer has announced a version with a `maxId` at least as great.
+- `/oooo sync status` adds to the line of a self table, for a member with own
+  writes, "held by N of M officers online" (`Session:HeldStatus`).
 
 ### 7.4 Conditions and policy
 

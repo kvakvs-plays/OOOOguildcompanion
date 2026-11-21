@@ -22,6 +22,7 @@ local FILES = {
   "Addon/Src/Sync/SyncPull.lua",
   "Addon/Src/Sync/SyncPush.lua",
   "Addon/Src/Sync/SyncCleanup.lua",
+  "Addon/Src/Sync/SyncDelivery.lua",
   "Addon/Src/Sync/SyncOptions.lua",
   "Addon/Src/Sync/SyncGuildChat.lua",
   "Addon/Src/Chat/Mentions.lua",

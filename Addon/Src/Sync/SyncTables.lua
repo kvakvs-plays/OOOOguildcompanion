@@ -37,6 +37,7 @@ local addonName, ns = ...
 ---the install origin and the character origins of self tables (plan section 14.4)
 ---@field playerNameFn (fun(): string|nil)|nil Gives the name of the logged-in character, for the owner rule
 ---@field isOfficerFn (fun(): boolean)|nil Tells whether the logged-in character is an officer
+---@field isBehindFn (fun(tableName: string): boolean)|nil Set by the session (SyncSession.lua): `IsBehind`
 ---@field IsAltOf (fun(self: OOOOSync, name: string, other: string): boolean)|nil Added by SyncCharacter.lua
 ---@field IsOriginOf (fun(self: OOOOSync, name: string, origin: string): boolean)|nil Added by SyncCharacter.lua
 ---@field callbacks table CallbackHandler registry; fires "OnRecordChanged"
@@ -246,6 +247,15 @@ end
 ---@return boolean
 function sync:IsOfficer()
   return self.isOfficerFn ~= nil and self.isOfficerFn() == true
+end
+
+---Tells whether an online peer has announced a newer state of a protected table that no online officer can
+---supply (plan section 14.6): a feature warns before an officer decides on old data. False without a session
+---and for a table that is not protected.
+---@param tableName string
+---@return boolean
+function sync:IsBehind(tableName)
+  return self.isBehindFn ~= nil and self.isBehindFn(tableName) == true
 end
 
 ---Returns the stored table and the definition of a registered table.

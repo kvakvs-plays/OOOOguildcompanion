@@ -62,7 +62,13 @@ protocol.CHANNELS = {
   B = "WHISPER", -- busy: the peer refuses a pull request
   P = "GUILD", -- push: new records for everybody
   A = "WHISPER", -- here: tells the sender of a hello that this member has the addon; no fields
+  K = "WHISPER", -- held: an officer tells a member up to which id it holds the member's writes (plan 14.6)
 }
+
+---@class OOOOSyncHeld Checked fields of a `K`
+---@field table string
+---@field origin string The character origin of the member's writes
+---@field id string The officer's clock value of that origin; the zero id when it has none
 
 ---@class OOOOSyncPullRequest Checked fields of a `Q`
 ---@field table string Table name; the receiver may not have it
@@ -357,6 +363,22 @@ function checks.B(tableName, nonce, reason, retry)
     return nil, "bad retry time"
   end
   return { table = tableName, nonce = nonce, reason = reason, retry = retry }
+end
+
+---Held: table, origin, id. A receiver before plan section 14.6 drops it as an unknown type.
+---@return OOOOSyncHeld|nil
+---@return string|nil reason
+function checks.K(tableName, origin, id)
+  if not isTableName(tableName) then
+    return nil, "bad table name"
+  end
+  if not isOrigin(origin) then
+    return nil, "bad origin"
+  end
+  if not versionId.isWellFormed(id) or (id ~= versionId.ZERO and versionId.originOf(id) ~= origin) then
+    return nil, "bad id"
+  end
+  return { table = tableName, origin = origin, id = id }
 end
 
 ---Makes the pair of functions that write and read messages with a serializer.

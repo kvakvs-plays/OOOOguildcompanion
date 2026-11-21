@@ -111,6 +111,10 @@ function session.new(parts)
   parts.transport.onMessage = function(sender, messageType, fields)
     self:OnMessage(sender, messageType, fields)
   end
+  -- `ns.sync:IsBehind` asks the session, which knows the versions of the peers (SyncDelivery.lua)
+  parts.sync.isBehindFn = function(tableName)
+    return self:IsBehind(tableName)
+  end
   return self
 end
 
@@ -283,6 +287,7 @@ function Session:OnConditionsChanged()
   self:SendPresence()
   self:PumpPulls()
   self:SchedulePushes()
+  self:SendOwedHeld()
 end
 
 ---Follows the guild state: inside the guild the hello timer starts, outside it everything stops.
@@ -316,6 +321,7 @@ function Session:Stop()
   self:StopPull()
   self:StopPush()
   self:StopCleanup()
+  self:StopDelivery()
 end
 
 ---Sends the hello with the versions of all tables and starts collecting the answers. While the conditions
@@ -357,6 +363,7 @@ function Session:OnDiscoveryDone()
   self:PumpPulls()
   self:MarkUnpushed()
   self:ScheduleSummary()
+  self:StartDelivery()
 end
 
 ---Adds the sender to the peer list, or renews its entry.
@@ -429,6 +436,8 @@ session.handlers = handlers
 ---@param sender string
 ---@param versions table<string, string>
 function handlers.H(self, sender, versions)
+  -- A hello is a new login: what the sender held of the own writes is unknown again (SyncDelivery.lua)
+  self:ForgetHeld(sender)
   local own = self:LocalVersions()
   self:NoteVersions(sender, versions, true)
   self:OwePresence(sender)

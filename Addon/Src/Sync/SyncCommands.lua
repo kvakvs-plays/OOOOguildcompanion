@@ -211,10 +211,13 @@ function commands.statusLines()
   for _, name in ipairs(sync.names) do
     local tbl = sync:GetTable(name)
     local live, deleted = sync:Count(name)
+    -- A member's own writes of a self table: how many online officers hold them (plan section 14.6)
+    local held = current and current:HeldStatus(name)
     lines[#lines + 1] = commands.escape(name .. ": " .. live .. " records, " .. deleted .. " deleted, "
       .. sync:Size(name) .. " bytes, version "
       .. (tbl and ns.syncStore.tableVersion(tbl) or "?")
-      .. (current and (", may send: " .. current:SendState(name)) or ""))
+      .. (current and (", may send: " .. current:SendState(name)) or "")
+      .. (held and (", " .. held) or ""))
   end
   if current then
     -- The rank decides what this character may write and send in a protected table (plan section 14)

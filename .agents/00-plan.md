@@ -611,32 +611,6 @@ How to read this section:
 
 ### Stage 13. Protected tables
 
-- **13.5 Delivery to the officers**
-  - Substeps
-    - The message `K` in `SyncProtocol.lua` with its checks (table name,
-      origin of 4 characters, a well-formed id of that origin).
-    - `SyncDelivery.lua`: the officer's `K` after a member's push; the
-      member's `held` map and its three sources; the repeated push and its
-      limits (14.6).
-    - `sync:IsBehind` from the versions that peers announce.
-  - Checkpoint: `/oooo sync status` shows per self table "held by 2 of 2
-    officers online" for the own writes.
-  - Host tests (`Tests/sync_delivery.lua`)
-    - A lost push is sent again and arrives; after the `K` no further push
-      goes out.
-    - An officer with a gap answers with an older id and gets the records
-      after it.
-    - A `K` from a member is ignored.
-    - An officer logs in with an equal version: no member pushes. With an
-      older version: every member with newer own writes delivers them,
-      each at most once.
-    - No officer online: nothing is sent again, for an hour of fake time.
-    - `IsBehind` is true for an officer after a member announced a newer
-      `maxId` that no online officer holds, and false after the pull that
-      brings it.
-  - Done when: a record of a self table reaches every online officer under
-    30% message loss.
-
 - **13.6 Client check** (**CLIENT**, an officer and a member account)
   - Checkpoint, in the developer mode on both accounts:
     - `/oooo sync put debugofficer k v` works on the officer and is refused

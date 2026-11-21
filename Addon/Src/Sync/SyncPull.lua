@@ -461,6 +461,8 @@ function Session:FinishPull(active, delta)
       peer.versions[active.table] = version
     end
     self:ClosePull(nil)
+    -- An officer's wants tell what it holds of the own writes of a self table (SyncDelivery.lua)
+    self:NoteHeldAfterPull(active.table, active.peer, delta.wants)
     -- What the responder lacks goes to the whole guild (SyncPush.lua)
     hasPushed = self:PushWanted(active.table, delta.wants)
   else
