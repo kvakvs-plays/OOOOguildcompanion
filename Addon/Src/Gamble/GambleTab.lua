@@ -145,6 +145,11 @@ local GROUPS = {
 ---Why bets count only when an officer is online (15.4)
 local OFFICER_NOTE = "A bet counts only when an officer with the addon is online and receives it before the "
   .. "close. Place your bet early."
+---Shown with an open event and in the form "New event": this is a pool, not a bookmaker. Nobody pays a win of
+---10 times the stake out of nothing; the chance only limits what a stake can take from the losers (15.5).
+local POOL_NOTE = "The winners are paid from the stakes of the losers; there is no bookmaker. The chance sets "
+  .. "the most that a stake can win. When the losers staked less than that, every winner gets the same part "
+  .. "of it, and with no loser nobody wins anything."
 ---Shown in the list when no event is held
 local LIST_HINT = "No event yet. An officer opens one."
 ---Shown in the detail part when no event is selected
@@ -202,7 +207,8 @@ local OFFICER_REFUSALS = {
 
 ---Shown at the top of the form "New event"
 local FORM_NOTE = "The outcomes are independent statements: each comes true or not by itself, and the chances need "
-  .. "not add up to 100. Nothing can be changed after the opening; a wrong event is cancelled and opened again."
+  .. "not add up to 100. Nothing can be changed after the opening; a wrong event is cancelled and opened again. "
+  .. POOL_NOTE
 ---Shown at the top of the form "Resolve"
 local RESOLVE_NOTE = "Tick every outcome that came true. The payments are computed from the bets that your addon "
   .. "holds and are not computed again; a wrong result can only be cancelled."
@@ -339,7 +345,7 @@ local function outcomeText(outcome)
     text = text .. "   booked " .. outcome.booked
   end
   if outcome.x then
-    text = text .. "   " .. GREY .. "payout capped at " .. outcome.x .. " times the stake|r"
+    text = text .. "   " .. GREY .. "win limited to " .. outcome.x .. " times the stake|r"
   end
   return text
 end
@@ -414,7 +420,8 @@ local function winText(text, outcome, maxStake)
     return ""
   end
   local win = math.floor(ns.gambleSettle.claim(stake, outcome) + EPSILON)
-  return GREY .. "you can win up to " .. win .. " gold|r"
+  -- Not "you win N": the gold comes from the stakes of the losers and can be less (POOL_NOTE)
+  return GREY .. "at most " .. win .. " gold, from the stakes of the losers|r"
 end
 
 ---Turns a refusal reason of the model or of the engine into a line.
@@ -625,17 +632,18 @@ local function capHint(outcome)
   end
   local uncapped = math.floor((100 - chance) / chance)
   if not outcome.capped then
-    return GREY .. "Uncapped, a winning stake wins about " .. uncapped .. " times the stake.|r"
+    return GREY .. "Without a limit, a winning stake can get up to about " .. uncapped
+      .. " times the stake from the losers.|r"
   end
   local cap = parseWhole(outcome.cap, 1, gambleData.MAX_CAP)
   if not cap then
     return BAD_COLOR .. "Type the multiplier: a whole number from 1 to " .. gambleData.MAX_CAP .. ".|r"
   end
-  local text = "A winning stake wins at most " .. cap .. " times the stake; uncapped it would be about " .. uncapped
-    .. " times."
+  local text = "A winning stake gets at most " .. cap .. " times the stake from the losers; without the limit "
+    .. "it would be up to about " .. uncapped .. " times."
   -- The claim is stake * (100 - p) / p; a cap at or above that changes nothing (15.3)
   if cap * chance >= 100 - chance then
-    text = text .. " This cap changes nothing."
+    text = text .. " This limit changes nothing."
   end
   return GREY .. text .. "|r"
 end
@@ -1053,6 +1061,7 @@ end
 ---@param detail OOOOGambleDetail
 function tab:BuildOpen(scroll, detail)
   addLabel(scroll, "Highest stake: " .. detail.maxStake .. " gold on each outcome. " .. OFFICER_NOTE, true)
+  addLabel(scroll, POOL_NOTE, true)
   local typed = self.typed[detail.id]
   for index, outcome in ipairs(detail.outcomes) do
     addLabel(scroll, outcomeText(outcome))
@@ -1339,7 +1348,7 @@ function tab:UpdateCap(group, outcome)
     local line = addLine(group)
     local check = AceGUI:Create("CheckBox")
     check:SetUserData("width", CAP_CHECK_WIDTH)
-    check:SetLabel("Cap the payout")
+    check:SetLabel("Limit the win")
     check:SetValue(outcome.capped)
     check:SetCallback("OnValueChanged", function(_widget, _event, value)
       outcome.capped = value == true

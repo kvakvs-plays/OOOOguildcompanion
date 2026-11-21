@@ -585,6 +585,12 @@ also with `/oooo bet`.
   outcome, the banker, the warning of 15.5, a second click to confirm),
   "Cancel". The controls are shown to an officer character only; the
   engine refuses the writes of everybody else anyway.
+- **Wording** (asked for by the user on 2026-11-21): this is a pool, not
+  bookmaking. No text promises a win of N times the stake. The window says
+  "at most N gold, from the stakes of the losers" and "win limited to x
+  times the stake", and shows a note that the winners are paid from the
+  stakes of the losers and that every winner gets the same part when those
+  are not enough.
 - **Notices** in the chat frame, each once per event and character (kept in
   `db.global.gamble.noticed`), with the `addon:` link that opens the tab:
   a new open event, and the own dues after a resolution. They wait for the

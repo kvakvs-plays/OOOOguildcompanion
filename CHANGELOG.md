@@ -24,11 +24,15 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
   what you won or lost and your dues, such as "give 20 gold to Nota Scam".
   The addon moves no gold: trade or mail it yourself. Who received gold
   presses "Received", and everybody sees which dues are confirmed.
-- **Payout.** A winning stake wins what the chance promises: 30 gold on a
-  60% outcome win 20 gold. The losers pay only what the winners get, and a
-  tenth on top goes to the guild bank through an officer. An outcome with a
-  chance under 20% can have a cap, shown as "payout capped at 10 times the
-  stake".
+- **The winners share the stakes of the losers.** There is no bookmaker:
+  what you win comes from those who lost, and a tenth of what they pay goes
+  to the guild bank through an officer. The chance sets the most that a
+  stake can win: 30 gold on a 60% outcome win at most 20 gold. When the
+  losers staked less than the winners could get, every winner gets the same
+  part of it; when they staked more, they keep the rest. So a 2% outcome
+  does not pay 49 times your stake unless others lost that much. An outcome
+  under 20% can also have a lower limit, shown as "win limited to 10 times
+  the stake".
 - **Notices.** A chat line tells you of a new bet and of your dues after a
   result, each once. Click the link in it to open the tab.
 - **For officers.** "New event" opens a bet with its outcomes, the close,
