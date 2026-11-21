@@ -117,6 +117,7 @@ Run from the repository root: `lua Tests/run_all.lua` or `lua Tests/<name>.lua`.
 | `sync_gambledata.lua` | Tests of `Gamble/GambleData.lua`: keys built and read back, `validate` of every kind of record, the write rules with an officer and a member replica. |
 | `sync_gamble.lua` | Tests of `Gamble/Gamble.lua` with an officer and member replicas: opening, bets and their refusals, lock, cancel, the groups, sanitized texts, hidden sums, every bet state. The example of the plan from the opening to the last confirmation, receipts, two officers resolving at once, cancel after a resolution, a late book entry, "loading", a capped outcome. |
 | `sync_gamblebook.lua` | Tests of `Gamble/GambleBook.lua`: one entry with two officers, a bet after the close, a bet under another name, a change before and after the close, a vouched bet, no officer online, a bet before its event. |
+| `sync_gamblelife.lua` | The whole life of a gambling event with the real book (`GambleBook.lua`): two officers and three members from the opening to the last confirmation, without loss and with 30% loss (seeds 1 to 4), and a member who is offline for all of it. |
 | `sync_gamblesettle.lua` | Tests of `Gamble/GambleSettle.lua`: the example of the plan, the cap, 500 random events, the dues. |
 | `sync_migrate.lua` | Tests of `Database.lua`: migration and origin. |
 | `sync_protocol.lua` | Tests of `Sync/SyncProtocol.lua`, with the stub serializer and with AceSerializer-3.0. |
