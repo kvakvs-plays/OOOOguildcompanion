@@ -1305,6 +1305,19 @@ function tab:BuildOfficer(scroll, detail)
   end
 end
 
+---Gives the group of a cap that shows nothing a height of 1 in place of 0, and lets a shown one follow its
+---rows again. A frame of height 0 has no place on the screen, and the List layout hangs every later row of
+---the form on the frame before it: seen in the client, the rows after an empty group lay over each other.
+---@param group table AceGUI SimpleGroup of the cap
+---@param hidden boolean
+local function collapseCap(group, hidden)
+  -- AceGUI clears the flag when the group is released
+  group.noAutoHeight = hidden or nil
+  if hidden then
+    group:SetHeight(1)
+  end
+end
+
 ---Shows or hides the cap of an outcome row as its typed chance changes, and updates the hint under it. Only
 ---the group of the cap is built again, so the chance box keeps its focus.
 ---@param group table AceGUI SimpleGroup of the cap
@@ -1321,6 +1334,7 @@ function tab:UpdateCap(group, outcome)
   group:SetUserData("shown", show)
   group:SetUserData("hint", nil)
   group:ReleaseChildren()
+  collapseCap(group, not show)
   if show then
     local line = addLine(group)
     local check = AceGUI:Create("CheckBox")
@@ -1372,6 +1386,8 @@ function tab:AddOutcomeRow(scroll, draft, index)
   chanceLine:AddChild(remove)
   capGroup:SetFullWidth(true)
   capGroup:SetLayout("List")
+  -- Hidden until `UpdateCap` finds a chance under the limit
+  collapseCap(capGroup, true)
   scroll:AddChild(capGroup)
   self:UpdateCap(capGroup, outcome)
 end
