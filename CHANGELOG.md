@@ -7,6 +7,35 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
 **bold heading** followed by the explanation. `Backticks` mark commands.
 -->
 
+## 2026.11.8 (2026-11-21)
+
+### Gambling
+
+- **Bets of the guild.** The new tab "Gambling" (`/oooo bet`) lists the bets
+  that the officers have opened. An event has outcomes with a chance in
+  percent, for example "Nota wins, 60%". Put gold on one or more outcomes
+  until the event closes; you can change or take back a stake until then.
+  Nothing is paid in advance.
+- **An officer must be online.** A bet counts once the addon of an officer
+  has received it before the close. The tab shows "waiting for an officer"
+  and then "accepted". Place bets early: with no officer online until the
+  close, a bet is too late.
+- **Who owes whom.** After an officer has set the results, the tab shows
+  what you won or lost and your dues, such as "give 20 gold to Nota Scam".
+  The addon moves no gold: trade or mail it yourself. Who received gold
+  presses "Received", and everybody sees which dues are confirmed.
+- **Payout.** A winning stake wins what the chance promises: 30 gold on a
+  60% outcome win 20 gold. The losers pay only what the winners get, and a
+  tenth on top goes to the guild bank through an officer. An outcome with a
+  chance under 20% can have a cap, shown as "payout capped at 10 times the
+  stake".
+- **Notices.** A chat line tells you of a new bet and of your dues after a
+  result, each once. Click the link in it to open the tab.
+- **For officers.** "New event" opens a bet with its outcomes, the close,
+  and the highest stake. "Lock now" closes it early, "Resolve" sets the
+  results and the officer who takes the share of the guild bank, and
+  "Cancel event" ends it so that nobody owes anything.
+
 ## 2026.11.7 (2026-11-20)
 
 ### Members

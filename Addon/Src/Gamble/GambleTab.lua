@@ -3,7 +3,8 @@ local addonName, ns = ...
 -- The tab "Gambling" of the addon window (.agents/00-plan.md, sections 15.4 and 15.7, step 15.1): AceGUI-3.0
 -- widgets over the model of Gamble/Gamble.lua (`ns.gamble.current`). At the left the events in four groups, at
 -- the right the detail of the selected event: for an open event a stake box per outcome, "Place bet", "Take
--- back", and the state of the own bet; for a locked event the same rows read-only with the booked sums.
+-- back", and the state of the own bet; for a locked event the same rows read-only with the booked sums; for a
+-- resolved event (step 15.3) the results, the own net, the own dues with "Received", and all dues.
 --
 -- Refresh: changes of the two gamble tables are collected for `REFRESH_DELAY` seconds, and a slow timer
 -- (`TICK`) moves the "in 2 h" text and the events whose close has passed. The list is built again on every
@@ -217,6 +218,35 @@ local ACTION_TEXTS = { resolve = "Resolve", cancel = "Cancel event" }
 ---The texts of the buttons that need a second click, after the first click
 local ARMED_TEXTS = { resolve = "Click again to resolve", cancel = "Click again to cancel" }
 
+---Refusal reasons of `Confirm`, `Unconfirm`, and of the engine -> the line that the tab shows
+---@type table<string, string>
+local RECEIPT_REFUSALS = {
+  ["not ready"] = "Your character is not known yet. Try again in a few seconds.",
+  ["unknown event"] = "This event is not known any more.",
+  cancelled = "The event is cancelled: nobody owes anything.",
+  ["not resolved"] = "The event is not resolved yet.",
+  ["unknown due"] = "This due has not arrived yet. Try again when every due of the event has arrived.",
+  ["not the receiver"] = "Only the receiver of a due can confirm it.",
+  ["unknown table"] = "The gambling data is not loaded yet. Try again in a few seconds.",
+  ["bad key"] = "Your character name does not fit the shared database.",
+  ["not the owner"] = "The confirmation could not be saved under your character.",
+  ["bad payload"] = "The confirmation does not fit the rules of the shared database.",
+  ["too large"] = "The confirmation is too large for the shared database.",
+}
+
+---Shown in place of the own net when the settlement did not count the own booked bet (15.5, `inSettlement`)
+local NOT_IN_SETTLEMENT = "Your bet is not in the settlement: the resolving officer did not have it when the "
+  .. "event was resolved. You owe nothing and win nothing."
+---Shown to an officer when the book that this replica holds gives other dues than the written ones (15.5)
+local MISMATCH_NOTE = "The bets that your addon holds now would give other dues than the written ones. The "
+  .. "written dues are the settlement and are not computed again; a bet that reached the resolving officer "
+  .. "late is not part of it."
+---Shown under the dues: the addon makes no trade and no mail (15.7)
+local PAYMENT_NOTE = "The addon moves no gold: trade or mail it yourself. The receiver clicks \"Received\" once "
+  .. "the gold has arrived."
+---Width of the button "Received" or "Done" of a due, and of the button "Undo"
+local RECEIVE_WIDTH, UNDO_WIDTH = 100, 70
+
 --------------------------------------------------------------------------------
 -- Texts
 --------------------------------------------------------------------------------
@@ -417,7 +447,8 @@ local function resultsOf(model, eventId)
 end
 
 ---Joins everything that the built detail shows, except the time line and the state of the own bet, which are
----updated in place. The detail is built again only when this changes.
+---updated in place, and the result of a resolved event (`resultSignature`). The detail is built again only when
+---this changes.
 ---@param detail OOOOGambleDetail
 ---@param results boolean[]|nil Result per outcome of a resolved event
 ---@return string
@@ -428,6 +459,91 @@ local function detailSignature(detail, results)
       outcome.own or "", results and tostring(results[index]) or "" }, ",")
   end
   return table.concat(parts, "\031")
+end
+
+---Joins everything that the detail of a resolved or cancelled event shows of its result: the state, the dues
+---held, the own sums, and each due with its confirmation. A receipt that arrives from another player changes it.
+---@param result OOOOGambleResult|nil
+---@param token string|nil Settlement token of the event
+---@return string
+local function resultSignature(result, token)
+  if not result then
+    return ""
+  end
+  local parts = { result.state, token or "", result.held, result.count, result.banker or "", result.net or "",
+    result.bankHeld or "", tostring(result.settled), tostring(result.booked), tostring(result.inSettlement),
+    tostring(result.mismatch) }
+  for _, due in ipairs(result.dues) do
+    parts[#parts + 1] = table.concat({ due.n, due.from, due.to, due.gold, tostring(due.bank), tostring(due.confirmed),
+      due.mine or "", tostring(due.confirmable) }, ",")
+  end
+  return table.concat(parts, "\031")
+end
+
+---Builds the line with the own result of a resolved event: won, lost, broke even, or not in the settlement;
+---empty for a character that had no part in it.
+---@param result OOOOGambleResult With state "ready"
+---@return string
+local function ownResultText(result)
+  local net = result.net or 0
+  if result.inSettlement then
+    if net > 0 then
+      return GOOD_COLOR .. "You won " .. net .. " gold.|r"
+    elseif net < 0 then
+      return BAD_COLOR .. "You lost " .. -net .. " gold.|r"
+    end
+    return "You broke even."
+  elseif result.booked then
+    return WAIT_COLOR .. NOT_IN_SETTLEMENT .. "|r"
+  end
+  return ""
+end
+
+---Tells whether a due is the banker's own share of the guild bank: the banker pays it from the own pocket.
+---@param due OOOOGambleResultDue
+---@return boolean
+local function isOwnPocket(due)
+  return due.bank and due.from == due.to
+end
+
+---Builds the text of an own due: what the own character gives or gets, and the state of a due that it pays.
+---@param due OOOOGambleResultDue With `mine` set
+---@return string
+local function ownDueText(due)
+  local bank = due.bank and " for the guild bank" or ""
+  if isOwnPocket(due) then
+    return "Put " .. due.gold .. " gold into the guild bank from your own pocket"
+      .. (due.confirmed and (": " .. GOOD_COLOR .. "done|r") or "")
+  elseif due.confirmable then
+    return due.from .. " gives you " .. due.gold .. " gold" .. bank
+      .. (due.confirmed and (": " .. GOOD_COLOR .. "received|r") or "")
+  end
+  return "Give " .. due.gold .. " gold to " .. due.to .. bank .. ": "
+    .. (due.confirmed and (GOOD_COLOR .. "confirmed by the receiver|r") or (WAIT_COLOR .. "not confirmed yet|r"))
+end
+
+---Builds the line of a due in the list of all dues: payer, receiver, gold, and its confirmation.
+---@param due OOOOGambleResultDue
+---@return string
+local function allDueText(due)
+  local text
+  if isOwnPocket(due) then
+    text = due.from .. " -> guild bank: " .. due.gold .. " gold (from own pocket)"
+  else
+    text = due.from .. " -> " .. due.to .. ": " .. due.gold .. " gold" .. (due.bank and " (guild bank)" or "")
+  end
+  return text .. "   " .. (due.confirmed and (GOOD_COLOR .. "confirmed|r") or (WAIT_COLOR .. "open|r"))
+end
+
+---Turns a refusal reason of `Confirm` or `Unconfirm` into a line.
+---@param reason string|nil
+---@return string
+local function receiptRefusalText(reason)
+  local text = reason and RECEIPT_REFUSALS[reason]
+  if text then
+    return text
+  end
+  return "The confirmation was refused (" .. tostring(reason or "unknown reason"):gsub("|", "||") .. ")."
 end
 
 --------------------------------------------------------------------------------
@@ -980,13 +1096,40 @@ function tab:BuildLocked(scroll, detail)
   self:AddStateLines(scroll, detail)
 end
 
----Adds the rows of a resolved or cancelled event, read-only: per outcome its line with the booked sum, the
----own stake, and whether it came true; then the state of the event. Step 15.3 replaces this with the own net,
----the dues, and "Received"; it then also has to add what it shows to `detailSignature`.
+---Adds the row of an own due. A due that the own character receives gets "Received" ("Done" for the banker's
+---own share of the guild bank), and once confirmed "Undo"; a due that it pays shows only its state.
+---@param container table
+---@param eventId string
+---@param due OOOOGambleResultDue
+function tab:AddOwnDue(container, eventId, due)
+  if not due.confirmable then
+    addLabel(container, ownDueText(due))
+    return
+  end
+  local line = addLine(container)
+  local n = due.n
+  if due.confirmed then
+    line:AddChild(makeButton("Undo", UNDO_WIDTH, function()
+      tab:ChangeReceipt(eventId, n, false)
+    end))
+  else
+    line:AddChild(makeButton(isOwnPocket(due) and "Done" or "Received", RECEIVE_WIDTH, function()
+      tab:ChangeReceipt(eventId, n, true)
+    end))
+  end
+  -- The text takes what the button leaves, so it stands after the button
+  line:AddChild(lineLabel(" " .. ownDueText(due)))
+end
+
+---Adds the rows of a resolved or cancelled event, read-only except for the receipts: per outcome its line with
+---the booked sum, the own stake, and whether it came true; then the own result, the own dues with "Received",
+---and all dues with their confirmations (15.5 to 15.7). The detail part scrolls, so a long list of dues fits.
 ---@param container table The AceGUI ScrollFrame of the detail part
 ---@param detail OOOOGambleDetail
-function tab:BuildResolved(container, detail)
-  local results = detail.state == "resolved" and resultsOf(self.model, detail.id) or nil
+---@param result OOOOGambleResult|nil The result of `Result`
+---@param officer boolean The own character is an officer
+function tab:BuildResolved(container, detail, result, officer)
+  local results = result and result.results
   for index, outcome in ipairs(detail.outcomes) do
     local text = outcomeText(outcome) .. (outcome.own and ("   your stake " .. outcome.own) or "")
     if results then
@@ -994,10 +1137,47 @@ function tab:BuildResolved(container, detail)
     end
     addLabel(container, text)
   end
-  if detail.state == "cancelled" then
-    addLabel(container, "Cancelled: the bets do not count, and nobody owes anything.")
-  else
-    addLabel(container, "Resolved.")
+  if detail.state == "cancelled" or not result or result.state == "cancelled" then
+    addLabel(container, "Cancelled: nobody owes anything.")
+    self.messageLabel = addLabel(container, self:MessageText(detail.id))
+    return
+  elseif result.state == "loading" then
+    addLabel(container, WAIT_COLOR .. "The result is loading: " .. result.held .. " of " .. result.count
+      .. " dues have arrived.|r")
+    return
+  end
+
+  local own = ownResultText(result)
+  if own ~= "" then
+    addLabel(container, own)
+  end
+  if (result.bankHeld or 0) > 0 then
+    addLabel(container, WAIT_COLOR .. "You hold " .. result.bankHeld .. " gold for the guild bank: put it into the "
+      .. "guild bank.|r")
+  end
+  if #result.ownDues > 0 then
+    addHeading(container, "Your dues")
+    for _, due in ipairs(result.ownDues) do
+      self:AddOwnDue(container, detail.id, due)
+    end
+  end
+  self.messageLabel = addLabel(container, self:MessageText(detail.id))
+
+  addHeading(container, "All dues")
+  if #result.dues == 0 then
+    addLabel(container, "Nobody owes anything: the event had no winning or no losing stakes.")
+  end
+  for _, due in ipairs(result.dues) do
+    addLabel(container, allDueText(due))
+  end
+  if result.settled then
+    addLabel(container, GOOD_COLOR .. "Everything is settled.|r")
+  end
+  if officer and result.mismatch then
+    addLabel(container, WAIT_COLOR .. MISMATCH_NOTE .. "|r")
+  end
+  if #result.dues > 0 then
+    addLabel(container, PAYMENT_NOTE, true)
   end
 end
 
@@ -1099,7 +1279,7 @@ function tab:BuildOfficer(scroll, detail)
     tab:OnCancelClick(widget)
   end))
   addLabel(scroll, CANCEL_NOTE, true)
-  -- The detail of a resolved event has no line for the answer to a click
+  -- The detail of a resolved event whose dues are still loading has no line for the answer to a click
   if not self.messageLabel then
     self.messageLabel = addLabel(scroll, self:MessageText(detail.id))
   end
@@ -1307,11 +1487,15 @@ function tab:UpdateDetail(force)
   end
   local detail = self.selectedId and self.model:Detail(self.selectedId) or nil
   local results = detail and detail.state == "resolved" and resultsOf(self.model, detail.id) or nil
+  local result = detail and (detail.state == "resolved" or detail.state == "cancelled")
+    and self.model:Result(detail.id) or nil
   local signature = ""
   if detail then
     -- The officer controls, and the banker list of a locked event, are part of what the detail shows
     local bankers = officer and detail.state == "locked" and table.concat((self:BankerOptions()), ",") or ""
-    signature = detailSignature(detail, results) .. "\030" .. tostring(officer) .. "\030" .. bankers
+    local event = result and self.model:Event(detail.id)
+    signature = detailSignature(detail, results) .. "\030" .. tostring(officer) .. "\030" .. bankers .. "\030"
+      .. resultSignature(result, event and event.q or nil)
   end
   if not force and signature == self.signature then
     if detail then
@@ -1329,7 +1513,7 @@ function tab:UpdateDetail(force)
     elseif detail.state == "locked" then
       self:BuildLocked(scroll, detail)
     else
-      self:BuildResolved(scroll, detail)
+      self:BuildResolved(scroll, detail, result, officer)
     end
     if officer and detail.state ~= "cancelled" then
       self:BuildOfficer(scroll, detail)
@@ -1410,6 +1594,34 @@ function tab:TakeBack()
   end
   self.typed[eventId] = nil
   self:ShowMessage(eventId, "Your bet is taken back.", false)
+  self:RefreshSoon()
+end
+
+--------------------------------------------------------------------------------
+-- Receipts
+--------------------------------------------------------------------------------
+
+---Confirms that the own character has received a due ("Received", "Done"), or takes the confirmation back
+---("Undo"). The answer goes to the message line; on success the detail is built again in the next frame.
+---@param eventId string
+---@param n integer Due number
+---@param confirmed boolean true to confirm, false to take back
+function tab:ChangeReceipt(eventId, n, confirmed)
+  if not self.model then
+    return
+  end
+  local done, reason
+  if confirmed then
+    done, reason = self.model:Confirm(eventId, n)
+  else
+    done, reason = self.model:Unconfirm(eventId, n)
+  end
+  if not done then
+    self:ShowMessage(eventId, receiptRefusalText(reason), true)
+    return
+  end
+  self:ShowMessage(eventId, confirmed and "Confirmed: everybody sees this due as received."
+    or "Your confirmation is taken back.", false)
   self:RefreshSoon()
 end
 

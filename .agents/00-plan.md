@@ -661,6 +661,10 @@ How to read this section:
   - Done when: the check is recorded.
 
 - **15.3 Dues, receipts, notices** (**CLIENT**)
+  - State: the code is written: the detail of a resolved event with
+    "Received" and "Undo" in `GambleTab.lua` (luacheck only), the notices
+    in `GambleNotice.lua` (host tests), the changelog entry, and the
+    version 2026.11.8. The client check is open.
   - Substeps: the detail of a resolved event; "Received" and its taking
     back; the two notices with their link; the changelog entry and the
     version.
