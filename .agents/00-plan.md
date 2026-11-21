@@ -8,7 +8,7 @@ them:
   character, so that nobody can write in the name of another;
 - a gambling engine for the guild, built on both.
 
-Status: nothing of this plan is started. The earlier plan (the sync engine,
+Status: stage 13 is in work; the finished steps are in `00-finished.md`. The earlier plan (the sync engine,
 guild chat, mentions, professions) is finished or closed; its steps are in
 `00-finished.md` and its design is in `sync-design.md`.
 
@@ -41,6 +41,24 @@ wrong.
   confirms the gold that arrived.
 - The addon moves no gold. It only says who shall give how much to whom;
   the players trade or mail it themselves.
+
+Scope:
+
+- This design applies only to the new tables that are marked as protected
+  in their definition (`writers = "officer"` or `writers = "self"`): the
+  developer tables of stage 13 and the gambling tables of stage 14.
+- The tables that exist today (`writers = "owner"` or `"anyone"`) do not
+  change their behaviour. Who may write, who pushes, who is taken as the
+  source of a pull, when a hello is answered, when a summary is held back,
+  and what a member relays stay as `sync-design.md` describes them. Every
+  rule of section 14 is read as "for a protected table".
+- No existing feature changes: the guild chat history, the mentions, the
+  professions, the member list, and the version check work as before.
+- Where a step touches code that all tables share (the mark of the last
+  push in 14.4, the new argument of `OnRecordChanged` in 14.8), the change
+  is internal: an existing table sends and accepts the same messages as
+  before. The existing host tests pass without a change, and that is part
+  of the definition of done of every step of stage 13.
 
 Limits:
 
@@ -76,6 +94,7 @@ The terms of `sync-design.md`, section 2, and:
 | Character origin | The origin in the ids of a self table: one per install and character (14.4). |
 | Event | One gambling event: a title, outcomes, a close time. |
 | Outcome | One thing that can happen in an event, with a chance in percent. It is resolved to true or false. |
+| Cap | An optional limit of an outcome with a chance under 20%: the highest profit of a winning stake, as a multiple of the stake (15.3). |
 | Stake | The gold that a character bets on one outcome. |
 | Book | The officers' copies of the bets that an officer's addon received before the close (15.4). |
 | Due | One payment that the settlement asks for: from a character, to a character, an amount of gold. |
@@ -105,9 +124,8 @@ proves nothing either, because its records pass through third members. So:
 ### 14.2 Officers
 
 - `ns.OFFICER_RANKS = { [0] = true, [1] = true }`: in `OO OO` the ranks `O`
-  (guild master) and `Ministry of War`. A constant, not a setting. This was
-  the decision of the first plan (2026-11-17); confirm it before step 13.1
-  (18).
+  (guild master) and `Ministry of War`. A constant, not a setting.
+  Confirmed by the user on 2026-11-21 (18).
 - `ns.guildState:IsOfficer(name)` reads the roster cache. A name that the
   cache lacks is no officer. The rank is read when a message arrives; a
   record that was accepted from an officer stays when that officer is
@@ -339,7 +357,9 @@ ns.sync:RegisterTable({
 ```lua
 { n = "Who wins the duel on Friday?",   -- title, 1 to 80 bytes
   o = { { n = "Nota", p = 60 },         -- 2 to 8 outcomes: name of 1 to 40 bytes,
-        { n = "Other", p = 40 } },      --   chance p in whole percent, 1 to 99
+        { n = "Other", p = 40 } },      --   chance p in whole percent, 1 to 99;
+                                        --   optional cap x, a whole number from 1 to 99,
+                                        --   only with p under 20: { n = "Sword", p = 2, x = 10 }
   c = 1795300000,                       -- close: server time after which no bet counts
   m = 100,                              -- highest stake of one character on one outcome
   s = 1,                                -- 1 open, 2 resolved, 3 cancelled
@@ -358,8 +378,14 @@ ns.sync:RegisterTable({
   sword" (10%) and "it does not" (90%).
 - An event with one outcome would have only winners or only losers and
   would move no gold. That is why 2 is the least.
-- The title, the outcomes, the chances, and `m` never change after the
-  event was opened. A wrong event is cancelled and opened again.
+- **Cap.** A chance of 1% or 2% promises 99 or 49 times the stake. The
+  officer who opens the event can cap an outcome with a chance under
+  `CAP_BELOW = 20` percent: `x` is the highest profit of a winning stake as
+  a multiple of the stake. With `p = 2` and `x = 10`, 5 gold claim 50 gold
+  and not 245. A cap above what the chance promises changes nothing.
+  (Asked for by the user on 2026-11-21.)
+- The title, the outcomes, the chances, the caps, and `m` never change after
+  the event was opened. A wrong event is cancelled and opened again.
 - **Close.** `c` is set when the event is opened, at most 30 days ahead. An
   officer can lock the event earlier: the lock sets `c` to the current
   server time. `c` never moves later.
@@ -410,8 +436,11 @@ officer's addon has copied it into the book before the close.
   entry with the id of the bet record), "accepted" (entry with that id),
   and after the close "too late" (no such entry). A change that came too
   late leaves the accepted entry in force, and the window says so.
-- **What everybody sees**: the sum of the booked stakes per outcome. The
-  stakes are not hidden.
+- **What everybody sees**: the sum of the booked stakes per outcome, but
+  only after the close. While bets are taken, the window shows the own
+  stake and nothing of the others (decided by the user on 2026-11-21). This
+  hides the sums in the window only: the book entries travel to every
+  member, so a member who reads the saved data can add them up.
 - No officer online means that no bet is accepted. The window tells the
   bettor to place bets early.
 
@@ -438,7 +467,8 @@ share of the guild bank is the constant `BANK_SHARE = 10` percent.
 1. A stake on an outcome that came true wins; every other stake loses.
 2. The claim of a winning stake is what the chance promises as profit:
    `stake * (100 - p) / p`. 30 gold on a 60% outcome claim 20 gold; 30 gold
-   on a 10% outcome claim 270.
+   on a 10% outcome claim 270. With a cap `x` (15.3) the claim is at most
+   `stake * x`: 30 gold on a 10% outcome with `x = 5` claim 150.
 3. `L` is the sum of the losing stakes and `C` the sum of the claims. When
    one of them is 0, nothing is owed: an event without winners or without
    losers moves no gold.
@@ -511,13 +541,16 @@ also with `/oooo bet`.
 ```
 
 - **List**: the events in four groups, the newest first.
-- **Detail, open**: the outcomes with chance, booked sum, the own stake
-  with the highest possible win, and the state of the own bet (15.4).
+- **Detail, open**: the outcomes with chance and cap, the own stake with
+  the highest possible win, and the state of the own bet (15.4). The booked
+  sum per outcome appears after the close (15.4); the sketch above shows a
+  locked event.
 - **Detail, resolved**: the result of each outcome, the own net, the own
   dues ("give 20 to Nota Scam", "Nota Scam gives you 20 [Received]"), and
   all dues with their confirmations.
 - **Officers**: "New event" (title, 2 to 8 outcomes with chance, close as
-  day and time, highest stake), "Lock now", "Resolve" (a check box per
+  day and time, highest stake; an outcome with a chance under 20% shows a
+  check box "cap the payout" and a number box for the multiplier `x`), "Lock now", "Resolve" (a check box per
   outcome, the banker, the warning of 15.5, a second click to confirm),
   "Cancel". The controls are shown to an officer character only; the
   engine refuses the writes of everybody else anyway.
@@ -569,24 +602,14 @@ How to read this section:
   recorded.
 - A number in brackets, such as (14.6), names a section of this plan. A
   step is always called "step".
+- Part of every definition of done of stage 13 (12, Scope): the existing
+  host tests pass with no change to their files, and a table with
+  `writers = "owner"` or `"anyone"` sends and accepts the same messages as
+  before the step.
 - Stage 13 comes first. Stage 14 needs it. Stage 15 needs stage 14. Within
   stage 14, step 14.2 needs nothing and can be done at any time.
 
 ### Stage 13. Protected tables
-
-- **13.1 Officers in the guild state**
-  - Substeps
-    - `ns.OFFICER_RANKS` and `guildState:IsOfficer(name)` (14.2).
-    - `sync:Initialize` takes a function that tells whether the logged-in
-      character is an officer, as it takes `playerNameFn`.
-    - The fake network and the replica fixture already carry `rankIndex`;
-      add a helper that changes the rank of a member.
-  - Checkpoint: `/oooo sync status` shows "officer" or "member" for the own
-    character.
-  - Host tests (`Tests/sync_guildstate.lua`): ranks 0 and 1 are officers, 2
-    and 9 are not; an unknown name is not; a rank change shows after the
-    next roster read.
-  - Done when: the rank comes from the roster cache in every case.
 
 - **13.2 Officer tables**
   - Substeps
@@ -617,6 +640,8 @@ How to read this section:
       nobody.
     - A demoted officer: its earlier records stay, its next push is
       ignored.
+    - An `owner` table and an `anyone` table in the same network: a member
+      still writes, pushes, relays, and serves as the source of a pull.
   - Done when: no path applies a record of an officer table that a member
     sent.
 
@@ -727,7 +752,8 @@ How to read this section:
   - Host tests (`Tests/sync_gambledata.lua`): keys with a `:` in the event
     id and a space in the name are built and read back; `validate` accepts
     the examples of 15.2 and 15.3 and refuses a wrong type, a chance of 0
-    or 100, one outcome, nine outcomes, a stake of 0, a broken key; a
+    or 100, one outcome, nine outcomes, a stake of 0, a broken key, a cap
+    on an outcome with a chance of 20 or more; a
     member cannot write an event, and a character cannot write the bet of
     another.
   - Done when: every record of 15.2 has a builder and a check.
@@ -739,7 +765,8 @@ How to read this section:
   - Checkpoint: the two rows of the example in 15.5 come out as printed.
   - Host tests (`Tests/sync_gamblesettle.lua`)
     - The example; no winners; no losers; all outcomes true; a character
-      with a winning and a losing stake.
+      with a winning and a losing stake; a capped outcome, and a cap above
+      what the chance promises.
     - On 500 random events (seeded): the nets and the bank add up to 0; no
       loser pays more than the stake; no winner gets more than the claim;
       the bank gets a tenth of the losers' payments, give or take the
@@ -847,6 +874,9 @@ How to read this section:
 
 Taken with this plan:
 
+- The design applies only to new tables marked as protected. The existing
+  tables, their rules of publication, and the existing features do not
+  change (12, Scope).
 - Protected tables take data from officers only; there is no member relay.
 - The proof of a writer is the sender name of the message and the rank in
   the roster, nothing inside the message.
@@ -857,15 +887,16 @@ Taken with this plan:
 - The guild bank gets 10% of what the losers pay, through a banker.
 - No gold moves by the addon.
 
-To confirm by the user before the step that depends on it:
+Confirmed or changed by the user on 2026-11-21:
 
-- **Officer ranks** (step 13.1): rank indexes 0 and 1.
+- **Officer ranks** (step 13.1): rank indexes 0 and 1. Confirmed.
 - **Payout rule** (step 14.2): a winner gets at most what the chance promises,
-  and the losers pay only what is needed for that. The other choice: the
-  losers always lose the whole stake, and the winners share all of it by
-  their claims.
-- **No winners** (step 14.2): nobody pays, and the bank gets nothing. The other
-  choice: the losers pay the bank share.
-- **Open stakes** (section 15.4): everybody sees the booked sums per outcome.
+  and the losers pay only what is needed for that. Confirmed.
+- **No winners** (step 14.2): nobody pays, and the bank gets nothing.
+  Confirmed.
+- **Stakes** (section 15.4): changed. The booked sums per outcome are shown
+  only after the close.
 - **Banker** (section 15.5): chosen by the resolving officer, the own character by
-  default.
+  default. Confirmed.
+- **Payout cap** (section 15.3): new. An outcome with a chance under 20% can
+  cap the profit of a winning stake at a multiple of the stake.

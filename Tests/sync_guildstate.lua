@@ -180,6 +180,30 @@ do
   T.eq(guildState:GetMember("Nota Scam").rankIndex, 1, "the cache has the new rank")
 end
 
+-- Officers: the ranks 0 and 1, read from the roster cache
+do
+  T.eq(ns.OFFICER_RANKS, { [0] = true, [1] = true }, "the officer ranks are 0 and 1")
+  T.eq(guildState:IsOfficer("Nota Scam"), true, "rank 1 is an officer")
+  T.eq(guildState:IsOfficer("Third One"), false, "rank 5 is not")
+  T.eq(guildState:IsOfficer("New One"), false, "rank 9 is not")
+  T.eq(guildState:IsOfficer("Stranger"), false, "an unknown name is no officer")
+  T.eq(guildState:IsOfficer(nil), false, "no name is no officer")
+  client.roster[1][2] = 2
+  T.eq(guildState:IsOfficer("Nota Scam"), true, "a rank change does not show before the roster is read")
+  fire("GUILD_ROSTER_UPDATE")
+  T.eq(guildState:IsOfficer("Nota Scam"), false, "rank 2 is not an officer, after the next roster read")
+  client.roster[1][2] = 0
+  fire("GUILD_ROSTER_UPDATE")
+  T.eq(guildState:IsOfficer("Nota Scam"), true, "rank 0 is an officer")
+  -- An officer keeps the rank while offline: the rank is read for a name, not for a connection
+  client.roster[1][3] = false
+  fire("GUILD_ROSTER_UPDATE")
+  T.eq(guildState:IsOfficer("Nota Scam"), true, "an offline officer is an officer")
+  client.roster[1][3] = true
+  fire("GUILD_ROSTER_UPDATE")
+  fired()
+end
+
 -- NoteOnline: a message is evidence that the sender is online
 do
   T.eq(client.requests, 1, "no roster request so far beyond the first")

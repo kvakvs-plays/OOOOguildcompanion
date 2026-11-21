@@ -30,6 +30,7 @@ local addonName, ns = ...
 ---@field timeFn (fun(): integer)|nil Server time in seconds
 ---@field nextId (fun(maxId: string?): string)|nil Id source of this install
 ---@field playerNameFn (fun(): string|nil)|nil Gives the name of the logged-in character, for the owner rule
+---@field isOfficerFn (fun(): boolean)|nil Tells whether the logged-in character is an officer
 ---@field IsAltOf (fun(self: OOOOSync, name: string, other: string): boolean)|nil Added by SyncCharacter.lua
 ---@field IsOriginOf (fun(self: OOOOSync, name: string, origin: string): boolean)|nil Added by SyncCharacter.lua
 ---@field callbacks table CallbackHandler registry; fires "OnRecordChanged"
@@ -172,10 +173,13 @@ end
 ---@param randomFn fun(m: integer, n: integer): integer Like math.random(m, n)
 ---@param playerNameFn (fun(): string|nil)? Name of the logged-in character as the roster shows it; without
 ---it nothing can be written into a table with `writers = "owner"`
-function sync:Initialize(data, timeFn, randomFn, playerNameFn)
+---@param isOfficerFn (fun(): boolean)? Tells whether the logged-in character is an officer by the guild
+---roster; without it the character counts as a member
+function sync:Initialize(data, timeFn, randomFn, playerNameFn, isOfficerFn)
   self.data = data
   self.timeFn = timeFn
   self.playerNameFn = playerNameFn
+  self.isOfficerFn = isOfficerFn
   self.nextId = versionId.newGenerator(data.origin, timeFn, randomFn)
   for _, name in ipairs(self.names) do
     prepareStorage(name)
@@ -186,6 +190,13 @@ end
 ---@return string|nil
 function sync:GetOrigin()
   return self.data and self.data.origin
+end
+
+---Tells whether the logged-in character is an officer (plan section 14.2). The answer follows the roster:
+---it is false until the roster is read.
+---@return boolean
+function sync:IsOfficer()
+  return self.isOfficerFn ~= nil and self.isOfficerFn() == true
 end
 
 ---Returns the stored table and the definition of a registered table.

@@ -99,6 +99,8 @@ function commands.statusLines()
       .. (current and (", may send: " .. current:SendState(name)) or ""))
   end
   if current then
+    -- The rank decides what this character may write and send in a protected table (plan section 14)
+    lines[#lines + 1] = "rank: " .. (sync:IsOfficer() and "officer" or "member")
     for _, line in ipairs(current:StatusLines()) do
       lines[#lines + 1] = commands.escape(line)
     end

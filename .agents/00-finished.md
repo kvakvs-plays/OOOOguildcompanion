@@ -158,3 +158,10 @@ the full text is in the git history of `00-plan.md`.
   a raid instance (from December 9, 2026), and during a boss encounter. If
   one fails, that state becomes a hard limit in `SyncPolicy.conditionMet`.
 - **Stage 9, table `equipment`**: postponed on 2026-11-18; never started.
+
+## Stage 13. Protected tables (plan of 2026-11-21)
+
+- **13.1 Officers in the guild state**: `ns.OFFICER_RANKS` (0 and 1, confirmed
+  by the user), `guildState:IsOfficer`, `sync:Initialize` takes
+  `isOfficerFn`, `sync:IsOfficer`, the line "rank:" of `/oooo sync status`;
+  `Fakenet:SetRank`. Host only; the status line is not seen in the client.

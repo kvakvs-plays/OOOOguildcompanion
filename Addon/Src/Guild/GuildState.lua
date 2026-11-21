@@ -32,6 +32,12 @@ ns.guildState = guildState
 ---Name of the guild that the addon is for, as `GetGuildInfo` gives it
 guildState.GUILD_NAME = "OO OO"
 
+---Rank indexes of the officers: in `OO OO` the ranks `O` (guild master) and `Ministry of War`. Only an officer
+---writes a table with `writers = "officer"`, and only an officer is a source of a protected table
+---(.agents/00-plan.md, section 14.2). A constant, not a setting.
+---@type table<integer, boolean>
+ns.OFFICER_RANKS = { [0] = true, [1] = true }
+
 ---Shortest time in seconds between two roster requests that `NoteOnline` makes; the server throttles them
 local REFRESH_INTERVAL = 15
 
@@ -77,6 +83,15 @@ end
 function guildState:IsOnline(name)
   local member = self.roster[name]
   return member ~= nil and member.online
+end
+
+---Tells whether the roster cache shows a character with an officer rank (`ns.OFFICER_RANKS`). The rank
+---belongs to the character, not to the player: an alt of an officer with a member rank is no officer.
+---@param name string|nil Character name without a realm suffix
+---@return boolean officer false for a name that the cache lacks
+function guildState:IsOfficer(name)
+  local member = name ~= nil and self.roster[name] or nil
+  return member ~= nil and ns.OFFICER_RANKS[member.rankIndex] == true
 end
 
 ---Tells whether the roster cache lists every member of the guild: the character is in the guild, the

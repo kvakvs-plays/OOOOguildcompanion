@@ -81,6 +81,8 @@ return function(T)
       return math.floor(net:Now())
     end, options.random, function()
       return name
+    end, function()
+      return net.guild:IsOfficer(name)
     end)
     self.endpoint = net:Join(name, options.rankIndex)
     self.transport = ns.syncComm.new({

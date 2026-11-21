@@ -12,6 +12,7 @@ local addonName, ns = ...
 ---@field IsOnline fun(self: any, name: string): boolean
 ---@field NoteOnline fun(self: any, name: string)
 ---@field IsRosterComplete fun(self: any): boolean true when a missing name means a member who left
+---@field IsOfficer fun(self: any, name: string|nil): boolean true for a character with an officer rank
 
 ---@alias OOOOSyncPriority "NORMAL"|"BULK"|"ALERT" Priority of ChatThrottleLib
 

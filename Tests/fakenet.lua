@@ -49,6 +49,7 @@
 ---@field members table<string, { online: boolean, rankIndex: integer }> The roster
 ---@field endpoints table<string, FakenetEndpoint> Character name -> connection
 ---@field arrivals table<string, number> Sender and receiver -> clock value of the last scheduled arrival
+---@field officerRanks table<integer, boolean> Rank indexes that count as officers; as `ns.OFFICER_RANKS`
 local Fakenet = {}
 Fakenet.__index = Fakenet
 
@@ -73,6 +74,7 @@ function Fakenet.new(options)
     endpoints = {},
     log = {},
     arrivals = {},
+    officerRanks = { [0] = true, [1] = true },
   }, Fakenet)
   local members = net.members
   net.guild = {
@@ -81,6 +83,10 @@ function Fakenet.new(options)
     end,
     IsOnline = function(_, name)
       return members[name] ~= nil and members[name].online
+    end,
+    IsOfficer = function(_, name)
+      local member = name ~= nil and net.members[name] or nil
+      return member ~= nil and net.officerRanks[member.rankIndex] == true
     end,
     -- The fake roster is never stale
     NoteOnline = function() end,
@@ -177,6 +183,17 @@ function Fakenet:SetOnline(name, online)
   if member.online ~= online then
     -- A new table: a cache that kept the old entry must not change behind its back
     self.members[name] = { online = online, rankIndex = member.rankIndex }
+    self:RosterChanged(name)
+  end
+end
+
+---Changes the rank of a member: a promotion or a demotion. The others see it as a roster change.
+---@param name string
+---@param rankIndex integer Rank index from 0
+function Fakenet:SetRank(name, rankIndex)
+  local member = assert(self.members[name], "not a member: " .. name)
+  if member.rankIndex ~= rankIndex then
+    self.members[name] = { online = member.online, rankIndex = rankIndex }
     self:RosterChanged(name)
   end
 end

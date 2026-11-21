@@ -189,6 +189,8 @@ function addon:OnInitialize()
     -- SyncCharacter.lua loads after this file, so its function is looked up at the call
     ns.sync:Initialize(ns.db.global.sync, GetServerTime, math.random, function()
       return ns.syncCharacter.playerName()
+    end, function()
+      return ns.guildState:IsOfficer(ns.syncCharacter.playerName())
     end)
     -- Before the settings window is built, so that the table has its entry on the Sync page
     if ns.db.global.debugTable == true then
