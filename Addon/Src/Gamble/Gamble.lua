@@ -1,12 +1,16 @@
 local addonName, ns = ...
 
--- The model of the gambling feature, without frames (.agents/00-plan.md, sections 15.3 and 15.4, step 14.3):
--- the officers open, lock, and cancel events; every member places and takes back the own bet; and the reading
--- of the events, of one event, and of the state of the own bet.
+-- The model of the gambling feature, without frames (.agents/00-plan.md, sections 15.3 to 15.6, steps 14.3 and
+-- 14.5): the officers open, lock, resolve, and cancel events; every member places and takes back the own bet and
+-- confirms the dues that it received; and the reading of the events, of one event, of the state of the own bet,
+-- and of the result with its dues.
 --
 -- Every write checks the state of the event (15.3) before it is made. A stored record has passed the check of
 -- its kind (GambleData.lua), but a check sees one record only: this reader compares a book entry or a bet with
 -- its event and ignores what does not fit.
+--
+-- The written dues are the settlement (15.5): a reader takes the dues `1..d` whose token equals the event's and
+-- never computes them again. A cancelled event owes nothing, whatever dues are stored.
 --
 -- This file uses no WoW API at file scope, so the host tests load it (Tests/sync_gamble.lua).
 
@@ -15,6 +19,9 @@ local addonName, ns = ...
 ---@field now fun(): integer Server time in seconds
 ---@field playerName fun(): string|nil Name of the logged-in character as the roster shows it
 ---@field sanitize fun(text: string): string Makes an untrusted text safe to show (`ns.mentions.sanitize`)
+---@field random fun(m: integer, n: integer): integer Like math.random(m, n); makes the settlement tokens
+---@field isOfficer (fun(name: string): boolean)|nil Tells whether the roster shows a character with an officer
+---rank; without it only the own character can be the banker of a resolution
 
 ---@class OOOOGambleSpec What an officer gives to open an event
 ---@field title string 1 to `MAX_TITLE` bytes
@@ -29,8 +36,8 @@ local addonName, ns = ...
 ---@class OOOOGambleGroups The events in the four groups of the window, each newest first
 ---@field open OOOOGambleListEntry[] Bets are taken
 ---@field waiting OOOOGambleListEntry[] Closed, waiting for the resolution
----@field toPay OOOOGambleListEntry[] Resolved
----@field done OOOOGambleListEntry[] Cancelled
+---@field toPay OOOOGambleListEntry[] Resolved, with a due that is not confirmed or a due that is not held yet
+---@field done OOOOGambleListEntry[] Cancelled, or resolved with every due confirmed (also with no dues)
 
 ---@class OOOOGambleDetailOutcome One outcome as the window shows it
 ---@field n string Name, sanitized
@@ -55,13 +62,62 @@ local addonName, ns = ...
 ---@class OOOOGambleBetInfo Extra facts of a bet state
 ---@field stakes table<integer, integer> The booked stakes that stay in force (state "outdated")
 
+---@class OOOOGambleResultDue One due as the window shows it
+---@field n integer Due number
+---@field from string Payer, sanitized
+---@field to string Receiver, sanitized; the banker for a bank due
+---@field gold integer
+---@field bank boolean The gold is the share of the guild bank
+---@field confirmed boolean The receiver has confirmed it with a receipt of the current token
+---@field mine "pay"|"receive"|nil The own character pays it ("pay" also for a bank due that names the banker on
+---both sides), or receives it
+---@field confirmable boolean The own character is its receiver, so `Confirm` and `Unconfirm` take it
+
+---@class OOOOGambleResult The result of a resolved or cancelled event as the window shows it
+---@field state "loading"|"ready"|"cancelled" "loading": fewer than `count` dues of the token are held, and the
+---lists are empty; "cancelled": nobody owes anything, and the lists are empty
+---@field results boolean[]|nil Result per outcome; nil for a cancelled event
+---@field banker string|nil Name of the banker, sanitized; nil for a cancelled event
+---@field held integer Dues of the current token that this replica holds
+---@field count integer Dues that the resolution wrote
+---@field dues OOOOGambleResultDue[] Every due, in the order of n
+---@field ownDues OOOOGambleResultDue[] The dues that name the own character, in the order of n
+---@field net integer|nil Received minus paid over the own dues, bank dues left out; nil while loading
+---@field bankHeld integer|nil Gold of the bank dues that the own character receives as banker; nil while loading
+---@field settled boolean Every due is confirmed; true with no dues; false while loading
+---@field booked boolean The own character has a valid book entry (`t <= c`)
+---@field inSettlement boolean|nil Whether the settlement counted the own bet; nil while loading. See `Result`.
+---@field mismatch boolean|nil The dues that a settlement over the book that this replica holds now would give
+---differ from the written ones: the resolving officer lacked a book entry, or this replica lacks one
+
+---@class OOOOGamblePreview What the window shows before an officer resolves an event
+---@field bets integer Characters with a valid book entry
+---@field sum integer Gold of all valid booked stakes
+---@field behind boolean A peer has announced a newer state of the book that no online officer can supply
+
+---@class OOOOGambleHeldDue A stored due of the token in force, with its confirmation
+---@field n integer Due number
+---@field due OOOOGambleDue The stored payload: do not change it
+---@field confirmed boolean
+
+---@class OOOOGambleHeldSettlement The dues of the token in force of a resolved event that a replica holds
+---@field dues OOOOGambleHeldDue[] In the order of n
+---@field held integer
+---@field ready boolean Every due of the token is held
+---@field settled boolean Ready, and every due is confirmed
+
 ---@class OOOOGambleModule
 ---@field current OOOOGamble|nil The model of the game, made by `Start`
 local gamble = {}
 ns.gamble = gamble
 
 local data = ns.gambleData
+local gambleSettle = ns.gambleSettle
 local TABLE, PLAYER_TABLE = data.TABLE, data.PLAYER_TABLE
+---Most dues of one resolution: the highest due number that a key and the event field `d` take
+local MAX_DUES = 999
+---Lowest and highest byte of a base-94 character
+local FIRST_BYTE, LAST_BYTE = 33, 126
 
 ---Tells whether a value is an integer within a range; false for NaN, fractions, and other types.
 ---@param value any
@@ -96,19 +152,58 @@ end
 ---The reason of a refusal for each state of an event that does not take the write
 local REFUSAL = { locked = "closed", resolved = "resolved", cancelled = "cancelled" }
 
----Tells the group of the window that an event belongs to. Step 14.5 moves a settled event from "toPay" to
----"done"; this is the one place for that decision.
+---Tells whether a value can be a character name: 1 to `MAX_NAME` bytes, no `:`.
+---@param value any
+---@return boolean
+local function isName(value)
+  return isText(value, data.MAX_NAME) and not value:find(":", 1, true)
+end
+
+---Reads the dues of the token in force of a resolved event and their confirmations (15.6). A due counts when
+---its token is the event's; a receipt counts when its token is the event's, and it is read only from the record
+---of the receiver that the due names, which the self rule lets nobody else write.
+---@param sync OOOOSync
+---@param eventId string
+---@param event OOOOGambleEvent With `s = STATE_RESOLVED`
+---@return OOOOGambleHeldSettlement
+local function readSettlement(sync, eventId, event)
+  local dues, receipts = {}, {}
+  local allConfirmed = true
+  for n = 1, event.d do
+    local due = sync:Get(TABLE, data.dueKey(eventId, n))
+    if type(due) == "table" and due.q == event.q then
+      local receipt = receipts[due.t]
+      if receipt == nil then
+        receipt = sync:Get(PLAYER_TABLE, data.receiptKey(due.t, eventId))
+        if type(receipt) ~= "table" or receipt.q ~= event.q or type(receipt.n) ~= "table" then
+          receipt = false
+        end
+        receipts[due.t] = receipt
+      end
+      local confirmed = receipt ~= false and receipt.n[n] == true
+      allConfirmed = allConfirmed and confirmed
+      dues[#dues + 1] = { n = n, due = due, confirmed = confirmed }
+    end
+  end
+  local ready = #dues == event.d
+  return { dues = dues, held = #dues, ready = ready, settled = ready and allConfirmed }
+end
+
+---Tells the group of the window that an event belongs to: a resolved event moves from "toPay" to "done" when
+---every due of its token is held and confirmed. This is the one place for that decision.
+---@param sync OOOOSync
+---@param eventId string
 ---@param event OOOOGambleEvent
 ---@param now integer
 ---@return "open"|"waiting"|"toPay"|"done"
-local function groupOf(event, now)
+local function groupOf(sync, eventId, event, now)
   local state = stateOf(event, now)
   if state == "open" then
     return "open"
   elseif state == "locked" then
     return "waiting"
   elseif state == "resolved" then
-    return "toPay"
+    return readSettlement(sync, eventId, event).settled and "done" or "toPay"
   end
   return "done"
 end
@@ -187,6 +282,8 @@ end
 ---@field now fun(): integer
 ---@field playerName fun(): string|nil
 ---@field sanitize fun(text: string): string
+---@field random fun(m: integer, n: integer): integer
+---@field isOfficer (fun(name: string): boolean)|nil
 local Model = {}
 Model.__index = Model
 
@@ -199,6 +296,8 @@ function gamble.new(parts)
     now = parts.now,
     playerName = parts.playerName,
     sanitize = parts.sanitize,
+    random = parts.random,
+    isOfficer = parts.isOfficer,
   }, Model)
 end
 
@@ -210,6 +309,10 @@ function gamble.Start()
     now = GetServerTime,
     playerName = ns.syncCharacter.playerName,
     sanitize = ns.mentions.sanitize,
+    random = math.random,
+    isOfficer = function(name)
+      return ns.guildState:IsOfficer(name)
+    end,
   })
   return gamble.current
 end
@@ -438,7 +541,7 @@ function Model:Events()
   for key, payload in self.sync:Iterate(TABLE) do
     local parts = data.parseKey(TABLE, key)
     if parts and parts.kind == "event" and type(payload) == "table" then
-      local group = groups[groupOf(payload, now)]
+      local group = groups[groupOf(self.sync, parts.eventId, payload, now)]
       group[#group + 1] = { id = parts.eventId, event = payload }
     end
   end
@@ -536,4 +639,283 @@ function Model:Detail(eventId)
   local betState, betInfo = self:BetState(eventId)
   return { id = eventId, title = sanitize(event.n), by = sanitize(event.by), outcomes = outcomes, close = event.c,
     maxStake = event.m, state = state, betState = betState, betInfo = betInfo }
+end
+
+---Returns what the window shows before an officer resolves an event (15.5).
+---@param eventId string
+---@return OOOOGamblePreview|nil preview nil for an unknown event
+function Model:ResolvePreview(eventId)
+  if not self:Event(eventId) then
+    return nil
+  end
+  local bets, sum = 0, 0
+  for _, stakes in pairs(self:BookedBets(eventId)) do
+    bets = bets + 1
+    for _, gold in pairs(stakes) do
+      sum = sum + gold
+    end
+  end
+  return { bets = bets, sum = sum, behind = self.sync:IsBehind(TABLE) }
+end
+
+---Copies a result list when it has exactly one boolean per outcome.
+---@param results any
+---@param count integer Number of outcomes
+---@return boolean[]|nil copy nil when the list does not fit
+local function copyResults(results, count)
+  if type(results) ~= "table" then
+    return nil
+  end
+  local size = 0
+  for _ in pairs(results) do
+    size = size + 1
+  end
+  if size ~= count then
+    return nil
+  end
+  local copy = {}
+  for index = 1, count do
+    if type(results[index]) ~= "boolean" then
+      return nil
+    end
+    copy[index] = results[index]
+  end
+  return copy
+end
+
+---Makes a settlement token: `TOKEN_LENGTH` random base-94 characters.
+---@param random fun(m: integer, n: integer): integer
+---@return string
+local function newToken(random)
+  local chars = {}
+  for position = 1, data.TOKEN_LENGTH do
+    chars[position] = string.char(random(FIRST_BYTE, LAST_BYTE))
+  end
+  return table.concat(chars)
+end
+
+---Resolves a locked event (15.5): settles the valid book entries that this replica holds, writes the dues
+---`d:<event>:1..count` under a fresh token, and then the event with `s = 2`, the results, the token, the count,
+---and the banker. The event comes last, so a replica that holds it and not all of its dues shows "loading".
+---When a due cannot be written, the event is not written; dues that were written stay, and no reader counts
+---them, because the token of the event is not theirs. Dues of an earlier resolution with a higher number stay
+---too, told apart by their token.
+---
+---The banker: nil means the own character. Another character is accepted only when the part `isOfficer` says
+---that the roster shows it with an officer rank; without that part only the own character can be the banker.
+---The own character always can: the resolver passed the officer check of the engine.
+---@param eventId string
+---@param results boolean[] One boolean per outcome: true for an outcome that came true
+---@param banker string|nil Character that receives the share of the guild bank
+---@return true|nil resolved nil when refused
+---@return string|nil reason "not an officer", "unknown event", "open", "resolved", "cancelled", "bad results",
+---"not ready", "bad banker", "too many dues", or a refusal of the engine
+function Model:Resolve(eventId, results, banker)
+  local event, reason = officerEvent(self, eventId)
+  if not event then
+    return nil, reason
+  end
+  local state = stateOf(event, self.now())
+  if state ~= "locked" then
+    return nil, state == "open" and "open" or REFUSAL[state]
+  end
+  local copy = copyResults(results, #event.o)
+  if not copy then
+    return nil, "bad results"
+  end
+  local name = self.playerName()
+  if not name then
+    return nil, "not ready"
+  end
+  if banker == nil then
+    banker = name
+  end
+  if not isName(banker) or (banker ~= name and not (self.isOfficer and self.isOfficer(banker) == true)) then
+    return nil, "bad banker"
+  end
+  local dues = gambleSettle.dues(gambleSettle.settle(event.o, copy, self:BookedBets(eventId)), banker)
+  if #dues > MAX_DUES then
+    return nil, "too many dues"
+  end
+  local token = newToken(self.random)
+  for n, due in ipairs(dues) do
+    local written, refusal = self.sync:Put(TABLE, data.dueKey(eventId, n),
+      { q = token, f = due.f, t = due.t, g = due.g, k = due.k })
+    if written == nil then
+      return nil, refusal
+    end
+  end
+  local resolved = copyEvent(event)
+  resolved.s, resolved.r, resolved.q, resolved.d, resolved.k = data.STATE_RESOLVED, copy, token, #dues, banker
+  local written, refusal = self.sync:Put(TABLE, data.eventKey(eventId), resolved)
+  if written == nil then
+    return nil, refusal
+  end
+  return true
+end
+
+---Adds a due number to the own receipt record of an event, or removes it (15.6). A record with an older token
+---is replaced, not merged; a record left without numbers is deleted.
+---@param model OOOOGamble
+---@param eventId any
+---@param n any Due number
+---@param confirmed boolean
+---@return true|nil changed nil when refused
+---@return string|nil reason
+local function changeReceipt(model, eventId, n, confirmed)
+  local name = model.playerName()
+  if not name then
+    return nil, "not ready"
+  end
+  local event = model:Event(eventId)
+  if not event then
+    return nil, "unknown event"
+  end
+  if event.s == data.STATE_CANCELLED then
+    return nil, "cancelled"
+  elseif event.s ~= data.STATE_RESOLVED then
+    return nil, "not resolved"
+  end
+  local due = isInteger(n, 1, event.d) and model.sync:Get(TABLE, data.dueKey(eventId, n)) or nil
+  if type(due) ~= "table" or due.q ~= event.q then
+    return nil, "unknown due"
+  end
+  if due.t ~= name then
+    return nil, "not the receiver"
+  end
+  local key = data.receiptKey(name, eventId)
+  local current = model.sync:Get(PLAYER_TABLE, key)
+  local numbers = {}
+  if type(current) == "table" and current.q == event.q and type(current.n) == "table" then
+    for number, flag in pairs(current.n) do
+      numbers[number] = flag
+    end
+  end
+  numbers[n] = confirmed or nil
+  local done, reason
+  if next(numbers) == nil then
+    done, reason = model.sync:Delete(PLAYER_TABLE, key)
+  else
+    done, reason = model.sync:Put(PLAYER_TABLE, key, { q = event.q, n = numbers })
+  end
+  if done == nil then
+    return nil, reason
+  end
+  return true
+end
+
+---Confirms that the own character has received a due: only its receiver can, only for a due of the token in
+---force of a resolved event. Confirming a confirmed due again is no error.
+---@param eventId string
+---@param n integer Due number
+---@return true|nil confirmed nil when refused
+---@return string|nil reason "not ready", "unknown event", "cancelled", "not resolved", "unknown due" (also a due
+---that this replica does not hold yet), "not the receiver", or a refusal of the engine
+function Model:Confirm(eventId, n)
+  return changeReceipt(self, eventId, n, true)
+end
+
+---Takes back the confirmation of a due by its receiver. Taking back a due that is not confirmed is no error.
+---@param eventId string
+---@param n integer Due number
+---@return true|nil unconfirmed nil when refused
+---@return string|nil reason As in `Confirm`
+function Model:Unconfirm(eventId, n)
+  return changeReceipt(self, eventId, n, false)
+end
+
+---Tells whether two lists of dues are equal: the computed ones of `gambleSettle.dues` and the held ones.
+---@param computed GambleDue[]
+---@param held OOOOGambleHeldDue[]
+---@return boolean
+local function sameDues(computed, held)
+  if #computed ~= #held then
+    return false
+  end
+  for index, due in ipairs(computed) do
+    local stored = held[index].due
+    if due.f ~= stored.f or due.t ~= stored.t or due.g ~= stored.g or (due.k == true) ~= (stored.k == true) then
+      return false
+    end
+  end
+  return true
+end
+
+---Returns the result of a resolved or cancelled event with its dues and their confirmations (15.5, 15.6).
+---
+---"loading": the replica holds fewer than `count` dues of the event's token; the lists are then empty and the
+---sums nil, because a part of the dues gives a wrong net.
+---
+---`inSettlement`: the dues do not say whom the resolving officer counted, so this is the best that the stored
+---data allows. True when a due names the own character as payer, or as receiver of a share that is not the
+---bank's. Otherwise false without a valid own book entry; false when the own book entry carries a later version
+---id than the resolution, because the resolving officer cannot have held it; and else false only when a
+---settlement over the book that this replica holds gives the own character a net that is not 0. An own bet that
+---broke even therefore counts as in the settlement, and so does a late entry of an officer who was offline when
+---the resolver wrote, when this replica's book also gives it a net of 0.
+---@param eventId string
+---@return OOOOGambleResult|nil result nil for an unknown event, and for an event that is open or locked
+function Model:Result(eventId)
+  local event = self:Event(eventId)
+  if not event then
+    return nil
+  end
+  local state = stateOf(event, self.now())
+  if state == "cancelled" then
+    return { state = "cancelled", held = 0, count = 0, dues = {}, ownDues = {}, net = 0, bankHeld = 0,
+      settled = true, booked = false, inSettlement = false, mismatch = false }
+  elseif state ~= "resolved" then
+    return nil
+  end
+  local sanitize = self.sanitize
+  local own = self.playerName()
+  local booked = self:BookedBets(eventId)
+  local held = readSettlement(self.sync, eventId, event)
+  local result = { state = held.ready and "ready" or "loading", results = copyResults(event.r, #event.o),
+    banker = sanitize(event.k), held = held.held, count = event.d, dues = {}, ownDues = {},
+    settled = held.settled, booked = own ~= nil and booked[own] ~= nil }
+  if not held.ready then
+    return result
+  end
+  local net, bankHeld, named = 0, 0, false
+  for _, entry in ipairs(held.dues) do
+    local due = entry.due
+    local mine ---@type "pay"|"receive"|nil
+    if own ~= nil and due.f == own then
+      mine, net, named = "pay", net - due.g, true
+    elseif own ~= nil and due.t == own then
+      mine = "receive"
+    end
+    if own ~= nil and due.t == own then
+      if due.k then
+        bankHeld = bankHeld + due.g
+      else
+        net, named = net + due.g, true
+      end
+    end
+    local shown = { n = entry.n, from = sanitize(due.f), to = sanitize(due.t), gold = due.g, bank = due.k == true,
+      confirmed = entry.confirmed, mine = mine, confirmable = own ~= nil and due.t == own }
+    result.dues[#result.dues + 1] = shown
+    if mine then
+      result.ownDues[#result.ownDues + 1] = shown
+    end
+  end
+  result.net, result.bankHeld = net, bankHeld
+  local settlement = gambleSettle.settle(event.o, event.r, booked)
+  result.mismatch = not sameDues(gambleSettle.dues(settlement, event.k), held.dues)
+  if named then
+    result.inSettlement = true
+  elseif not result.booked then
+    result.inSettlement = false
+  else
+    ---@cast own string
+    local entryId = self.sync:GetId(TABLE, data.bookKey(eventId, own))
+    local resolutionId = self.sync:GetId(TABLE, data.eventKey(eventId))
+    if entryId and resolutionId and entryId > resolutionId then
+      result.inSettlement = false
+    else
+      result.inSettlement = (settlement.nets[own] or 0) == 0
+    end
+  end
+  return result
 end

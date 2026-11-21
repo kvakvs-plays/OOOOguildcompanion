@@ -629,28 +629,6 @@ How to read this section:
 
 ### Stage 14. Gambling model
 
-- **14.5 Resolution, dues, receipts**
-  - Substeps
-    - `Gamble.lua`: `Resolve(eventId, results, banker)` writes the dues and
-      then the event (15.5); `Cancel` after a resolution; `Confirm` and
-      `Unconfirm` (15.6).
-    - The reading: `Result(eventId)` with the own net, the own dues, all
-      dues with their confirmations, "loading" while dues are missing, and
-      "not in the settlement" for a late book entry.
-  - Checkpoint: on the host, the example of 15.5 runs from the opening to
-    the last confirmation on four replicas.
-  - Host tests (`Tests/sync_gamble.lua`)
-    - The dues of all replicas equal those of the resolving officer.
-    - Only the receiver of a due can confirm it; a receipt with another
-      token does not count.
-    - Two officers resolve at the same time with different results: all
-      replicas show one of the two, whole.
-    - A cancel after the resolution: nobody owes anything.
-    - A book entry that arrives after the resolution changes no due.
-    - A replica with the event and half of the dues shows "loading".
-  - Done when: the whole life of an event runs on the host under 30%
-    message loss and ends equal on every replica.
-
 ### Stage 15. Gambling window
 
 - **15.1 The tab and betting** (**CLIENT**)
