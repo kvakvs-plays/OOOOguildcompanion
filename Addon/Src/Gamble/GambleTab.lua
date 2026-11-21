@@ -197,6 +197,7 @@ local OFFICER_REFUSALS = {
   ["not the owner"] = "The shared database did not accept the change from your character.",
   ["bad payload"] = "The change does not fit the rules of the shared database.",
   ["too large"] = "The event is too large for the shared database. Use shorter texts.",
+  booking = "Bets that arrived before the close are still being booked. Wait a moment and resolve again.",
 }
 
 ---Shown at the top of the form "New event"
@@ -730,7 +731,15 @@ local function readDraft(draft, now)
   return { title = title, outcomes = outcomes, close = now + span, maxStake = maxStake }
 end
 
----Builds the line with the numbers of `ResolvePreview` and the warning of 15.5.
+---Seconds until the preview allows resolving; 0 when it does, and when the model gives no `wait`.
+---@param preview (OOOOGamblePreview|{ wait: number|nil })|nil
+---@return number
+local function previewWait(preview)
+  local wait = preview and preview.wait
+  return type(wait) == "number" and wait > 0 and wait or 0
+end
+
+---Builds the line with the numbers of `ResolvePreview`, the wait for the booking, and the warning of 15.5.
 ---@param preview OOOOGamblePreview|nil
 ---@return string
 local function previewText(preview)
@@ -739,6 +748,11 @@ local function previewText(preview)
   end
   local text = preview.bets .. (preview.bets == 1 and " valid bet, " or " valid bets, ") .. preview.sum
     .. " gold in total."
+  local wait = previewWait(preview)
+  if wait > 0 then
+    text = text .. "\n" .. WAIT_COLOR .. "You can resolve in " .. math.ceil(wait)
+      .. " s: bets that arrived before the close are still being booked.|r"
+  end
   if preview.behind then
     text = text .. "\n" .. BAD_COLOR .. BEHIND_WARNING .. "|r"
   end
@@ -1056,7 +1070,13 @@ function tab:BuildOpen(scroll, detail)
     box:SetCallback("OnTextChanged", function(_widget, _event, value)
       tab.typed[eventId] = tab.typed[eventId] or {}
       tab.typed[eventId][index] = value
-      setText(win, winText(value, outcome, maxStake))
+      -- A long text wraps and grows the label: lay the line and the detail out again, keeping the box
+      if setText(win, winText(value, outcome, maxStake)) then
+        line:DoLayout()
+        if tab.detail then
+          tab.detail:DoLayout()
+        end
+      end
     end)
     box:SetCallback("OnEnterPressed", function(widget)
       widget:ClearFocus()
@@ -1761,7 +1781,10 @@ function tab:OnResolveClick(button)
   end
   ---@cast eventId string
   if not self:IsArmed("resolve", eventId) then
-    self:Arm("resolve", eventId, button)
+    -- The form says why; the button does not arm while bets are still being booked
+    if previewWait(self.model:ResolvePreview(eventId)) <= 0 then
+      self:Arm("resolve", eventId, button)
+    end
     return
   end
   self:Disarm()
@@ -1902,6 +1925,10 @@ function tab:Build(container)
       tab:ScheduleRefresh()
     end
   end)
+  -- The officer controls and the banker list follow the roster
+  ns.guildState.RegisterCallback(tab, "OnRosterChanged", function()
+    tab:ScheduleRefresh()
+  end)
   self:Refresh()
   self:ScheduleTick()
 end
@@ -1913,6 +1940,7 @@ function tab:Close()
   self.refreshPending = false
   if self.model then
     ns.sync.UnregisterCallback(tab, "OnRecordChanged")
+    ns.guildState.UnregisterCallback(tab, "OnRosterChanged")
   end
   self.model, self.list, self.detail, self.signature = nil, nil, nil, nil
   self.leftGroup, self.detailGroup, self.officerBar, self.barShown = nil, nil, nil, nil

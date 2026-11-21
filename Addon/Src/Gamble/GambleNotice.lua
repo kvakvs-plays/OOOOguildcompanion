@@ -25,6 +25,7 @@ local addonName, ns = ...
 ---@field inCombat fun(): boolean
 ---@field after fun(seconds: number, fn: fun()): OOOOGambleNoticeTimer Calls `fn` once, later
 ---@field formatTime (fun(serverTime: integer): string)|nil Day and time of a server time; default `date("%a %H:%M")`
+---@field inGuild (fun(): boolean)|nil Whether the character is in the guild; absent means true
 
 ---@class OOOOGambleNoticeModule
 ---@field current OOOOGambleNotifier|nil The notifier of the game, made by `Start`
@@ -190,6 +191,9 @@ end
 function Notifier:Stop()
   self.stopped = true
   self.parts.sync.UnregisterCallback(self, "OnRecordChanged")
+  if self.parts.inGuild and ns.guildState then
+    ns.guildState.UnregisterCallback(self, "OnGuildStateChanged")
+  end
   if self.timer then
     self.timer:Cancel()
     self.timer = nil
@@ -222,6 +226,10 @@ function Notifier:Check()
   local parts = self.parts
   local name = parts.playerName()
   if not name or self.stopped then
+    return
+  end
+  -- The database is account-wide, so a character outside the guild must not be told
+  if parts.inGuild and not parts.inGuild() then
     return
   end
   if parts.inCombat() then
@@ -349,8 +357,17 @@ function gambleNotice.Start()
     print = ns.print,
     inCombat = InCombatLockdown,
     after = C_Timer.NewTimer,
+    inGuild = function()
+      return ns.guildState.state == "in"
+    end,
   })
   gambleNotice.current = notifier
+  -- The guild is known some seconds after login
+  ns.guildState.RegisterCallback(notifier, "OnGuildStateChanged", function(_event, inGuild)
+    if inGuild then
+      notifier:CheckLater(gambleNotice.START_DELAY)
+    end
+  end)
   gambleNotice.RegisterLink()
   local frame = CreateFrame("Frame")
   frame:SetScript("OnEvent", function(_frame, event)

@@ -73,7 +73,7 @@ end
 
 ---Makes a notifier for a replica with a fake chat, combat state, and timer.
 ---@param replica table
----@param options { store: table?, name: string? }?
+---@param options { store: table?, name: string?, inGuild: (fun(): boolean)? }?
 ---@return NoticeEnv
 local function notifierOf(replica, options)
   options = options or {}
@@ -103,6 +103,7 @@ local function notifierOf(replica, options)
     formatTime = function()
       return "Fri 20:00"
     end,
+    inGuild = options.inGuild,
   })
   function env.pending()
     local count = 0
@@ -380,6 +381,33 @@ do
   T.eq(take(envs["Yara Bell"]), {}, "a member who owes nothing under the new token gets none")
   T.eq(take(envs["Quin Dax"]), {}, "nor the uninvolved")
   T.eq(envs["Zed Cole"].store.noticed["Zed Cole"][id].dues, "ABCD", "the mark follows the token")
+end
+
+--------------------------------------------------------------------------------
+-- A character outside the guild
+--------------------------------------------------------------------------------
+
+do
+  local net = Fakenet.new({ random = random })
+  local officer = withGamble(net, "Officer One", 0)
+  local member = withGamble(net, "Nota Scam")
+  exchange(net)
+  local inGuild = false
+  local store = { noticed = {} }
+  local mine = notifierOf(member, { store = store, inGuild = function()
+    return inGuild
+  end })
+  local id = officer.model:Open(spec(net))
+  exchange(net)
+  mine.fire()
+  T.eq(take(mine), {}, "outside the guild nothing is printed")
+  T.eq(store.noticed["Nota Scam"], nil, "and no mark is set")
+  inGuild = true
+  mine.notifier:Check()
+  T.eq(take(mine), { openLine(TITLE) }, "after the character is in the guild the notice comes")
+  mine.notifier:Check()
+  T.eq(take(mine), {}, "once")
+  T.eq(store.noticed["Nota Scam"][id], { open = true }, "with its mark")
 end
 
 T.finish()
