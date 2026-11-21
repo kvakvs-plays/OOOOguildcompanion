@@ -165,3 +165,4 @@ the full text is in the git history of `00-plan.md`.
   by the user), `guildState:IsOfficer`, `sync:Initialize` takes
   `isOfficerFn`, `sync:IsOfficer`, the line "rank:" of `/oooo sync status`;
   `Fakenet:SetRank`. Host only; the status line is not seen in the client.
+- **13.2 Officer tables**: `writers = "officer"` (needs `keyKind = "free"`, kept so the old registry test passes), `WriteRefusal` ("not an officer") in `Put`/`Delete`/`Append`, `NewId`, `GetId`; members push nothing (`MayPush`), a member's `P` is ignored whole, officers-only sources (`chooseSource` filter), `B` reason `source`, `D` only from an officer, `HoldsBack`; table `debugofficer` (`EnableDeveloperTables`), `/oooo sync put|get|del debugofficer ...`; `Tests/sync_officer.lua`. Host only.

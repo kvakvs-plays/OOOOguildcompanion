@@ -16,26 +16,49 @@ ns.syncCommands = commands
 
 ---Name of the test table: free keys, a short text as payload, every member may write
 commands.DEBUG_TABLE = "debug"
+---Name of the test table of the officer rule: free keys, a short text, only an officer writes (plan 14.3)
+commands.DEBUG_OFFICER_TABLE = "debugofficer"
 local MAX_DEBUG_TEXT = 200
 
----Registers the table `debug`, when it is not registered yet. Core.lua calls it after the saved variables
----have loaded, when the setting is on; `/oooo sync debug on` calls it at once. A table cannot be taken out
----of the registry again, so turning the setting off needs a reload.
-function commands.EnableDebugTable()
-  if ns.sync.definitions[commands.DEBUG_TABLE] then
+---Tells whether a payload is the short text of a developer table.
+---@param _key string
+---@param payload any
+---@return boolean
+local function isDebugText(_key, payload)
+  return type(payload) == "string" and #payload >= 1 and #payload <= MAX_DEBUG_TEXT
+end
+
+---Registers a developer table with a text payload, when it is not registered yet.
+---@param name string
+---@param keyKind "character"|"free"
+---@param writers string A value of `writers` in a table definition
+local function registerDebugTable(name, keyKind, writers)
+  if ns.sync.definitions[name] then
     return
   end
   ns.sync:RegisterTable({
-    name = commands.DEBUG_TABLE,
+    name = name,
     schema = 1,
-    keyKind = "free",
-    validate = function(_key, payload)
-      return type(payload) == "string" and #payload >= 1 and #payload <= MAX_DEBUG_TEXT
-    end,
+    keyKind = keyKind,
+    validate = isDebugText,
     maxRecordBytes = 300,
-    writers = "anyone",
+    writers = writers,
     policy = { when = "nocombat", pushDelay = 10, minInterval = 30 },
   })
+end
+
+---Registers the table `debug`, when it is not registered yet. `EnableDeveloperTables` calls it; the host
+---tests call it alone, so that their hellos carry no other developer table.
+function commands.EnableDebugTable()
+  registerDebugTable(commands.DEBUG_TABLE, "free", "anyone")
+end
+
+---Registers the tables of the developer mode: `debug` and the protected `debugofficer`. Core.lua calls it
+---after the saved variables have loaded, when the setting is on; `/oooo sync debug on` calls it at once. A
+---table cannot be taken out of the registry again, so turning the setting off needs a reload.
+function commands.EnableDeveloperTables()
+  commands.EnableDebugTable()
+  registerDebugTable(commands.DEBUG_OFFICER_TABLE, "free", "officer")
 end
 
 ---Tells whether the developer mode is on.
@@ -60,14 +83,52 @@ function commands.policyOverrides()
   return type(settings) == "table" and type(settings.tables) == "table" and settings.tables or NO_OVERRIDES
 end
 
----Tells whether the table `debug` is registered; prints how to turn it on when it is not.
+---Tells whether a developer table is registered; prints how to turn it on when it is not.
+---@param name string
 ---@return boolean
-local function hasDebugTable()
-  if ns.sync.definitions[commands.DEBUG_TABLE] then
+local function hasDebugTable(name)
+  if ns.sync.definitions[name] then
     return true
   end
-  ns.print("The debug table is off. Turn it on with /oooo sync debug on.")
+  if name == commands.DEBUG_TABLE then
+    ns.print("The debug table is off. Turn it on with /oooo sync debug on.")
+  else
+    ns.print("The table " .. name .. " is off. Turn it on with /oooo sync debug on.")
+  end
   return false
+end
+
+---The developer tables that `put`, `get`, and `del` name with their first word; without such a word they
+---use the table `debug`, as before these tables existed
+local NAMED_TABLES = { [commands.DEBUG_OFFICER_TABLE] = true }
+
+---Splits the arguments of `put`, `get`, and `del` into the table and the rest.
+---@param rest string
+---@return string tableName
+---@return string rest The arguments after the table name
+local function splitTable(rest)
+  local first, after = rest:match("^(%S+)%s*(.-)$")
+  if first and NAMED_TABLES[first] then
+    return first, after
+  end
+  return commands.DEBUG_TABLE, rest
+end
+
+---Reads the key and the text of `put`: the first word and the rest.
+---@param _tableName string
+---@param rest string
+---@return string|nil key nil when the arguments do not fit
+---@return string|nil text
+local function putArguments(_tableName, rest)
+  return rest:match("^(%S+)%s+(.+)$")
+end
+
+---Reads the key of `get` and `del`: one word.
+---@param _tableName string
+---@param rest string
+---@return string|nil key nil when the arguments do not fit
+local function keyArgument(_tableName, rest)
+  return rest:match("^(%S+)$")
 end
 
 ---Doubles every `|`, which starts an escape sequence in chat output. Version ids, origins, and stored
@@ -114,16 +175,18 @@ ns.syncSlash:Register("status", "status - origin, the records, size, and version
   end
 end)
 
-ns.syncSlash:Register("put", "put <key> <text> - write a record into the debug table", function(rest)
-  local key, text = rest:match("^(%S+)%s+(.+)$")
-  if not key then
-    ns.print("Usage: /oooo sync put <key> <text>")
+ns.syncSlash:Register("put", "put [debugofficer] <key> <text> - write a record into a developer table "
+  .. "(default: debug)", function(rest)
+  local tableName, arguments = splitTable(rest)
+  local key, text = putArguments(tableName, arguments)
+  if not key or not text then
+    ns.print("Usage: /oooo sync put [debugofficer] <key> <text>")
     return
   end
-  if not hasDebugTable() then
+  if not hasDebugTable(tableName) then
     return
   end
-  local written, reason = ns.sync:Put(commands.DEBUG_TABLE, key, text)
+  local written, reason = ns.sync:Put(tableName, key, text)
   if written == nil then
     ns.print(commands.escape("not written: " .. tostring(reason)))
   else
@@ -131,29 +194,31 @@ ns.syncSlash:Register("put", "put <key> <text> - write a record into the debug t
   end
 end)
 
-ns.syncSlash:Register("get", "get <key> - read a record of the debug table", function(rest)
-  local key = rest:match("^(%S+)$")
+ns.syncSlash:Register("get", "get [debugofficer] <key> - read a record of a developer table", function(rest)
+  local tableName, arguments = splitTable(rest)
+  local key = keyArgument(tableName, arguments)
   if not key then
-    ns.print("Usage: /oooo sync get <key>")
+    ns.print("Usage: /oooo sync get [debugofficer] <key>")
     return
   end
-  if not hasDebugTable() then
+  if not hasDebugTable(tableName) then
     return
   end
-  local text = ns.sync:Get(commands.DEBUG_TABLE, key)
+  local text = ns.sync:Get(tableName, key)
   ns.print(commands.escape(text and (key .. " = " .. tostring(text)) or ("no record: " .. key)))
 end)
 
-ns.syncSlash:Register("del", "del <key> - delete a record of the debug table", function(rest)
-  local key = rest:match("^(%S+)$")
+ns.syncSlash:Register("del", "del [debugofficer] <key> - delete a record of a developer table", function(rest)
+  local tableName, arguments = splitTable(rest)
+  local key = keyArgument(tableName, arguments)
   if not key then
-    ns.print("Usage: /oooo sync del <key>")
+    ns.print("Usage: /oooo sync del [debugofficer] <key>")
     return
   end
-  if not hasDebugTable() then
+  if not hasDebugTable(tableName) then
     return
   end
-  local deleted, reason = ns.sync:Delete(commands.DEBUG_TABLE, key)
+  local deleted, reason = ns.sync:Delete(tableName, key)
   if deleted == nil then
     ns.print(commands.escape("not deleted: " .. tostring(reason)))
   else
@@ -170,9 +235,9 @@ ns.syncSlash:Register("debug", "debug on|off - developer mode: the debug table a
   end
   global.debugTable = word == "on"
   if word == "on" then
-    commands.EnableDebugTable()
-    ns.print("Developer mode is on: the debug table, and the Sync page of the settings with its send settings. "
-      .. "The debug table appears on that page after /reload.")
+    commands.EnableDeveloperTables()
+    ns.print("Developer mode is on: the debug tables, and the Sync page of the settings with its send settings. "
+      .. "The debug tables appear on that page after /reload.")
   else
     ns.print("Developer mode is off: the Sync page is hidden and every table sends by its preset. "
       .. "The debug table goes with the next /reload; its stored records stay in the saved data.")

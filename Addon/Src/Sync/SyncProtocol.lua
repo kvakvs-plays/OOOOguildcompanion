@@ -100,6 +100,7 @@ protocol.CHANNELS = {
 protocol.REASON_BUSY = "busy" -- the peer serves another pull, or may not send now
 protocol.REASON_UNKNOWN = "unknown" -- the peer does not have the table
 protocol.REASON_SCHEMA = "schema" -- the peer has the table with another schema
+protocol.REASON_SOURCE = "source" -- a protected table: only an officer is the source of a pull (plan 14.3)
 
 ---Tells whether a value is an integer in a range.
 ---@param value any

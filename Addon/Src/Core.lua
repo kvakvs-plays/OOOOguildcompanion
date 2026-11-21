@@ -194,7 +194,7 @@ function addon:OnInitialize()
     end)
     -- Before the settings window is built, so that the table has its entry on the Sync page
     if ns.db.global.debugTable == true then
-      ns.syncCommands.EnableDebugTable()
+      ns.syncCommands.EnableDeveloperTables()
     end
   else
     ns.dbIsNewer = true

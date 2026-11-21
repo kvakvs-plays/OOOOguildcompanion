@@ -144,6 +144,37 @@ function Session:MayTransfer(tableName)
   return self.parts.policy:MaySend(tableName)
 end
 
+---Tells whether a table is protected (plan section 14): records are taken from officers only, and only an
+---officer is the source of a pull. Every rule of a protected table asks this first, so the guild view is asked
+---for a rank only for such a table.
+---@param tableName string
+---@return boolean
+function Session:IsProtected(tableName)
+  return self.parts.sync:IsProtected(tableName)
+end
+
+---Tells whether the roster shows a member with an officer rank. The rank is read when a message arrives.
+---@param name string|nil Character name
+---@return boolean
+function Session:IsOfficerName(name)
+  return name ~= nil and self.parts.guild:IsOfficer(name) == true
+end
+
+---Tells whether the logged-in character is an officer.
+---@return boolean
+function Session:IsOfficerSelf()
+  return self:IsOfficerName(self.parts.playerName())
+end
+
+---Tells whether what a member sends about a table can be taken as data: always for a table that is not
+---protected, and only from an officer for a protected one (plan section 14.3).
+---@param tableName string
+---@param sender string|nil
+---@return boolean
+function Session:IsVouched(tableName, sender)
+  return not self:IsProtected(tableName) or self:IsOfficerName(sender)
+end
+
 ---Returns the table version of every table that takes part in the exchange: what a hello carries.
 ---A table that the user has turned off is left out, so nobody answers for it.
 ---@return table<string, string> versions Table name -> table version; empty while the database is not ready
@@ -472,14 +503,16 @@ end
 ---Lists the tables for which a peer may hold data that this replica lacks: the peer has announced a
 ---version that is not the own one and not one that this replica is known to hold. A version that the
 ---replica has had itself, or has pulled, is only an entry that is out of date: the peer has not told the
----guild since that it took a later push.
+---guild since that it took a later push. A protected table counts only for an officer peer: nothing is taken
+---from a member.
 ---@param peer OOOOSyncPeer
 ---@return string[] names Sorted
 function Session:DifferingTables(peer)
   local own, names = self:LocalVersions(), {}
   for name, version in pairs(peer.versions) do
     local merged = self.merged[name]
-    if own[name] and own[name] ~= version and not (merged and merged[version]) then
+    if own[name] and own[name] ~= version and not (merged and merged[version])
+      and self:IsVouched(name, peer.name) then
       names[#names + 1] = name
     end
   end

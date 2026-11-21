@@ -37,10 +37,11 @@ Not planned:
 
 - A guild bank table. The guild bank is expected as a standard feature of the
   game, so the addon does not copy it.
-- Tables that only officers may write. The guild bank was their only use, so
-  the officer rules, member relay, and the trust flag are dropped for now. The
-  old design is in the git history of this file (before this change: section
-  7.5 and the stage steps 7.2 and 7.3).
+- Tables that only officers may write, as this plan had them (member relay
+  and a trust flag). The old design is in the git history of this file
+  (before this change: section 7.5 and the stage steps 7.2 and 7.3). The
+  plan of 2026-11-21 brought protected tables without member relay instead
+  (5.5).
 
 The result of implementing the plan should be
 - communication library implemented and starting upon connecting to the game
@@ -254,6 +255,7 @@ ns.sync:RegisterTable({
   maxRecordBytes = 2000,
   writers = "owner",                  -- "owner": a player writes only records of their own characters (5.2)
                                       -- "anyone": every member writes every key (the debug table)
+                                      -- "officer": only an officer writes; keyKind "free" (5.5)
   policy = { when = "nocombat", pushDelay = 300, minInterval = 600 },   -- defaults, user can override
 })
 ```
@@ -265,6 +267,9 @@ API for feature modules:
   one, so a repeated scan sends nothing.
 - `ns.sync:Delete(tableName, key)`, `ns.sync:Get(tableName, key)`,
   `ns.sync:Iterate(tableName)`.
+- `ns.sync:NewId(tableName)`: a fresh version id of the table, for a key that
+  must be unique; nil when the table cannot be used. `ns.sync:GetId(tableName,
+  key)`: the version id of a stored record that is not deleted, or nil.
 - `ns.sync.RegisterCallback(owner, "OnRecordChanged", fn)` (CallbackHandler):
   fires for local and remote changes, for UI refresh.
 
@@ -293,6 +298,7 @@ API for feature modules:
 | `equipment` | name | owner | anyone |
 | `attunement` | name | owner | anyone |
 | `guildchat` | the record's own id | anyone; by rule the sender, or one witness (5.3) | anyone |
+| `debugofficer` | free (developer mode) | officer (5.5) | an officer |
 
 Rules for `writers = "owner"`:
 
@@ -680,6 +686,45 @@ in `db.profile.professions`.
   recipes, alts joined to one player, and a link from the game's own
   profession window.
 
+### 5.5 Protected tables
+
+Built by stage 13 of the plan of 2026-11-21 (`00-plan.md`, section 14). A
+table with `writers = "officer"` is protected: its records are taken only
+from what an officer sends. An officer is a character whose roster rank
+index is in `ns.OFFICER_RANKS` (0 and 1); the rank is read when a message
+arrives (`guildState:IsOfficer`, `Session:IsOfficerName`). Nothing inside a
+message proves a writer: only the sender name and its rank do.
+
+The tables with `writers = "owner"` or `"anyone"` keep every rule of
+sections 5 to 8. Every rule below is asked only after the table was found
+protected (`sync:IsProtected`, `Session:IsProtected`).
+
+- **Write.** `Put`, `Delete`, and `Append` work only for an officer
+  character (`sync:IsOfficer`); a member gets `nil, "not an officer"`
+  (`sync:WriteRefusal`). An officer table has `keyKind = "free"`: the
+  roster cleanup, a local delete, must not remove what an officer stands
+  for.
+- **Push.** A member pushes nothing of an officer table, neither its own
+  writes nor the wants after a pull (`Session:MayPush`). Writes of an
+  officer character that a member alt of the same install finds unsent wait
+  with their push mark until the officer character logs in.
+- **Receive.** A push of a member into an officer table is ignored whole,
+  whatever its `own` flag: no record, no clock entry, no pull. Its version
+  is kept with the peer.
+- **Sources.** Only an officer peer is the source of a pull
+  (`pull.chooseSource` with the filter of `Session:SourceFilter`). A member
+  answers a pull request with `B`, reason `source`, retry 3600 seconds. A
+  delta whose sender is not an officer at its arrival is ignored.
+- **Announced versions.** A version that a member announces in `H`, `S`, or
+  `P` schedules no pull and is not shown as newer data in the status. An
+  officer's answer to a hello and its periodic summary are not held back by
+  a member's announcement of the same version (`Session:HoldsBack`);
+  another officer's still holds them back. A member's own answer and summary
+  are held back as before.
+- **Limits.** Officers are trusted; an officer with a modified addon can
+  write anything. Without an officer online a protected table does not
+  spread.
+
 ## 6. Transport
 
 - Add `AceComm-3.0` and `AceSerializer-3.0` to `embeds.xml`. Both are already in
@@ -732,7 +777,7 @@ in `db.profile.professions`.
 | `Q` pull request | WHISPER | table, schema, nonce, digest | Digest is the clock as one string of 11-char ids. |
 | `D` delta | WHISPER | table, nonce, batch number, last flag, records, clock rest, wants | Records the requester lacks, ascending. |
 | `P` push | GUILD | table, schema, table version, version before, own flag, base, records, clock rest | New records for everybody. |
-| `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal: busy, unknown table, or other schema. |
+| `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal: busy, unknown table, other schema, or `source` (a member and a protected table, 5.5). |
 | `A` here | WHISPER | none | Answer to a hello: the sender has the addon. Tells nothing about tables. |
 
 - A record on the wire is `key, id, payload` (or `key, id` with a tombstone
@@ -805,7 +850,7 @@ in `db.profile.professions`.
 
 1. For each table, take the peers whose fingerprint differs from the local one
    and choose the one with the greatest `maxId`. Ties go to the peer that
-   answered first.
+   answered first. For a protected table only officer peers count (5.5).
 2. Send `Q` with the digest. One pull runs at a time; the other tables wait in a
    queue.
 3. The responder selects, for each origin, its records with an id greater than
@@ -928,10 +973,13 @@ Per table, with defaults from the table definition and overrides in
   `Put` refuses a record over `maxRecordBytes` of its table with
   `"too large"`; a received one is dropped like any bad record.
 - The developer mode is the setting `db.global.debugTable`, turned on with
-  `/oooo sync debug on` and off by default. Only in it is the table `debug`
-  (`writers = "anyone"`) registered, so a release has no table that every
-  member can fill with text; and only in it is the "Sync" page shown and do
-  its send settings apply (7.4).
+  `/oooo sync debug on` and off by default. Only in it are the table `debug`
+  (`writers = "anyone"`) and the protected table `debugofficer` registered
+  (`EnableDeveloperTables`), so a release has no table that every member can
+  fill with text; and only in it is the "Sync" page shown and do its send
+  settings apply (7.4). `/oooo sync put|get|del` write the table `debug`; a
+  first word `debugofficer` names that table instead
+  (`/oooo sync put debugofficer <key> <text>`).
 - Accepted risk for owner tables: a member with a modified addon can write wrong
   data under any key. The addon cannot prove who owns a character. The damage is
   limited to wrong shared data, which a later correct write replaces; a future
@@ -959,8 +1007,9 @@ Per table, with defaults from the table definition and overrides in
   member who was offline. The sender's addon writes a line; a witness writes
   the lines of members without the addon (5.3).
 - There is no `guildbank` table: the guild bank is expected as a standard
-  feature of the game. With it go the officer-only tables, member relay, and
-  the trust flag; no table restricts writing by guild rank for now.
+  feature of the game. With it went member relay and the trust flag. Tables
+  that restrict writing by guild rank came back with the plan of 2026-11-21
+  as protected tables without member relay (5.5).
 - Members have no settings of the shared database. The "Sync" page with the
   send settings per table is shown, and applies, only in the developer mode;
   everybody else runs the presets of the table definitions.

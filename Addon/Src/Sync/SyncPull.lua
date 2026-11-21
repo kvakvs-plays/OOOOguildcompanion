@@ -34,6 +34,7 @@ local store = ns.syncStore
 local versionId = ns.versionId
 local protocol = ns.syncProtocol
 ---@class OOOOSyncSession
+---@field officerFilter (fun(peer: OOOOSyncPeer): boolean)|nil The source filter of protected tables, made once
 local Session = ns.syncSession.Session
 local handlers = ns.syncSession.handlers
 
@@ -87,6 +88,10 @@ function handlers.Q(self, sender, request)
   end
   if definition.schema ~= request.schema then
     return self:Refuse(sender, request, protocol.REASON_SCHEMA, pull.RETRY_REFUSED)
+  end
+  -- What a member holds of a protected table is vouched for by nobody: a member is no source of it
+  if self:IsProtected(request.table) and not self:IsOfficerSelf() then
+    return self:Refuse(sender, request, protocol.REASON_SOURCE, pull.RETRY_REFUSED)
   end
   -- A table that was out of contact for too long can hold records that were deleted meanwhile. It gives
   -- nothing until its own pull has emptied and filled it again (SyncCleanup.lua).
@@ -184,13 +189,15 @@ end
 ---@param ownVersion string Table version of this replica
 ---@param merged table<string, boolean>|nil Set of table versions whose data this replica holds already
 ---@param now number Server time
+---@param filter (fun(peer: OOOOSyncPeer): boolean)? Only a peer for which it gives true can be a source; the
+---session passes "is an officer" for a protected table
 ---@return OOOOSyncPeer|nil source nil when no peer can be asked now
 ---@return number|nil retryAt Earliest time at which a peer that has to wait can be asked
-function pull.chooseSource(peers, tableName, ownVersion, merged, now)
+function pull.chooseSource(peers, tableName, ownVersion, merged, now, filter)
   local best, bestMaxId, retryAt
   for _, peer in ipairs(peers) do
     local version = peer.versions[tableName]
-    if version and version ~= ownVersion and not (merged and merged[version]) then
+    if version and version ~= ownVersion and not (merged and merged[version]) and (not filter or filter(peer)) then
       local wait = peer.retryAt and peer.retryAt[tableName]
       if wait and wait > now then
         if not retryAt or wait < retryAt then
@@ -233,6 +240,22 @@ function Session:IsRosterReady()
   return name ~= nil and self.parts.guild:GetMember(name) ~= nil
 end
 
+---Returns the filter of the sources of a table for `chooseSource`: officers only for a protected table, none
+---for the others.
+---@param tableName string
+---@return (fun(peer: OOOOSyncPeer): boolean)|nil
+function Session:SourceFilter(tableName)
+  if not self:IsProtected(tableName) then
+    return nil
+  end
+  if not self.officerFilter then
+    self.officerFilter = function(peer)
+      return self:IsOfficerName(peer.name)
+    end
+  end
+  return self.officerFilter
+end
+
 ---Starts the next pull when none runs: the first table, in the order of registration, for which a peer can
 ---be asked. This is the queue of the pull: the other tables wait until this function runs again, after the
 ---pull has ended. When peers have to wait, a timer calls it again at the earliest time.
@@ -248,7 +271,8 @@ function Session:PumpPulls()
     local tbl = sync:GetTable(name)
     -- A table that may not send now waits for `OnConditionsChanged`
     if tbl and self:MayTransfer(name) then
-      local source, retryAt = pull.chooseSource(peers, name, store.tableVersion(tbl), self.merged[name], now)
+      local source, retryAt = pull.chooseSource(peers, name, store.tableVersion(tbl), self.merged[name], now,
+        self:SourceFilter(name))
       if source and self:StartPull(name, source) then
         return
       end
@@ -280,7 +304,7 @@ function Session:IsPullPending(tableName)
     return false
   end
   return pull.chooseSource(self:PeerList(), tableName, store.tableVersion(tbl), self.merged[tableName],
-    self.parts.now()) ~= nil
+    self.parts.now(), self:SourceFilter(tableName)) ~= nil
 end
 
 ---Makes a peer wait before it is asked again for a table.
@@ -385,6 +409,10 @@ function handlers.D(self, sender, delta)
   local active = self.pull
   if not active or sender ~= active.peer or delta.table ~= active.table or delta.nonce ~= active.nonce
     or delta.batch ~= active.nextBatch then
+    return
+  end
+  -- The source of a protected table was an officer when it was asked; a demotion since then ends the trust
+  if not self:IsVouched(active.table, sender) then
     return
   end
   if #delta.records > 0 then

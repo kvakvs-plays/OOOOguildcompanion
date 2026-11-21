@@ -138,6 +138,16 @@ local function pushedId(tbl)
   return versionId.isWellFormed(tbl.pushed) and tbl.pushed or versionId.ZERO
 end
 
+---Tells whether this character may push records of a table at all. A member sends nothing of an officer
+---table (plan section 14.3): the same saved data can belong to an officer character and to a member alt, and
+---the unsent writes of the officer then wait, with their push mark, until the officer character logs in.
+---@param tableName string
+---@return boolean
+function Session:MayPush(tableName)
+  local definition = self.parts.sync.definitions[tableName]
+  return not (definition and definition.writers == "officer") or self:IsOfficerSelf()
+end
+
 ---Pushes the local changes of a table: this install's own records after its last pushed id, with that id
 ---as base. It does nothing while the table may not send, and while a pull of the table runs or is about to
 ---start: the push after that pull carries the same records, with a base that fits its responder.
@@ -148,7 +158,7 @@ function Session:PushLocal(tableName)
   local tbl = sync:GetTable(tableName)
   local origin = sync:GetOrigin()
   if not tbl or not origin or not sync.dirtySince[tableName] or not self:MayTransfer(tableName)
-    or self:IsPullPending(tableName) then
+    or self:IsPullPending(tableName) or not self:MayPush(tableName) then
     return
   end
   local top, pushed = tbl.clock[origin], pushedId(tbl)
@@ -216,7 +226,7 @@ end
 function Session:PushWanted(tableName, wants)
   local sync = self.parts.sync
   local tbl = sync:GetTable(tableName)
-  if not tbl or not self:MayTransfer(tableName) then
+  if not tbl or not self:MayTransfer(tableName) or not self:MayPush(tableName) then
     return false
   end
   local base, tops = {}, {}
@@ -292,6 +302,8 @@ end
 ---of this table is at or beyond the base of that origin. Otherwise this replica has a gap before them: the
 ---records are ignored, and a pull is scheduled. In a push of own writes (`own`), a record whose key does not
 ---belong to the sender is dropped with the later records of its origin.
+---A push of a member into an officer table is ignored whole, whatever its `own` flag says: no record, no
+---clock entry, no pull. Only its version is kept with the peer (plan section 14.3).
 ---@param self OOOOSyncSession
 ---@param sender string
 ---@param pushed OOOOSyncPush
@@ -300,6 +312,11 @@ function handlers.P(self, sender, pushed)
   local tbl, definition = sync:GetTable(pushed.table)
   if not tbl or not definition or definition.schema ~= pushed.schema
     or not self.parts.policy:IsEnabled(pushed.table) then
+    return
+  end
+  local protected = self:IsProtected(pushed.table)
+  if protected and not self:IsOfficerName(sender) then
+    self:NoteVersions(sender, { [pushed.table] = pushed.version }, false)
     return
   end
   -- This replica holds what the sender had before the push when it has, or has had, that table version
@@ -325,7 +342,8 @@ function handlers.P(self, sender, pushed)
   local _, dropped = sync:ApplyRemote(pushed.table, accepted, function(record, recordDefinition)
     -- Own new writes come from their writer, so the owner rule can be checked. Records that the sender
     -- passes on after a pull cannot: any member may pass on the records of any other (plan section 5.2).
-    if pushed.own and not sync:MayWrite(recordDefinition, record.key, sender, true) then
+    -- An officer is trusted with every record of a protected table.
+    if pushed.own and not protected and not sync:MayWrite(recordDefinition, record.key, sender, true) then
       return false
     end
     return self:CheckRecord(record, recordDefinition)
@@ -354,19 +372,37 @@ end
 -- The pull that a differing version asks for
 --------------------------------------------------------------------------------
 
+---Tells whether a version that a peer announced for a table holds back the own answer to a hello and the own
+---periodic summary. In a protected table an officer's announcement is not held back by a member's, because a
+---member is no source (plan section 14.5); another officer with the same version still holds it back.
+---@param tableName string
+---@param sender string
+---@return boolean
+function Session:HoldsBack(tableName, sender)
+  return not self:IsProtected(tableName) or self:IsOfficerName(sender) or not self:IsOfficerSelf()
+end
+
 ---Takes note of table versions that a peer has announced, in a hello, a summary, or a push: the peer list
 ---follows, a pending answer with the same version is dropped, and a version that differs from the own one
----schedules a pull.
+---schedules a pull. A version that a member announces for a protected table is kept with the peer, but it
+---schedules no pull (plan section 14.5).
 ---@param sender string
 ---@param versions table<string, string>
 ---@param isComplete boolean true when the message lists all tables of the sender (a hello)
 function Session:NoteVersions(sender, versions, isComplete)
   local own = self:LocalVersions()
-  self:SuppressAnswer(versions, own)
+  ---The versions that hold back what this replica would announce
+  local heard = {}
+  for name, version in pairs(versions) do
+    if self:HoldsBack(name, sender) then
+      heard[name] = version
+    end
+  end
+  self:SuppressAnswer(heard, own)
   self:TouchPeer(sender, versions, isComplete)
   for name, version in pairs(own) do
     self:RememberOwnVersion(name, version)
-    if versions[name] == version then
+    if heard[name] == version then
       -- A peer has announced the version of this replica: the next periodic summary can leave it out
       self.heardOwn[name] = version
     end
@@ -378,7 +414,7 @@ function Session:NoteVersions(sender, versions, isComplete)
       if own[name] == version or (merged and merged[version]) then
         -- This replica holds all that an online peer holds: nothing in the table is out of date
         self:MarkFresh(name)
-      else
+      elseif self:IsVouched(name, sender) then
         differs = true
       end
     end

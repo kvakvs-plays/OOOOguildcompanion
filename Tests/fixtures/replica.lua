@@ -58,15 +58,20 @@ return function(T)
   local made = 0
 
   ---Makes a replica and joins it to the network. It is online but does nothing until `Login`.
+  ---`developerTables`: also register the protected developer tables (`debugofficer`, ...), as the developer
+  ---mode of the game does; the older tests leave them out, so that their hellos carry only the tables they know.
   ---@param net Fakenet
   ---@param name string Character name
-  ---@param options { origin: string?, random: (fun(m: integer?, n: integer?): number), rankIndex: integer? }
+  ---@param options { origin: string?, random: (fun(m: integer?, n: integer?): number), rankIndex: integer?, developerTables: boolean? }
   ---@return TestReplica
   function Replica.new(net, name, options)
     made = made + 1
     local ns = T.loadAll(FILES)
     -- The tests write into the table `debug`, which is off in a release
     ns.syncCommands.EnableDebugTable()
+    if options.developerTables then
+      ns.syncCommands.EnableDeveloperTables()
+    end
     local self = setmetatable({ name = name, ns = ns, sync = ns.sync, notices = {}, net = net }, Replica)
     function ns.print(text)
       self.notices[#self.notices + 1] = text

@@ -14,11 +14,13 @@ local addonName, ns = ...
 ---@class OOOOSyncTableDefinition What a feature module passes to `ns.sync:RegisterTable`
 ---@field name string Lower case letters, digits, and `_`; starts with a letter; at most 32 characters
 ---@field schema integer Payload layout version; a change empties the stored table
----@field keyKind "character"|"free" "character": the key starts with a character name
+---@field keyKind "character"|"free" "character": the key starts with a character name; an officer table needs
+---"free"
 ---@field validate fun(key: string, payload: any): boolean Rejects a payload with wrong types or ranges
 ---@field maxRecordBytes integer Largest record, by `syncStore.recordSize`: `Put` refuses a larger one, and
 ---a larger one that arrives is dropped
----@field writers "owner"|"anyone" Who may write a key: the character that it names, or every member
+---@field writers "owner"|"anyone"|"officer" Who may write a key: the character that it names, every member, or
+---only an officer (a protected table, plan section 14)
 ---@field policy OOOOSyncPolicy|nil Defaults of the send policy; omitted fields take `DEFAULT_POLICY`
 ---@field maxAge number|nil Seconds for which a record is kept, counted from the time of its id; a record that
 ---is older is not stored on receive and is removed by `Expire`. nil: records are kept whatever their age
@@ -52,8 +54,9 @@ sync.callbacks = LibStub("CallbackHandler-1.0"):New(sync)
 local NAME_PATTERN = "^[a-z][a-z0-9_]*$"
 local MAX_NAME_LENGTH = store.MAX_TABLE_NAME_LENGTH
 local KEY_KINDS = { character = true, free = true }
----No value restricts writing by guild rank: a table registered with one would be open to every member
-local WRITERS = { owner = true, anyone = true }
+---The values of `writers`. "officer" makes a protected table: only an officer writes it, and only what an
+---officer sends is taken (plan section 14.3)
+local WRITERS = { owner = true, anyone = true, officer = true }
 local WHEN = { nocombat = true, noraid = true, resting = true }
 ---Send policy of a table that names none (plan section 5)
 local DEFAULT_POLICY = { when = "nocombat", pushDelay = 300, minInterval = 600 }
@@ -83,7 +86,12 @@ local function definitionProblem(definition)
     return "keyKind must be \"character\" or \"free\""
   end
   if not WRITERS[definition.writers] then
-    return "writers must be \"owner\" or \"anyone\""
+    return "writers must be \"owner\", \"anyone\", or \"officer\""
+  end
+  -- The roster cleanup is a local delete: it must not take away what an officer stands for (a due of a member
+  -- who left stays visible), so an officer table names characters inside free keys
+  if definition.writers == "officer" and definition.keyKind ~= "free" then
+    return "writers = \"officer\" needs keyKind = \"free\""
   end
   if type(definition.validate) ~= "function" then
     return "validate must be a function"
@@ -251,7 +259,8 @@ end
 ---@param writer string|nil Character name: the logged-in character, or the sender of a push
 ---@param withAlts boolean? true: also accept a key of a character that the table `character` lists under
 ---an origin of the writer's own record
----@return boolean
+---@return boolean allowed true for a table with `writers = "anyone"` or `"officer"`: the rank rule of an officer
+---table is checked by `WriteRefusal` and by the receivers, not by the key
 function sync:MayWrite(definition, key, writer, withAlts)
   if definition.writers ~= "owner" then
     return true
@@ -264,6 +273,55 @@ function sync:MayWrite(definition, key, writer, withAlts)
     return true
   end
   return withAlts == true and self.IsAltOf ~= nil and self:IsAltOf(name, writer)
+end
+
+---Tells whether a table is protected (plan section 14): only what an officer sends is taken from others, and
+---only an officer is the source of a pull. The tables with `writers = "owner"` or `"anyone"` are not.
+---@param tableName any
+---@return boolean
+function sync:IsProtected(tableName)
+  local definition = self.definitions[tableName]
+  return definition ~= nil and (definition.writers == "officer" or definition.writers == "self")
+end
+
+---Tells why the logged-in character may not write a key of a table, by the rule of the table's `writers`:
+---the rank in an officer table, the owner rule otherwise. `Put`, `Delete`, and `Append` share it.
+---@param definition OOOOSyncTableDefinition
+---@param key string
+---@return string|nil reason nil when the write is allowed; "not an officer" or "not the owner"
+function sync:WriteRefusal(definition, key)
+  if definition.writers == "officer" then
+    return (not self:IsOfficer()) and "not an officer" or nil
+  end
+  if not self:MayWrite(definition, key, self.playerNameFn and self.playerNameFn()) then
+    return "not the owner"
+  end
+  return nil
+end
+
+---Makes a fresh version id for a table: greater than every id that the table has seen. A feature uses it for
+---a key that must be unique (an event id); `Put`, `Append`, and `Delete` take the id of a write from here.
+---@param tableName string
+---@return string|nil id nil when the table cannot be used
+function sync:NewId(tableName)
+  local tbl = self:GetTable(tableName)
+  if not tbl then
+    return nil
+  end
+  return self.nextId(tbl.maxId)
+end
+
+---Returns the version id of a stored record that is not deleted.
+---@param tableName string
+---@param key string
+---@return string|nil id nil when there is no record, when it was deleted, or when the table cannot be used
+function sync:GetId(tableName, key)
+  local tbl = self:GetTable(tableName)
+  local record = tbl and tbl.records[key]
+  if record and not record.x then
+    return record.v
+  end
+  return nil
 end
 
 ---Tells whether a value can travel in a message and be stored: strings, booleans, finite numbers, and
@@ -340,10 +398,11 @@ end
 ---@param tableName string
 ---@param key string 1 to 64 bytes
 ---@param payload any Strings, booleans, numbers, and tables of these; it must pass the table's `validate`
----In a table with `writers = "owner"` the key must start with the name of the logged-in character.
+---In a table with `writers = "owner"` the key must start with the name of the logged-in character; a table
+---with `writers = "officer"` is written only by an officer.
 ---@return boolean|nil written true: written; false: equal to the stored payload; nil: refused
 ---@return string|nil reason Why the write was refused: "unknown table", "not ready", "bad key",
----"not the owner", "bad payload", or "too large"
+---"not the owner", "not an officer", "bad payload", or "too large"
 function sync:Put(tableName, key, payload)
   local tbl, definition, reason = self:GetTable(tableName)
   if not tbl or not definition then
@@ -352,8 +411,9 @@ function sync:Put(tableName, key, payload)
   if not isKey(key) then
     return nil, "bad key"
   end
-  if not self:MayWrite(definition, key, self.playerNameFn and self.playerNameFn()) then
-    return nil, "not the owner"
+  local refusal = self:WriteRefusal(definition, key)
+  if refusal then
+    return nil, refusal
   end
   if payload == nil or not isPlainData(payload) or not definition.validate(key, payload) then
     return nil, "bad payload"
@@ -365,8 +425,12 @@ function sync:Put(tableName, key, payload)
   if record and not record.x and isEqual(record.d, payload) then
     return false
   end
+  local id = self:NewId(tableName)
+  if not id then
+    return nil, "not ready"
+  end
   local stored = copy(payload)
-  store.apply(tbl, key, self.nextId(tbl.maxId), stored)
+  store.apply(tbl, key, id, stored)
   markDirty(tableName)
   self.callbacks:Fire("OnRecordChanged", tableName, key, stored, false)
   return true
@@ -374,12 +438,12 @@ end
 
 ---Adds a record under its own version id as key, for a table that is a log: every entry is written once
 ---and never changed, and the keys sorted with `<` give the entries in the order of time (plan section 5.3).
----The table must have `keyKind = "free"` and `writers = "anyone"`.
+---The table must have `keyKind = "free"` and `writers = "anyone"`, or `writers = "officer"` for an officer.
 ---@param tableName string
 ---@param payload any As in `Put`; `validate` gets the new id as key
 ---@return string|nil id The id and key of the new record; nil when the write was refused
 ---@return string|nil reason Why: "unknown table", "not ready", "bad key" (the table is keyed by character),
----"not the owner", "bad payload", or "too large"
+---"not the owner", "not an officer", "bad payload", or "too large"
 function sync:Append(tableName, payload)
   local tbl, definition, reason = self:GetTable(tableName)
   if not tbl or not definition then
@@ -388,8 +452,12 @@ function sync:Append(tableName, payload)
   if definition.keyKind ~= "free" then
     return nil, "bad key"
   end
-  -- An id names no character, so the owner rule can never pass
-  if definition.writers ~= "anyone" then
+  if definition.writers == "officer" then
+    if not self:IsOfficer() then
+      return nil, "not an officer"
+    end
+  elseif definition.writers ~= "anyone" then
+    -- An id names no character, so the owner rule can never pass
     return nil, "not the owner"
   end
   if payload == nil or not isPlainData(payload) then
@@ -397,7 +465,10 @@ function sync:Append(tableName, payload)
   end
   -- The id is made before the last checks because it is the key that they look at. One that is refused is
   -- not used again, which costs nothing: the ids of an install only have to increase.
-  local id = self.nextId(tbl.maxId)
+  local id = self:NewId(tableName)
+  if not id then
+    return nil, "not ready"
+  end
   if not definition.validate(id, payload) then
     return nil, "bad payload"
   end
@@ -425,14 +496,19 @@ function sync:Delete(tableName, key)
   if not isKey(key) then
     return nil, "bad key"
   end
-  if not self:MayWrite(definition, key, self.playerNameFn and self.playerNameFn()) then
-    return nil, "not the owner"
+  local refusal = self:WriteRefusal(definition, key)
+  if refusal then
+    return nil, refusal
   end
   local record = tbl.records[key]
   if not record or record.x then
     return false
   end
-  store.apply(tbl, key, self.nextId(tbl.maxId), nil, true)
+  local id = self:NewId(tableName)
+  if not id then
+    return nil, "not ready"
+  end
+  store.apply(tbl, key, id, nil, true)
   markDirty(tableName)
   self.callbacks:Fire("OnRecordChanged", tableName, key, nil, false)
   return true
