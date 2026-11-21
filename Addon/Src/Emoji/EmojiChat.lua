@@ -297,6 +297,21 @@ function emojiChat:ResetCache()
   lastMessage, lastResult = nil, nil
 end
 
+---Event -> outcome -> number of filter calls, while the probe `emoji` runs; nil otherwise
+---@type table<string, table<string, integer>>|nil
+local probeCounts
+
+---Counts one call of the chat filter for the probe `emoji`. It does nothing while no probe runs.
+---@param event string
+---@param outcome string "unreadable", "off", "unchanged", or "replaced"
+local function note(event, outcome)
+  if probeCounts then
+    local counts = probeCounts[event] or {}
+    probeCounts[event] = counts
+    counts[outcome] = (counts[outcome] or 0) + 1
+  end
+end
+
 ---Chat message filter, see ChatFrameUtil.AddMessageEventFilter.
 ---@param _chatFrame table
 ---@param event string
@@ -308,11 +323,13 @@ end
 local function chatFilter(_chatFrame, event, message, ...)
   -- A secret string cannot be searched or compared; it is shown as it came
   if issecretvalue(message) or type(message) ~= "string" then
+    note(event, "unreadable")
     return false
   end
   -- `...` starts at the 2nd argument of the event, so its 6th value is the zone channel id
   local channel = channelOf(event, (select(6, ...)))
   if not channel or not emojiChat:IsChannelEnabled(channel) then
+    note(event, "off")
     return false
   end
   if message ~= lastMessage then
@@ -320,8 +337,10 @@ local function chatFilter(_chatFrame, event, message, ...)
     lastResult = emojiChat:ReplaceEmoji(message)
   end
   if lastResult == message then
+    note(event, "unchanged")
     return false
   end
+  note(event, "replaced")
   return false, lastResult, ...
 end
 
@@ -356,3 +375,90 @@ end
 ns.guildState.RegisterCallback(emojiChat, "OnGuildStateChanged", function(_event, inGuild)
   emojiChat:SetFiltersInstalled(inGuild)
 end)
+
+--------------------------------------------------------------------------------
+-- Probe: why a kind of chat shows no emoji
+--------------------------------------------------------------------------------
+
+---Seconds for which the probe `emoji` listens
+local PROBE_SECONDS = 60
+---Events that the probe watches beside those of `EVENT_CHANNELS`: a guild or officer line could also arrive
+---as a message of the guild's community stream. Each is registered only when the client knows it.
+local PROBE_EXTRA_EVENTS = { "CHAT_MSG_COMMUNITIES_CHANNEL", "CHAT_MSG_GUILD_ACHIEVEMENT" }
+
+---Runs the probe `emoji` (`/oooo sync probe emoji`): for `PROBE_SECONDS` it counts the chat events that the
+---client fires and what the emoji filter did with each, then reports both per event. A kind of chat whose
+---lines arrive but never reach the filter, or reach it unreadable, shows in the difference. Reported by
+---the user on 2026-11-21: officer chat shows no emoji although its setting is on.
+---@param report OOOOProbeReport
+function emojiChat:Probe(report)
+  if probeCounts then
+    report:Add("the probe runs already")
+    return
+  end
+  local util = _G.ChatFrameUtil
+  report:Add("filters installed: " .. tostring(self.filtersInstalled) .. "; ChatFrameUtil.AddMessageEventFilter: "
+    .. type(util and util.AddMessageEventFilter) .. "; ChatFrame_AddMessageEventFilter: "
+    .. type(_G.ChatFrame_AddMessageEventFilter))
+  local settings = {}
+  for _, channel in ipairs(self.CHANNELS) do
+    settings[#settings + 1] = channel.key .. "=" .. tostring(self:IsChannelEnabled(channel.key))
+  end
+  report:Add("settings: " .. table.concat(settings, ", "))
+
+  ---Event -> { lines, unreadable texts } as the client fired them
+  local fired = {}
+  local events = {}
+  for event in pairs(EVENT_CHANNELS) do
+    events[#events + 1] = event
+  end
+  for _, event in ipairs(PROBE_EXTRA_EVENTS) do
+    events[#events + 1] = event
+  end
+  table.sort(events)
+  local frame = CreateFrame("Frame")
+  local invalid = {}
+  for _, event in ipairs(events) do
+    if C_EventUtils.IsEventValid(event) then
+      frame:RegisterEvent(event)
+    else
+      invalid[#invalid + 1] = event
+    end
+  end
+  if #invalid > 0 then
+    report:Add("events that the client does not know: " .. table.concat(invalid, ", "))
+  end
+  frame:SetScript("OnEvent", function(_frame, event, message)
+    local counts = fired[event] or { lines = 0, unreadable = 0 }
+    fired[event] = counts
+    counts.lines = counts.lines + 1
+    if issecretvalue(message) or type(message) ~= "string" then
+      counts.unreadable = counts.unreadable + 1
+    end
+  end)
+  probeCounts = {}
+  report:Add("listening for " .. PROBE_SECONDS .. " s: write a line with an emoji name in officer chat and one"
+    .. " in guild chat now")
+  C_Timer.After(PROBE_SECONDS, function()
+    frame:UnregisterAllEvents()
+    frame:SetScript("OnEvent", nil)
+    local counted = probeCounts or {}
+    probeCounts = nil
+    for _, event in ipairs(events) do
+      local lines, filter = fired[event], counted[event]
+      if lines or filter then
+        local outcomes = {}
+        for _, outcome in ipairs({ "replaced", "unchanged", "off", "unreadable" }) do
+          if filter and filter[outcome] then
+            outcomes[#outcomes + 1] = outcome .. " " .. filter[outcome]
+          end
+        end
+        -- The client calls the filter once per chat frame that shows the line, so the calls can be more
+        report:Add(event .. ": fired " .. (lines and lines.lines or 0) .. " (unreadable text "
+          .. (lines and lines.unreadable or 0) .. "); filter calls: "
+          .. (#outcomes > 0 and table.concat(outcomes, ", ") or "none"))
+      end
+    end
+    report:Add("RESULT: done; an event that fired with no filter call never reached the emoji filter")
+  end)
+end

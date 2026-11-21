@@ -1010,3 +1010,9 @@ probe.Register("names", "names - the forms of this character's name: unit functi
       report:Add("RESULT: compare the sender line with the lines above")
     end)
   end)
+
+-- The probe of the chat emoji lives in Emoji/EmojiChat.lua, which loads before this file
+probe.Register("emoji", "emoji - which chat events fire and what the emoji filter does with them (60 s)",
+  function(report)
+    ns.emojiChat:Probe(report)
+  end)
