@@ -143,7 +143,9 @@ for label, serializer in pairs(serializers) do
       T.ok(succeeded, name("a damaged message does not raise"))
       if messageType ~= nil then
         -- A change inside a name or a version can leave a valid message; its fields must still be checked
-        T.ok(messageType == "H" or messageType == "S", name("a damaged message that passes has a known type"))
+        -- The type byte can turn into "A" (here), which takes no fields and so passes with any
+        T.ok(messageType == "H" or messageType == "S" or messageType == "A",
+          name("a damaged message that passes has a known type"))
         for tableName, version in pairs(fields) do
           T.ok(type(tableName) == "string" and #tableName <= 32, name("a passed table name is short"))
           T.ok(#version == 16 and ns.base94.isValid(version), name("a passed version is valid"))
