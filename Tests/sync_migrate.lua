@@ -19,7 +19,7 @@ local function copy(value)
   return result
 end
 
-T.eq(database.SCHEMA_VERSION, 3, "the layout version is 3")
+T.eq(database.SCHEMA_VERSION, 4, "the layout version is 4")
 
 -- A version 1 database with emoji settings
 do
@@ -31,7 +31,8 @@ do
   T.eq(database.migrate(db, random), true, "a version 1 database is usable")
   T.eq(db.profile, before.profile, "the emoji settings are unchanged")
   T.eq(db.global.probeResults, before.global.probeResults, "other global data is unchanged")
-  T.eq(db.global.schemaVersion, 3, "the layout version is raised to 3")
+  T.eq(db.global.schemaVersion, 4, "the layout version is raised to 4")
+  T.eq(db.global.gamble, { noticed = {} }, "the gambling state exists and is empty")
   T.eq(db.global.sync.tables, {}, "the sync structure exists and has no tables")
   T.eq(db.global.mentions, { lines = {} }, "the mention list exists and is empty")
   local origin = db.global.sync.origin
@@ -48,7 +49,7 @@ end
 do
   local db = { profile = {}, global = {} }
   T.eq(database.migrate(db, random), true, "a database without a version is usable")
-  T.eq(db.global.schemaVersion, 3, "it gets the current layout version")
+  T.eq(db.global.schemaVersion, 4, "it gets the current layout version")
   T.ok(db.global.sync.origin, "it gets an origin")
 end
 
@@ -60,15 +61,39 @@ do
   T.eq(database.migrate(db, random), true, "a version 2 database is usable")
   T.eq(db.global.sync, before.global.sync, "the sync data of a version 2 database is unchanged")
   T.ok(db.global.sync.tables == tables, "the stored tables are the same object")
-  T.eq({ db.global.schemaVersion, db.global.mentions }, { 3, { lines = {} } }, "it gets the mention list of version 3")
+  T.eq({ db.global.schemaVersion, db.global.mentions }, { 4, { lines = {} } }, "it gets the mention list of version 3")
 
-  -- A version 3 database keeps its mention list
+  -- A version 4 database keeps its mention list
   local lines = { ["some id"] = true }
   db.global.mentions = { lines = lines, lastOnline = 1700000000 }
   before = copy(db)
-  T.eq(database.migrate(db, random), true, "a version 3 database is usable")
-  T.eq(db, before, "a version 3 database is unchanged")
+  T.eq(database.migrate(db, random), true, "a version 4 database is usable")
+  T.eq(db, before, "a version 4 database is unchanged")
   T.ok(db.global.mentions.lines == lines, "the stored mention list is the same object")
+end
+
+-- A version 3 database gets the gambling state; what is there stays
+do
+  local db = { profile = {}, global = { schemaVersion = 3, sync = { origin = "aB3$", tables = {} },
+    mentions = { lines = { x = true } } } }
+  local before = copy(db)
+  T.eq(database.migrate(db, random), true, "a version 3 database is usable")
+  T.eq(db.global.gamble, { noticed = {} }, "it gets the gambling state")
+  db.global.gamble = nil
+  before.global.schemaVersion = 4
+  T.eq(db, before, "nothing else changed except the version")
+end
+
+-- A gambling state that exists is kept; a missing list of notices is added
+do
+  local noticed = { ["some event"] = true }
+  local db = { profile = {}, global = { schemaVersion = 3, sync = { origin = "aB3$", tables = {} },
+    gamble = { noticed = noticed, other = 1 } } }
+  database.migrate(db, random)
+  T.ok(db.global.gamble.noticed == noticed and db.global.gamble.other == 1, "an existing gambling state is kept")
+  db = { profile = {}, global = { schemaVersion = 3, sync = { origin = "aB3$", tables = {} }, gamble = { other = 1 } } }
+  database.migrate(db, random)
+  T.eq(db.global.gamble, { other = 1, noticed = {} }, "a missing list of notices is added")
 end
 
 -- An origin that cannot be used is the only case in which one is made for an existing database
@@ -89,7 +114,7 @@ do
 end
 
 -- A database of a newer addon version is left alone
-for name, version in pairs({ ["a greater version"] = 4, ["a version that is not a number"] = "3" }) do
+for name, version in pairs({ ["a greater version"] = 5, ["a version that is not a number"] = "4" }) do
   local db = { profile = { emoji = { disabled = {} } }, global = { schemaVersion = version, future = { 1, 2 } } }
   local before = copy(db)
   T.eq(database.migrate(db, random), false, name .. " is not usable")

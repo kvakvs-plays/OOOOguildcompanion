@@ -9,12 +9,15 @@ local addonName, ns = ...
 ---@field origin string 4 base-94 characters that name this install in every version id; made once
 ---@field tables table<string, OOOOSyncTable> Table name -> stored table
 
+---@class OOOOGambleStore The shared database's gambling state of this account, `db.global.gamble`
+---@field noticed table<string, boolean> Event id -> true once the notice of the event was shown
+
 ---@class OOOODatabaseModule
 local database = {}
 ns.database = database
 
 ---Version of the saved variables layout. Raise it together with a new entry in `steps`.
-database.SCHEMA_VERSION = 3
+database.SCHEMA_VERSION = 4
 
 ---Migration steps: `steps[n]` brings layout n - 1 to layout n. A step adds what is missing and leaves
 ---the rest of the user's data alone.
@@ -38,6 +41,15 @@ local steps = {
     end
     if type(db.global.mentions.lines) ~= "table" then
       db.global.mentions.lines = {}
+    end
+  end,
+  -- Version 4 adds the state of the gambling feature: the events whose notice was shown (Gamble/GambleData.lua)
+  [4] = function(db)
+    if type(db.global.gamble) ~= "table" then
+      db.global.gamble = { noticed = {} }
+    end
+    if type(db.global.gamble.noticed) ~= "table" then
+      db.global.gamble.noticed = {}
     end
   end,
 }

@@ -32,6 +32,7 @@ local addonName, ns = ...
 ---@field professionLoginWatch boolean|nil true when `/oooo sync probe professions login` waits for the next login
 ---@field sync OOOOSyncData|nil The shared database; created by the migration to layout 2 (Database.lua)
 ---@field mentions OOOOMentionStore|nil The list of mentions; created by the migration to layout 3
+---@field gamble OOOOGambleStore|nil The state of the gambling feature; created by the migration to layout 4
 ---@field debugTable boolean|nil true in the developer mode (`/oooo sync debug on`): the table `debug`, the
 ---Sync page of the settings, and its send settings; off when absent
 
@@ -75,6 +76,7 @@ local addonName, ns = ...
 ---@field mainWindow OOOOMainWindow
 ---@field chatHistoryTab OOOOChatHistoryTab
 ---@field professionData OOOOProfessionData
+---@field gambleData OOOOGambleData
 ---@field professionProbe OOOOProfessionProbe
 ---@field professionScan OOOOProfessionScanModule
 ---@field professionRecipes OOOOProfessionRecipes
