@@ -648,6 +648,11 @@ How to read this section:
     action failed" entry.
 
 - **15.2 The controls of the officers** (**CLIENT**)
+  - State: the code is written in `GambleTab.lua`, with luacheck only. The
+    client check is open. The close is typed as days, hours, and minutes
+    from now. To look at there: "New event" under the list, the cap row
+    that appears as a chance under 20 is typed, the second click of
+    "Resolve" and "Cancel event", and that a member sees no control.
   - Substeps: "New event", "Lock now", "Resolve" with the warning and the
     second click, "Cancel"; shown to officers only.
   - Checkpoint: an officer opens, locks, and resolves an event; a member
