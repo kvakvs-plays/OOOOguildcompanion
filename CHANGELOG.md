@@ -11,28 +11,28 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
 
 ### Gambling
 
-- **Bets of the guild.** The new tab "Gambling" (`/oooo bet`) lists the bets
-  that the officers have opened. An event has outcomes with a chance in
-  percent, for example "Nota wins, 60%". Put gold on one or more outcomes
-  until the event closes; you can change or take back a stake until then.
-  Nothing is paid in advance.
+- **A pool among guild members.** The new tab "Gambling" (`/oooo bet`)
+  lists the bets that the officers have opened. An event has outcomes with
+  a chance in percent, for example "Nota wins, 60%". Put gold on one or
+  more outcomes until the event closes; you can change or take back a stake
+  until then. Nothing is paid in advance. There is no bookmaker and no
+  stake is multiplied: those who were right share the gold of those who
+  were wrong.
+- **What you can win.** The winners are paid from the stakes of the losers,
+  after a tenth of it for the guild bank. If nobody lost, nobody wins
+  anything. The chance only sets a ceiling for a stake: 30 gold on a 60%
+  outcome get at most 20 gold. When the losers staked less than all winners
+  could get, every winner gets the same part of the ceiling; when they
+  staked more, the losers keep the rest. An officer can set a lower ceiling
+  for an outcome under 20%, and the tab shows it.
 - **An officer must be online.** A bet counts once the addon of an officer
   has received it before the close. The tab shows "waiting for an officer"
   and then "accepted". Place bets early: with no officer online until the
   close, a bet is too late.
 - **Who owes whom.** After an officer has set the results, the tab shows
-  what you won or lost and your dues, such as "give 20 gold to Nota Scam".
-  The addon moves no gold: trade or mail it yourself. Who received gold
-  presses "Received", and everybody sees which dues are confirmed.
-- **The winners share the stakes of the losers.** There is no bookmaker:
-  what you win comes from those who lost, and a tenth of what they pay goes
-  to the guild bank through an officer. The chance sets the most that a
-  stake can win: 30 gold on a 60% outcome win at most 20 gold. When the
-  losers staked less than the winners could get, every winner gets the same
-  part of it; when they staked more, they keep the rest. So a 2% outcome
-  does not pay 49 times your stake unless others lost that much. An outcome
-  under 20% can also have a lower limit, shown as "win limited to 10 times
-  the stake".
+  what you get or pay and to whom, such as "give 20 gold to Nota Scam". The
+  addon moves no gold: trade or mail it yourself. Who received gold presses
+  "Received", and everybody sees which dues are confirmed.
 - **Notices.** A chat line tells you of a new bet and of your dues after a
   result, each once. Click the link in it to open the tab.
 - **For officers.** "New event" opens a bet with its outcomes, the close,
