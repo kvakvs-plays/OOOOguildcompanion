@@ -412,7 +412,9 @@ ns.sync:RegisterTable({
   maxRecordBytes = 1500,
   writers = "officer",
   maxAge = data.KEEP_DAYS * 86400,
-  policy = { when = "nocombat", pushDelay = 10, minInterval = 30 },
+  -- Fast, because a lock must reach the other officers before their bookers act on a change that came after it
+  -- (GambleBook.lua, `CHANGE_HOLD`); the records are few and small
+  policy = { when = "nocombat", pushDelay = 2, minInterval = 5 },
 })
 
 ns.sync:RegisterTable({

@@ -10,7 +10,16 @@ local addonName, ns = ...
 -- - A bet that the officer got from another officer or from a pull (not first hand) is never booked: the time
 --   at which it was first received is unknown here, and the entry of the first officer comes the same way.
 -- - A change received after the close leaves the entry and a pending booking alone.
--- - A bet whose event is not held yet waits in memory, with its time of receipt, until the event arrives.
+-- - A change that would replace or delete a held entry waits `CHANGE_HOLD` seconds after its receipt and is
+--   judged again with the event as it is then. A "Lock now" moves the close earlier on the locking officer
+--   only; the others learn it with the push of the table `gamble`. Without the hold, an officer who has not
+--   heard of the lock yet would delete an accepted entry for a take back that came after the lock, or replace it
+--   with an entry received after the close, which no reader counts: the accepted bet would vanish (15.4).
+--   Remaining risk: the lock travels only while the locking officer may send (not in combat), and a push can be
+--   lost; a change that comes within that time after a "Lock now" can still void the bet. A close that was set
+--   when the event was opened is known to every officer and has no such window.
+-- - A bet whose event is not held yet waits in memory, with its time of receipt, until the event arrives, at
+--   most `WAITING_EXPIRY` seconds, and at most `MAX_WAITING_PER_BETTOR` bets of one bettor.
 --
 -- This file uses no WoW API at file scope, so the host tests load it (Tests/sync_gamblebook.lua).
 
@@ -27,8 +36,10 @@ local addonName, ns = ...
 ---@field key string Key of the bet record
 ---@field eventId string Event id
 ---@field name string Name of the bettor
----@field stakes table<integer, integer>|nil Copy of the stakes; nil for a bet that was taken back
----@field id string|nil Version id of the bet record at the time of receipt; nil for a bet that was taken back
+---@field stakes table<integer, integer>|nil Copy of the stakes; nil for a bet that was taken back, and for one
+---that does not fit its event
+---@field id string Version id of the write of the bet record at the time of receipt; for a take back the id of
+---the delete
 ---@field t integer Server time of receipt
 
 ---@class OOOOGambleBookPending A booking that waits for its delay
@@ -45,8 +56,17 @@ local TABLE, PLAYER_TABLE = data.TABLE, data.PLAYER_TABLE
 
 ---Longest delay in seconds between the receipt of a bet and the write of its entry; the delay is random
 book.BOOK_DELAY_MAX = 20
+---Seconds after its receipt before a change may replace or delete a held book entry; the random delay comes on
+---top. A lock leaves the locking officer at most 5 seconds after it was written (`pushDelay` 2 and
+---`minInterval` 5 of the table `gamble`, GambleData.lua) and travels in about a second; 45 leaves room for a
+---busy send queue (about 1 message per second after a burst) and for the clocks of two officers.
+book.CHANGE_HOLD = 45
 ---Most changes that wait for their event; more are dropped, because a member could send bets on made-up events
 book.MAX_WAITING = 500
+---Most changes of one bettor that wait for their events, so that one member cannot fill the whole list
+book.MAX_WAITING_PER_BETTOR = 8
+---Seconds after its receipt after which a waiting change is dropped; checked whenever the list is used
+book.WAITING_EXPIRY = 600
 
 ---Tells whether a value is an integer within a range; false for NaN, fractions, and other types.
 ---@param value any
@@ -92,6 +112,22 @@ local function takesBetAt(event, t)
   return event.s == data.STATE_OPEN and t <= event.c
 end
 
+---Returns the version id of the last write of a record, also of a delete.
+---@param sync OOOOSync
+---@param tableName string
+---@param key string
+---@return string|nil
+local function writeId(sync, tableName, key)
+  local id = sync:GetId(tableName, key)
+  if id then
+    return id
+  end
+  -- `GetId` gives nothing for a deleted record; the stored tombstone keeps the id of the delete (OOOOSyncRecord)
+  local tbl = sync:GetTable(tableName)
+  local record = tbl and tbl.records[key]
+  return record and record.x and record.v or nil
+end
+
 ---@class OOOOGambleBooker
 ---@field sync OOOOSync
 ---@field now fun(): integer
@@ -101,6 +137,7 @@ end
 ---@field waiting table<string, table<string, OOOOGambleBookChange>> Event id -> key of the bet record -> the
 ---latest change of that bet, for an event that is not held yet
 ---@field waitingCount integer Number of changes in `waiting`
+---@field waitingByName table<string, integer> Name of the bettor -> number of its changes in `waiting`
 local Booker = {}
 Booker.__index = Booker
 
@@ -117,6 +154,7 @@ function book.new(parts)
     pending = {},
     waiting = {},
     waitingCount = 0,
+    waitingByName = {},
   }, Booker)
   self.sync.RegisterCallback(self, "OnRecordChanged", function(_event, tableName, key, payload, _isRemote,
       firstHand)
@@ -150,6 +188,7 @@ function Booker:Stop()
   self.pending = {}
   self.waiting = {}
   self.waitingCount = 0
+  self.waitingByName = {}
 end
 
 ---Returns the held payload of an event.
@@ -190,23 +229,45 @@ function Booker:OnRecordChanged(tableName, key, payload, firstHand)
   if not parts or parts.kind ~= "bet" then
     return
   end
-  local change = { key = key, eventId = parts.eventId, name = parts.name, t = now } ---@type OOOOGambleBookChange
+  local id = writeId(self.sync, PLAYER_TABLE, key)
+  if not id then
+    return
+  end
+  ---@type OOOOGambleBookChange
+  local change = { key = key, eventId = parts.eventId, name = parts.name, id = id, t = now }
   if payload ~= nil then
     -- The engine has checked the payload with `validatePlayer`; this guards against a change of that check
     if type(payload) ~= "table" or type(payload.g) ~= "table" then
       return
     end
     change.stakes = copyStakes(payload.g)
-    change.id = self.sync:GetId(PLAYER_TABLE, key)
-    if not change.id then
-      return
-    end
   end
   self:Receive(change)
 end
 
+---Returns the seconds until a change may replace or delete a held entry: `CHANGE_HOLD` after its receipt.
+---@param change OOOOGambleBookChange
+---@return number
+function Booker:HoldLeft(change)
+  return math.max(0, change.t + book.CHANGE_HOLD - self.now())
+end
+
+---Schedules the booking of a change after a delay, in place of a pending booking of the same bet.
+---@param change OOOOGambleBookChange
+---@param delay number Seconds
+function Booker:Schedule(change, delay)
+  self:DropPending(change.key)
+  local pending ---@type OOOOGambleBookPending
+  pending = { change = change, timer = self.after(delay, function()
+    self:Fire(pending)
+  end) }
+  self.pending[change.key] = pending
+end
+
 ---Judges a received change against its event: it waits when the event is not held; it is dropped when it came
----after the close; a take back deletes the entry at once; a valid bet is booked after the delay.
+---after the close. A first booking is written after the random delay. A change that would replace or delete a
+---held entry waits `CHANGE_HOLD` more, so that a lock can arrive first. A take back without a held entry only
+---drops the pending booking of the bet.
 ---@param change OOOOGambleBookChange
 function Booker:Receive(change)
   local event = self:Event(change.eventId)
@@ -218,19 +279,20 @@ function Booker:Receive(change)
   if not takesBetAt(event, change.t) then
     return
   end
-  self:DropPending(change.key)
-  if not change.stakes or not fitsEvent(change.stakes, event) then
-    -- No valid bet stands: a take back, or a bet that does not fit its event. The delete is made at once: a
-    -- delayed one could remove the entry of a newer bet that another officer booked in between, and two officers
-    -- that both delete write nothing worse than two tombstones.
-    self.sync:Delete(TABLE, data.bookKey(change.eventId, change.name))
+  if change.stakes and not fitsEvent(change.stakes, event) then
+    -- A bet that does not fit its event stands for no bet, as a take back does
+    change.stakes = nil
+  end
+  local held = self.sync:Get(TABLE, data.bookKey(change.eventId, change.name))
+  if held == nil and not change.stakes then
+    self:DropPending(change.key)
     return
   end
-  local pending ---@type OOOOGambleBookPending
-  pending = { change = change, timer = self.after(self.random() * book.BOOK_DELAY_MAX, function()
-    self:Fire(pending)
-  end) }
-  self.pending[change.key] = pending
+  local delay = self.random() * book.BOOK_DELAY_MAX
+  if held ~= nil then
+    delay = delay + self:HoldLeft(change)
+  end
+  self:Schedule(change, delay)
 end
 
 ---Stops the pending booking of a bet, if there is one.
@@ -243,9 +305,12 @@ function Booker:DropPending(key)
   end
 end
 
----Writes the entry of a pending booking after its delay, when the character is still an officer, the event
----still takes a bet received at that time (a lock moves the close earlier), and no entry of the same or a newer
----bet record is held (another officer was faster).
+---Writes or deletes the entry of a pending booking after its delay. Nothing happens when the character is no
+---longer an officer, when the event no longer takes a change received at that time (a lock moves the close
+---earlier, and its push may have arrived during the delay), or when an entry of the same or a newer write of the
+---bet record is held (another officer was faster). A change that replaces or deletes a held entry before
+---`CHANGE_HOLD` has passed since its receipt (an entry of another officer arrived during a short delay) is
+---scheduled again for the rest of the hold.
 ---@param pending OOOOGambleBookPending
 function Booker:Fire(pending)
   local change = pending.change
@@ -262,24 +327,62 @@ function Booker:Fire(pending)
   end
   local bookKey = data.bookKey(change.eventId, change.name)
   local held = self.sync:Get(TABLE, bookKey)
-  -- A pending booking always has the id of its bet record
-  local id = change.id --[[@as string]]
-  -- Ids compare by time with `<`, so a newer bet record has a greater id
-  if type(held) == "table" and type(held.b) == "string" and held.b >= id then
-    return
+  if held ~= nil then
+    -- Ids compare by time with `<`, so a newer write of the bet record, also a take back, has a greater id
+    if type(held) == "table" and type(held.b) == "string" and held.b >= change.id then
+      return
+    end
+    local hold = self:HoldLeft(change)
+    if hold > 0 then
+      self:Schedule(change, hold + self.random() * book.BOOK_DELAY_MAX)
+      return
+    end
   end
-  self.sync:Put(TABLE, bookKey, { g = change.stakes, b = id, t = change.t })
+  if change.stakes then
+    self.sync:Put(TABLE, bookKey, { g = change.stakes, b = change.id, t = change.t })
+  elseif held ~= nil then
+    -- Two officers that both delete write nothing worse than two tombstones
+    self.sync:Delete(TABLE, bookKey)
+  end
 end
 
----Keeps a change whose event is not held yet; a later change of the same bet replaces it.
+---Removes a change from the counts of the waiting list; the caller removes it from the list.
+---@param change OOOOGambleBookChange
+function Booker:Unwait(change)
+  self.waitingCount = self.waitingCount - 1
+  local count = (self.waitingByName[change.name] or 1) - 1
+  self.waitingByName[change.name] = count > 0 and count or nil
+end
+
+---Drops the waiting changes that were received `WAITING_EXPIRY` seconds ago or earlier.
+function Booker:ExpireWaiting()
+  local oldest = self.now() - book.WAITING_EXPIRY
+  for eventId, list in pairs(self.waiting) do
+    for key, change in pairs(list) do
+      if change.t <= oldest then
+        -- Clearing a field during the traversal is allowed in Lua
+        list[key] = nil
+        self:Unwait(change)
+      end
+    end
+    if next(list) == nil then
+      self.waiting[eventId] = nil
+    end
+  end
+end
+
+---Keeps a change whose event is not held yet; a later change of the same bet replaces it. A new change is
+---dropped when the list is full or holds `MAX_WAITING_PER_BETTOR` changes of its bettor.
 ---@param change OOOOGambleBookChange
 function Booker:Wait(change)
+  self:ExpireWaiting()
   local list = self.waiting[change.eventId]
   if list and list[change.key] then
     list[change.key] = change
     return
   end
-  if self.waitingCount >= book.MAX_WAITING then
+  local ofBettor = self.waitingByName[change.name] or 0
+  if self.waitingCount >= book.MAX_WAITING or ofBettor >= book.MAX_WAITING_PER_BETTOR then
     return
   end
   if not list then
@@ -288,18 +391,21 @@ function Booker:Wait(change)
   end
   list[change.key] = change
   self.waitingCount = self.waitingCount + 1
+  self.waitingByName[change.name] = ofBettor + 1
 end
 
----Judges the changes that waited for an event that has arrived, with their original times of receipt.
+---Judges the changes that waited for an event that has arrived, with their original times of receipt; those
+---that have expired are dropped first.
 ---@param eventId string
 function Booker:Release(eventId)
+  self:ExpireWaiting()
   local list = self.waiting[eventId]
   if not list then
     return
   end
   self.waiting[eventId] = nil
   for _, change in pairs(list) do
-    self.waitingCount = self.waitingCount - 1
+    self:Unwait(change)
     self:Receive(change)
   end
 end

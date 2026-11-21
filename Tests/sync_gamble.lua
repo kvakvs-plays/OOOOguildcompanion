@@ -83,6 +83,8 @@ local member = withGamble(net, "Nota Scam")
 local other = withGamble(net, "Other One")
 exchange(net)
 local data = officer.ns.gambleData
+---Seconds after the close before an event can be resolved
+local RESOLVE_WAIT = officer.ns.gamble.RESOLVE_WAIT
 
 -- The checkpoint: an officer opens an event, a member sees it and bets
 local checkpoint
@@ -599,11 +601,13 @@ end
 local function runExample(ex, results)
   local boss, id, label = ex.boss, ex.id, ex.label
   if label == "" then
-    T.eq(boss.model:ResolvePreview(id), { bets = 3, sum = 90, behind = false },
-      "the preview counts the booked bets and their gold")
+    T.eq(boss.model:ResolvePreview(id), { bets = 3, sum = 90, behind = false,
+      wait = boss.model:Event(id).c + RESOLVE_WAIT - now(ex.net) },
+      "the preview counts the booked bets and their gold, and the seconds until the event can be resolved")
   end
   T.eq(boss.model:Lock(id), true, label .. "the officer locks the event")
-  T.eq(boss.model:Resolve(id, results), true, label .. "and resolves it")
+  ex.net:Advance(RESOLVE_WAIT)
+  T.eq(boss.model:Resolve(id, results), true, label .. "and resolves it after the wait for the bookings")
   local event = boss.model:Event(id)
   T.eq({ event.s, event.r, event.d, event.k, #event.q, boss.ns.base94.isValid(event.q) },
     { 2, results, 3, "Officer One", 4, true }, label .. "the event carries the resolution and a token")
@@ -667,6 +671,13 @@ do
   local x = ex.byName["Xavi Ash"]
   T.eq({ boss.model:Resolve(id, NOTA_WINS) }, { nil, "open" }, "an open event cannot be resolved")
   T.eq(boss.model:Lock(id), true, "the officer locks the event")
+  T.eq({ boss.model:Resolve(id, NOTA_WINS) }, { nil, "booking" }, "a locked event cannot be resolved at once")
+  T.eq(boss.model:ResolvePreview(id).wait, RESOLVE_WAIT, "the preview tells the seconds of the wait")
+  ex.net:Advance(RESOLVE_WAIT - 1)
+  T.eq({ boss.model:Resolve(id, NOTA_WINS) }, { nil, "booking" }, "nor one second before the wait is over")
+  T.eq(boss.model:ResolvePreview(id).wait, 1, "the preview counts down")
+  ex.net:Advance(1)
+  T.eq(boss.model:ResolvePreview(id).wait, 0, "and gives 0 when the event can be resolved")
   T.eq({ x.model:Resolve(id, NOTA_WINS) }, { nil, "not an officer" }, "a member cannot resolve")
   T.eq({ boss.model:Resolve("no such id", NOTA_WINS) }, { nil, "unknown event" }, "an unknown event")
   T.eq({ boss.model:Resolve(id, { true }) }, { nil, "bad results" }, "too few results")
@@ -722,6 +733,7 @@ do
   T.eq({ y.model:Confirm(id, 1) }, { nil, "not resolved" }, "an open event has no due to confirm")
   boss.model:Lock(id)
   T.eq({ y.model:Confirm(id, 1) }, { nil, "not resolved" }, "nor has a locked one")
+  ex.net:Advance(RESOLVE_WAIT)
   T.eq(boss.model:Resolve(id, NOTA_WINS), true, "the officer resolves: Nota wins")
   ex.settle()
   local token = boss.model:Event(id).q
@@ -800,6 +812,7 @@ do
     local first, second = ex.boss, ex.second ---@cast second GambleTestReplica
     T.eq(first.model:Lock(ex.id), true, "case " .. index .. ": the first officer locks")
     ex.settle()
+    ex.net:Advance(RESOLVE_WAIT)
     if case.firstLater then
       T.eq(second.model:Resolve(ex.id, case[2]), true, "case " .. index .. ": the second officer resolves")
       ex.net:Advance(1)
@@ -839,6 +852,7 @@ do
   local ex = example()
   local id, boss = ex.id, ex.boss
   boss.model:Lock(id)
+  ex.net:Advance(RESOLVE_WAIT)
   T.eq(boss.model:Resolve(id, OTHER_WINS), true, "the officer resolves")
   ex.settle()
   T.eq(ex.byName["Zed Cole"].model:Confirm(id, 2), true, "a receiver confirms a due")
@@ -865,6 +879,7 @@ do
   ex.settle()
   T.eq(late.model:PlaceBet(id, { [2] = 10 }), true, "a fourth member bets, and no officer books it in time")
   boss.model:Lock(id)
+  ex.net:Advance(RESOLVE_WAIT)
   local preview = boss.model:ResolvePreview(id)
   T.eq({ preview.bets, preview.sum }, { 3, 90 }, "the preview counts the booked bets only")
   T.eq(boss.model:Resolve(id, NOTA_WINS), true, "the officer resolves: Nota wins")
@@ -898,6 +913,7 @@ do
   local ex = example()
   local id, boss = ex.id, ex.boss
   boss.model:Lock(id)
+  ex.net:Advance(RESOLVE_WAIT)
   T.eq(boss.model:Resolve(id, OTHER_WINS), true, "the officer resolves: Other wins")
   local fresh = withGamble(Fakenet.new({ random = random, start = ex.net:Now() }), "Will Dee")
 
@@ -955,6 +971,7 @@ do
     end
     lonelyNet:Advance(1)
     model:Lock(id)
+    lonelyNet:Advance(RESOLVE_WAIT)
     return id
   end
 
@@ -998,7 +1015,8 @@ do
   T.eq(model:ResolvePreview("no such id"), nil, "nor a preview")
   local open = model:Open(spec(lonelyNet))
   T.eq(model:Result(open), nil, "an open event has no result")
-  T.eq(model:ResolvePreview(open), { bets = 0, sum = 0, behind = false }, "and a preview without bets")
+  T.eq(model:ResolvePreview(open), { bets = 0, sum = 0, behind = false, wait = HOUR + RESOLVE_WAIT },
+    "and a preview without bets that waits for the close and the bookings")
 end
 
 -- Names from other players are sanitized in the result
@@ -1009,6 +1027,7 @@ do
   boss.sync:Put(TABLE, data.bookKey(id, "Bad|Hname"), { g = { [1] = 10 }, b = id, t = now(lonelyNet) })
   boss.sync:Put(TABLE, data.bookKey(id, "Loser One"), { g = { [2] = 50 }, b = id, t = now(lonelyNet) })
   boss.model:Lock(id)
+  lonelyNet:Advance(RESOLVE_WAIT)
   T.eq(boss.model:Resolve(id, NOTA_WINS), true, "an event with a bettor whose name has a `|` is resolved")
   local result = boss.model:Result(id)
   T.eq(shared(result.dues), { { n = 1, from = "Loser One", to = "Bad||Hname", gold = 6, bank = false } },

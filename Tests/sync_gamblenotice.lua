@@ -341,7 +341,8 @@ do
   end
 
   T.eq(boss.model:Lock(id), true, "the officer locks")
-  T.eq(boss.model:Resolve(id, { true, false }), true, "and resolves: Nota wins")
+  net:Advance(boss.ns.gamble.RESOLVE_WAIT)
+  T.eq(boss.model:Resolve(id, { true, false }), true, "and resolves: Nota wins, after the wait for the bookings")
   exchange(net)
   for _, env in pairs(envs) do
     env.fire()

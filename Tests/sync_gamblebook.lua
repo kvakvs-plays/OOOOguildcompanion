@@ -8,7 +8,8 @@ local Replica = dofile("Tests/fixtures/replica.lua")(T)
 
 local random = T.newRandom()
 local codec = Replica.codec
-local FILES = { "Addon/Src/Gamble/GambleData.lua", "Addon/Src/Gamble/Gamble.lua", "Addon/Src/Gamble/GambleBook.lua" }
+local FILES = { "Addon/Src/Gamble/GambleData.lua", "Addon/Src/Gamble/GambleSettle.lua", "Addon/Src/Gamble/Gamble.lua",
+  "Addon/Src/Gamble/GambleBook.lua" }
 local TABLE, PLAYER_TABLE = "gamble", "gamble_player"
 local HOUR = 3600
 local OFFICER, SECOND_OFFICER = 0, 1
@@ -88,6 +89,7 @@ local function withBook(net, name, rankIndex, delay, offline)
       return name
     end,
     sanitize = replica.ns.mentions.sanitize,
+    random = random,
   })
   replica.delay = delay or function()
     return random()
@@ -230,6 +232,9 @@ do
   T.eq(firstEntry and firstEntry.g, { [1] = 10 }, "the bet is booked")
   member.model:PlaceBet(id, { [1] = 20 })
   local changedId = member.sync:GetId(PLAYER_TABLE, betKey)
+  net:Advance(40)
+  T.ok(officer.received[betKey] > firstEntry.t, "the officer has received the change")
+  T.eq(officer.sync:Get(TABLE, bookKey), firstEntry, "a change of a booked bet waits for the hold")
   exchange(net)
   local entry = { g = { [1] = 20 }, b = changedId, t = officer.received[betKey] }
   T.eq(officer.sync:Get(TABLE, bookKey), entry, "a change before the close replaces the entry")
@@ -258,6 +263,8 @@ do
   exchange(net)
   T.ok(officer.sync:Get(TABLE, takenBook), "a bet is booked")
   T.eq(member.model:TakeBack(taken), true, "and taken back before the close")
+  net:Advance(40)
+  T.ok(officer.sync:Get(TABLE, takenBook), "the delete waits for the hold")
   exchange(net)
   T.eq({ officer.sync:Get(TABLE, takenBook), member.sync:Get(TABLE, takenBook) }, { nil, nil },
     "the entry is deleted everywhere")
@@ -301,11 +308,12 @@ do
   T.ok(entry and entry.t <= close, "the entry is written after the lock, with a time of receipt before it")
   T.eq({ member.model:BetState(id) }, { "accepted" }, "the bet is accepted")
 
-  -- The second officer locks; the first gets the bet before it gets the lock
+  -- The second officer locks in combat, so its push waits; the first gets the bet before it gets the lock
   local locked = first.model:Open(spec(net))
   exchange(net)
   exchange(net)
   T.ok(second.model:Event(locked) and member.model:Event(locked), "the others hold a new event")
+  second:SetState({ inCombat = true })
   T.eq(second.model:Lock(locked), true, "the second officer locks it")
   local lockedAt = now(net)
   net:Advance(1)
@@ -315,6 +323,7 @@ do
   T.ok(first.received[lockedBet] and first.received[lockedBet] > lockedAt,
     "the first officer receives the bet after the new close")
   T.eq(first.model:Event(locked).c > lockedAt, true, "while it still holds the old close")
+  second:SetState({ inCombat = false })
   exchange(net)
   T.eq(first.model:Event(locked).c, lockedAt, "the lock arrives before the booking is due")
   T.eq(first.sync:Get(TABLE, data.bookKey(locked, "Nota Scam")), nil, "and the booking is not written")
@@ -527,6 +536,197 @@ do
   member.model:PlaceBet(demoted, { [1] = 2 })
   exchange(net)
   T.eq(officer.sync:Get(TABLE, data.bookKey(demoted, "Nota Scam")), nil, "nor book a new bet")
+end
+
+-- The constants fit the policy of the table `gamble`: the hold outlasts the push of a lock, and the wait before
+-- a resolution outlasts the latest write and push of a change received before the close, with 20 s of transfer
+do
+  local net = Fakenet.new({ random = random })
+  local officer = withBook(net, "Officer One", OFFICER)
+  local book, policy = officer.ns.gambleBook, officer.sync.definitions[TABLE].policy
+  T.ok(book.CHANGE_HOLD > policy.pushDelay + policy.minInterval + 30, "the hold is far longer than a push of a lock")
+  T.ok(officer.ns.gamble.RESOLVE_WAIT >= book.CHANGE_HOLD + book.BOOK_DELAY_MAX
+    + math.max(policy.pushDelay, policy.minInterval) + 20, "the wait before a resolution covers every booking")
+end
+
+-- Regression: the officer locks and resolves at once while the bookings of two bets still wait for their delay.
+-- The resolution waits until they are written, so that the bets are in the settlement.
+do
+  local net = Fakenet.new({ random = random })
+  local officer = withBook(net, "Officer One", OFFICER, slow)
+  local x = withBook(net, "Xavi Ash", nil, fast)
+  local y = withBook(net, "Yara Bell", nil, fast)
+  exchange(net)
+  local data, gamble = officer.ns.gambleData, officer.ns.gamble
+  local id = officer.model:Open(spec(net))
+  exchange(net)
+  T.eq(x.model:PlaceBet(id, { [1] = 50 }), true, "X bets on Nota")
+  T.eq(y.model:PlaceBet(id, { [2] = 50 }), true, "Y bets on Other")
+  net:Advance(8)
+  T.ok(officer.booker.pending[data.betKey("Xavi Ash", id)] and officer.booker.pending[data.betKey("Yara Bell", id)],
+    "both bookings wait for their delay")
+  T.eq(officer.model:Lock(id), true, "the officer locks the event")
+  net:Advance(1)
+  T.eq({ officer.model:Resolve(id, { true, false }) }, { nil, "booking" }, "and cannot resolve it at once")
+  T.eq(officer.model:ResolvePreview(id).wait, gamble.RESOLVE_WAIT - 1, "the preview tells the seconds to wait")
+  net:Advance(gamble.RESOLVE_WAIT - 1)
+  T.eq(officer.model:ResolvePreview(id), { bets = 2, sum = 100, behind = false, wait = 0 },
+    "after the wait both bets are booked")
+  T.eq(officer.model:Resolve(id, { true, false }), true, "the officer resolves: Nota wins")
+  T.eq(officer.model:Event(id).d, 2, "with a bank due and a due from Y to X")
+  exchange(net)
+  local won, lost = x.model:Result(id), y.model:Result(id)
+  T.eq({ won.state, won.inSettlement, won.net }, { "ready", true, 33 }, "X is in the settlement and wins 33")
+  T.eq({ lost.inSettlement, lost.net }, { true, -36 }, "Y is in the settlement and pays 36")
+  T.eq({ x.model:BetState(id) }, { "accepted" }, "X's bet is accepted")
+end
+
+-- Regression: a stale officer and a change after a "Lock now". The locking officer is in combat, so its lock
+-- waits; the member and the second officer still hold the event as open when the member takes the bet back or
+-- changes it. The lock arrives within the hold, and the accepted entry stays in force (15.4).
+for _, case in ipairs({ "takes the bet back", "changes the bet" }) do
+  local label = case .. ": "
+  local net = Fakenet.new({ random = random })
+  local first = withBook(net, "Officer One", OFFICER, fast)
+  local second = withBook(net, "Officer Two", SECOND_OFFICER, fast)
+  local member = withBook(net, "Xavi Ash", nil, fast)
+  exchange(net)
+  local data = first.ns.gambleData
+  local id = first.model:Open(spec(net))
+  exchange(net)
+  T.eq(member.model:PlaceBet(id, { [1] = 50 }), true, label .. "the member bets")
+  exchange(net)
+  local betKey, bookKey = data.betKey("Xavi Ash", id), data.bookKey(id, "Xavi Ash")
+  local entry = first.sync:Get(TABLE, bookKey)
+  T.eq({ member.model:BetState(id) }, { "accepted" }, label .. "the bet is accepted")
+  local writes = writesOf(first, bookKey) + writesOf(second, bookKey)
+
+  first:SetState({ inCombat = true })
+  T.eq(first.model:Lock(id), true, label .. "the first officer locks the event in combat")
+  local close = first.model:Event(id).c
+  net:Advance(1)
+  if case == "takes the bet back" then
+    T.eq(member.model:TakeBack(id), true, label .. "the member, who has not heard of the lock, takes the bet back")
+  else
+    T.eq(member.model:PlaceBet(id, { [1] = 0, [2] = 70 }), true,
+      label .. "the member, who has not heard of the lock, changes the bet")
+  end
+  net:Advance(10)
+  T.ok(second.received[betKey] and second.received[betKey] > close,
+    label .. "the second officer receives the change after the close")
+  T.ok(second.model:Event(id).c > close, label .. "while it still holds the old close")
+  first:SetState({ inCombat = false })
+  net:Advance(10)
+  T.eq(second.model:Event(id).c, close, label .. "the lock arrives after the combat, within the hold")
+  exchange(net)
+  exchange(net)
+  for _, replica in ipairs({ first, second, member }) do
+    T.eq(replica.sync:Get(TABLE, bookKey), entry, label .. replica.name .. " holds the accepted entry")
+    T.eq(replica.model:BookedBets(id), { ["Xavi Ash"] = { [1] = 50 } }, label .. replica.name .. " counts it")
+  end
+  T.eq(writesOf(first, bookKey) + writesOf(second, bookKey), writes, label .. "no officer wrote the book entry")
+  T.eq({ member.model:BetState(id) }, { "outdated", { stakes = { [1] = 50 } } },
+    label .. "the member sees the booked stakes in force")
+end
+
+-- A change of a booked bet that is held, then replaced by a newer change: the newest is booked once; a take back
+-- whose entry belongs to a newer bet leaves it alone
+do
+  local net = Fakenet.new({ random = random })
+  local officer = withBook(net, "Officer One", OFFICER, fast)
+  local member = withBook(net, "Nota Scam")
+  exchange(net)
+  local data = officer.ns.gambleData
+  local id = officer.model:Open(spec(net))
+  exchange(net)
+  local betKey, bookKey = data.betKey("Nota Scam", id), data.bookKey(id, "Nota Scam")
+  member.model:PlaceBet(id, { [1] = 10 })
+  exchange(net)
+  T.eq(officer.sync:Get(TABLE, bookKey).g, { [1] = 10 }, "the bet is booked")
+  local writes = writesOf(officer, bookKey)
+  member.model:PlaceBet(id, { [1] = 20 })
+  net:Advance(20)
+  T.ok(officer.booker.pending[betKey], "the change is held")
+  member.model:PlaceBet(id, { [1] = 30 })
+  net:Advance(20)
+  T.eq(officer.sync:Get(TABLE, bookKey).g, { [1] = 10 }, "a newer change replaces the held one and waits again")
+  exchange(net)
+  T.eq(officer.sync:Get(TABLE, bookKey), { g = { [1] = 30 }, b = member.sync:GetId(PLAYER_TABLE, betKey),
+    t = officer.received[betKey] }, "the newest change is booked")
+  T.eq(writesOf(officer, bookKey), writes + 1, "with one write")
+
+  -- A take back is held; a new bet replaces it; the new bet is booked over the old entry
+  T.eq(member.model:TakeBack(id), true, "the member takes the bet back")
+  net:Advance(20)
+  member.model:PlaceBet(id, { [2] = 40 })
+  exchange(net)
+  T.eq(officer.sync:Get(TABLE, bookKey).g, { [2] = 40 }, "the bet after the take back is booked")
+  T.eq({ member.model:BetState(id) }, { "accepted" }, "and accepted")
+end
+
+-- The waiting list: at most MAX_WAITING_PER_BETTOR bets of one bettor; a waiting bet expires after
+-- WAITING_EXPIRY seconds
+do
+  local net = Fakenet.new({ random = random })
+  local officer = withBook(net, "Officer One", OFFICER, fast)
+  local flooder = withBook(net, "Nota Scam")
+  local member = withBook(net, "Other One")
+  local rawOfficer = joinRaw(net, "Raw Officer", OFFICER)
+  exchange(net)
+  local data, versionId, book = officer.ns.gambleData, officer.ns.versionId, officer.ns.gambleBook
+  local booker = officer.booker
+  local perBettor = book.MAX_WAITING_PER_BETTOR
+
+  local at = now(net)
+  for index = 1, perBettor + 4 do
+    flooder.sync:Put(PLAYER_TABLE, data.betKey("Nota Scam", versionId.make(at, "ZZZZ", index)), { g = { [1] = 1 } })
+  end
+  exchange(net)
+  T.eq({ booker.waitingCount, booker.waitingByName["Nota Scam"] }, { perBettor, perBettor },
+    "a member with bets on made-up events fills only its own share of the waiting list")
+
+  ---Opens an event as the raw officer that the booking officer does not get, and lets the member bet on it.
+  ---@param counter integer
+  ---@return string id
+  local function hiddenBet(counter)
+    local id = versionId.make(now(net), "OOOO", counter)
+    net.dropIf = function(entry, to)
+      return to == "Officer One" and entry.from == "Raw Officer"
+    end
+    rawOfficer:Push(TABLE, "OOOO", { { key = data.eventKey(id), id = id, payload = { n = "Raw event",
+      o = { { n = "A", p = 50 }, { n = "B", p = 50 } }, c = now(net) + HOUR, m = 100, s = 1, by = "Raw Officer" } } })
+    net:Advance(1)
+    net.dropIf = nil
+    T.eq(member.model:PlaceBet(id, { [1] = 5 }), true, "the member bets on an event that the officer lacks")
+    exchange(net)
+    return id
+  end
+
+  ---Lets the booking officer get an event of the raw officer.
+  ---@param id string
+  local function reveal(id)
+    rawOfficer:Push(TABLE, "OOOO", { { key = data.eventKey(id), id = id,
+      payload = member.sync:Get(TABLE, data.eventKey(id)) } })
+    exchange(net)
+  end
+
+  local early = hiddenBet(1)
+  T.eq({ booker.waitingCount, booker.waitingByName["Other One"] }, { perBettor + 1, 1 },
+    "the bet of another member still waits")
+  reveal(early)
+  T.ok(officer.sync:Get(TABLE, data.bookKey(early, "Other One")), "and is booked when its event arrives")
+  T.eq({ booker.waitingCount, booker.waitingByName["Other One"] }, { perBettor, nil }, "it left the list")
+
+  local expired = hiddenBet(2)
+  net:Advance(book.WAITING_EXPIRY)
+  reveal(expired)
+  T.eq(officer.sync:Get(TABLE, data.bookKey(expired, "Other One")), nil,
+    "a bet whose event arrives after the expiry is not booked")
+  T.eq({ booker.waitingCount, next(booker.waitingByName), next(booker.waiting) }, { 0, nil, nil },
+    "every expired bet left the list")
+  flooder.sync:Put(PLAYER_TABLE, data.betKey("Nota Scam", versionId.make(now(net), "ZZZZ", 99)), { g = { [1] = 1 } })
+  exchange(net)
+  T.eq(booker.waitingByName["Nota Scam"], 1, "after the expiry the member can wait again")
 end
 
 T.finish()

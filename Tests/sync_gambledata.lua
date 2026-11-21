@@ -283,7 +283,7 @@ do
   local definition = officer.sync.definitions.gamble
   T.eq({ definition.schema, definition.keyKind, definition.maxRecordBytes, definition.writers, definition.maxAge },
     { 1, "free", 1500, "officer", 90 * 86400 }, "the table gamble is registered")
-  T.eq(definition.policy, { when = "nocombat", pushDelay = 10, minInterval = 30 }, "with its policy")
+  T.eq(definition.policy, { when = "nocombat", pushDelay = 2, minInterval = 5 }, "with its fast policy")
   definition = officer.sync.definitions.gamble_player
   T.eq({ definition.schema, definition.keyKind, definition.maxRecordBytes, definition.writers, definition.maxAge },
     { 1, "character", 300, "self", 90 * 86400 }, "the table gamble_player is registered")

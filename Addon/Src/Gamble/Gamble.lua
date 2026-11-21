@@ -94,6 +94,8 @@ local addonName, ns = ...
 ---@field bets integer Characters with a valid book entry
 ---@field sum integer Gold of all valid booked stakes
 ---@field behind boolean A peer has announced a newer state of the book that no online officer can supply
+---@field wait integer Seconds until the close is `RESOLVE_WAIT` behind, which `Resolve` needs (it refuses with
+---"booking" before); 0 once that time has come
 
 ---@class OOOOGambleHeldDue A stored due of the token in force, with its confirmation
 ---@field n integer Due number
@@ -116,6 +118,14 @@ local gambleSettle = ns.gambleSettle
 local TABLE, PLAYER_TABLE = data.TABLE, data.PLAYER_TABLE
 ---Most dues of one resolution: the highest due number that a key and the event field `d` take
 local MAX_DUES = 999
+---Seconds after the close before an event can be resolved, so that every booking and delete of a change that an
+---officer received before the close has been written and pushed (GambleBook.lua). A change is written at most
+---`CHANGE_HOLD` 45 plus `BOOK_DELAY_MAX` 20 seconds after its receipt (also one that waited for an entry that
+---arrived during its delay), so 65 seconds after the close; the push of the table `gamble` leaves at most 5
+---seconds later (`pushDelay` 2, `minInterval` 5); 20 seconds more for the transfer through a busy send queue.
+---The constant is written out, because this file loads before GambleBook.lua; Tests/sync_gamblebook.lua checks
+---the sum.
+gamble.RESOLVE_WAIT = 90
 ---Lowest and highest byte of a base-94 character
 local FIRST_BYTE, LAST_BYTE = 33, 126
 
@@ -645,7 +655,8 @@ end
 ---@param eventId string
 ---@return OOOOGamblePreview|nil preview nil for an unknown event
 function Model:ResolvePreview(eventId)
-  if not self:Event(eventId) then
+  local event = self:Event(eventId)
+  if not event then
     return nil
   end
   local bets, sum = 0, 0
@@ -655,7 +666,8 @@ function Model:ResolvePreview(eventId)
       sum = sum + gold
     end
   end
-  return { bets = bets, sum = sum, behind = self.sync:IsBehind(TABLE) }
+  return { bets = bets, sum = sum, behind = self.sync:IsBehind(TABLE),
+    wait = math.max(0, event.c + gamble.RESOLVE_WAIT - self.now()) }
 end
 
 ---Copies a result list when it has exactly one boolean per outcome.
@@ -704,20 +716,27 @@ end
 ---The banker: nil means the own character. Another character is accepted only when the part `isOfficer` says
 ---that the roster shows it with an officer rank; without that part only the own character can be the banker.
 ---The own character always can: the resolver passed the officer check of the engine.
+---
+---"booking": fewer than `RESOLVE_WAIT` seconds have passed since the close, so bookings of bets received before
+---it may still be pending on this or another officer (see `ResolvePreview().wait`).
 ---@param eventId string
 ---@param results boolean[] One boolean per outcome: true for an outcome that came true
 ---@param banker string|nil Character that receives the share of the guild bank
 ---@return true|nil resolved nil when refused
----@return string|nil reason "not an officer", "unknown event", "open", "resolved", "cancelled", "bad results",
----"not ready", "bad banker", "too many dues", or a refusal of the engine
+---@return string|nil reason "not an officer", "unknown event", "open", "resolved", "cancelled", "booking",
+---"bad results", "not ready", "bad banker", "too many dues", or a refusal of the engine
 function Model:Resolve(eventId, results, banker)
   local event, reason = officerEvent(self, eventId)
   if not event then
     return nil, reason
   end
-  local state = stateOf(event, self.now())
+  local now = self.now()
+  local state = stateOf(event, now)
   if state ~= "locked" then
     return nil, state == "open" and "open" or REFUSAL[state]
+  end
+  if now < event.c + gamble.RESOLVE_WAIT then
+    return nil, "booking"
   end
   local copy = copyResults(results, #event.o)
   if not copy then

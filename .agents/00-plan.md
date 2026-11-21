@@ -319,7 +319,8 @@ ns.sync:RegisterTable({
   maxRecordBytes = 1500,
   writers = "officer",
   maxAge = KEEP_DAYS * 86400,         -- KEEP_DAYS = 90
-  policy = { when = "nocombat", pushDelay = 10, minInterval = 30 },
+  -- fast: a lock must reach the other officers before their bookers act on a late change (15.4)
+  policy = { when = "nocombat", pushDelay = 2, minInterval = 5 },
 })
 ns.sync:RegisterTable({
   name = "gamble_player",             -- the bets and the receipts of each character
@@ -422,8 +423,18 @@ officer's addon has copied it into the book before the close.
     holds an entry with the same `b`: another officer was faster.
   - A bet that was taken back first hand before the close deletes the
     book entry.
+  - **Hold.** A change that would replace or delete a held entry (a changed
+    bet, a take back) waits `CHANGE_HOLD = 45` seconds after its receipt
+    plus the random delay, and is then judged again with the event as it
+    is then: still open, and the time of receipt not after the current `c`.
+    Otherwise the entry stays. A "Lock now" reaches the other officers
+    only with the push of `gamble`; the hold lets it arrive first. Every
+    write and delete keeps the rule "no entry of the same or a newer write
+    of the bet": a take back carries the id of its delete. A newer change
+    of the same bet replaces a pending one and waits on its own receipt.
   - A bet whose event the officer does not hold yet waits in memory, with
-    its time of receipt, until the event arrives or the session ends.
+    its time of receipt, until the event arrives or the session ends: at
+    most 500 bets, 8 of one bettor, each for 10 minutes.
   - A bet that fails a check gets no entry.
 - **Several officers.** All online officers receive the same push. Each
   would write the same entry; the delay above saves most of the double
@@ -444,6 +455,21 @@ officer's addon has copied it into the book before the close.
 - No officer online means that no bet is accepted. The window tells the
   bettor to place bets early.
 
+**Accepted risks.**
+
+- The lock travels only while the locking officer may send (`nocombat`),
+  and a push can be lost. A bettor who changes or takes back a bet within
+  that time after a "Lock now", while another officer has not heard of the
+  lock for `CHANGE_HOLD` seconds, can still void the accepted bet. A close
+  that was set when the event was opened is known to every officer and has
+  no such window.
+- Two officers who press "Lock now" within the propagation time of each
+  other end with the later close: last writer wins (15.3).
+- A stale "Lock now" written after another officer's resolution puts the
+  event back to locked: last writer wins (15.3). The dues of that
+  resolution stay stored with a token that the event no longer carries, so
+  no reader counts them; an officer resolves the event again.
+
 ### 15.5 Resolution and settlement
 
 An officer resolves a locked event: true or false for each outcome, and a
@@ -452,6 +478,11 @@ banker (an officer character from the roster; the default is the own one).
 - Before the write the window shows the number of valid bets, the sum, and
   a warning when `ns.sync:IsBehind("gamble")` is true: an offline officer
   may have booked bets that this officer lacks.
+- **Wait for the bookings.** `Resolve` refuses with the reason `"booking"`
+  until `RESOLVE_WAIT = 90` seconds after `c`, and the preview gives the
+  seconds left (`wait`). A change received before the close is written at
+  most 45 + 20 seconds after it (15.4) and pushed at most 5 seconds later;
+  20 seconds are left for the transfer.
 - The addon of the resolving officer computes the settlement from the book
   entries that it holds with `t <= c`, writes the dues, and then the event
   with `s = 2`, the results, the token, the number of dues, and the banker.
