@@ -17,6 +17,13 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
   that are at least 20 minutes old. Members with an older version of the addon
   are not asked; everything else works with them as before.
 
+### Shared guild data
+
+- **Long messages no longer break each other.** When the addon sent two long
+  messages to the guild at once, their parts could arrive mixed, and both were
+  lost. The data came later by another way, often minutes later. Long messages
+  now leave one after the other.
+
 ## 2026.11.9 (2026-11-22)
 
 ### Emoji

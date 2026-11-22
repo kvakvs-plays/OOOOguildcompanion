@@ -44,6 +44,10 @@ local guildState = ns.guildState
 comm.PREFIX = "OOOO"
 ---Seconds after a whisper for which the "no player named" line of its target is hidden
 comm.OFFLINE_NOTICE_SECONDS = 10
+---Longest text that AceComm sends as one addon message; a longer one is cut into parts
+comm.SINGLE_PART_BYTES = 255
+---The one priority of every text that is cut into parts (see `transport:Send`)
+comm.MULTIPART_PRIORITY = "BULK"
 ---The line that the client prints after a whisper to an offline name, when the client has no global for it
 local OFFLINE_NOTICE_FORMAT = "No player named '%s' is currently playing."
 
@@ -90,7 +94,7 @@ function comm.new(parts)
   ---queue, which keeps to the limits of the server.
   ---@param messageType string A key of `protocol.CHANNELS`
   ---@param target string|nil Receiver of a whisper type; ignored for a guild type
-  ---@param priority OOOOSyncPriority
+  ---@param priority OOOOSyncPriority Kept for a text of one part; a longer text always goes as `BULK`
   ---@param onProgress (fun(sent: integer, total: integer))|nil Called as parts of the text leave the queue
   ---@param ... any Fields of the type
   ---@return boolean queued false when nothing was sent
@@ -114,7 +118,16 @@ function comm.new(parts)
     else
       target = nil
     end
-    parts.sendRaw(codec.encode(messageType, ...), distribution, target, priority, onProgress)
+    local text = codec.encode(messageType, ...)
+    if #text > comm.SINGLE_PART_BYTES then
+      -- ChatThrottleLib has one queue per priority and sends from all of them in turn, and AceComm joins
+      -- the parts of a text per sender and channel, in one buffer. Parts of two texts of different
+      -- priorities would therefore arrive mixed, and the receiver would lose both texts. With one priority
+      -- for every text of several parts they leave one after the other. A text of one part cannot break
+      -- into another one, so it keeps its priority.
+      priority = comm.MULTIPART_PRIORITY
+    end
+    parts.sendRaw(text, distribution, target, priority, onProgress)
     return true
   end
 
