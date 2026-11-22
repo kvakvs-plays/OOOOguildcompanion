@@ -2,17 +2,25 @@ local addonName, ns = ...
 
 ---@class OOOOEmojiPhrase An alias which is not one plain word, like "gz kush"
 ---@field text string The alias: in lower case, or as written when `caseSensitive` is set
+---@field id integer Emoji id
 ---@field name string Emoji name
 ---@field caseSensitive boolean true when chat must have the exact letter case
 
----Shows emoji in the kinds of chat that the user chose (`CHANNELS`): a word which is exactly an emoji name or
----one of its aliases is replaced by the texture of that emoji. The letter case matters only for the emoji
----which EmojiOptions.lua marks as case sensitive.
+---Shows emoji in the kinds of chat that the user chose (`CHANNELS`). The text is cut into tokens, and a token
+---in lower case which is a key of `ns.emojiTriggerStrings` is replaced by the emoji. A token is a word, the
+---word with a colon before it, or the word between two colons. The generated trigger strings are the names
+---of the guild emoji, and `:name` and `:name:` for the standard emoji of Discord (`:joy:`, `:thumbsup`):
+---the names of those are common words, so a bare word never shows one.
+---
+---The aliases of EmojiAliases.lua are triggers too. The emoji which EmojiOptions.lua marks as case sensitive
+---match only in their exact letter case, and an alias of several words is found as a phrase.
 ---@class OOOOEmojiChat AceAddon-3.0 module
 ---@field filtersInstalled boolean true while the chat filters are registered
----@field escapes table<string, string>|nil Emoji name -> texture escape sequence; built on first use
----@field words table<string, string> Name or one-word alias in lower case -> emoji name; built together with `escapes`
----@field exactWords table<string, string> Name or one-word alias of a case sensitive emoji -> emoji name
+---@field escapes table<integer, string>|nil Emoji id -> texture escape sequence, filled as the emoji are met
+---in chat; nil until the lookup tables are built
+---@field aliasTriggers table<string, integer> One-word alias in lower case -> emoji id
+---@field exactTriggers table<string, integer> Name or one-word alias of a case sensitive emoji -> emoji id
+---@field exactIds table<integer, boolean> Emoji id -> true for a case sensitive emoji
 ---@field phrases table<string, OOOOEmojiPhrase[]> First word of an alias in lower case -> aliases, longest first
 local emojiChat = ns.addon:NewModule("EmojiChat")
 ns.emojiChat = emojiChat
@@ -97,6 +105,19 @@ function emojiChat:SetChannelEnabled(key, enabled)
   ns.db.profile.general.emojiChannels[key] = enabled and true or false
 end
 
+---Tells whether the standard emoji of Discord are shown: the setting `db.profile.general.emojiStandard`.
+---@return boolean
+function emojiChat:IsStandardEnabled()
+  return ns.db ~= nil and ns.db.profile.general.emojiStandard ~= false
+end
+
+---Turns the standard emoji of Discord on or off. Lines that the chat frames already show stay as they are.
+---@param enabled boolean
+function emojiChat:SetStandardEnabled(enabled)
+  ns.db.profile.general.emojiStandard = enabled and true or false
+  self:ResetCache()
+end
+
 ---Returns the kind of chat of a chat event.
 ---@param event string
 ---@param zoneChannelId any 7th argument of the event
@@ -131,24 +152,20 @@ local ESCAPE_PATTERNS = {
 
 emojiChat.filtersInstalled = false
 
----Builds the lookup tables of the names and aliases.
+---Builds the lookup tables of the aliases and of the case sensitive emoji. The names themselves are in the
+---generated `ns.emojiTriggerStrings`.
 function emojiChat:BuildLookup()
-  local escapes = {} ---@type table<string, string>
-  local words = {} ---@type table<string, string>
-  local exactWords = {} ---@type table<string, string>
+  local aliasTriggers = {} ---@type table<string, integer>
+  local exactTriggers = {} ---@type table<string, integer>
+  local exactIds = {} ---@type table<integer, boolean>
   local phrases = {} ---@type table<string, OOOOEmojiPhrase[]>
   local all = ns.emoji:GetAll()
-  local size = self:GetSize()
 
   -- All names go in before any alias, so an alias can never take over the name of another emoji
   for _, emoji in ipairs(all) do
-    escapes[emoji.name] = "|T" .. emoji.texture .. ":" .. size .. ":" .. size .. "|t"
     if emoji.caseSensitive then
-      exactWords[emoji.name] = emoji.name
-    else
-      -- Of two names which differ only in case, the first in the list is the one that chat shows
-      local key = emoji.name:lower()
-      words[key] = words[key] or emoji.name
+      exactTriggers[emoji.name] = emoji.id
+      exactIds[emoji.id] = true
     end
   end
   for _, emoji in ipairs(all) do
@@ -156,13 +173,13 @@ function emojiChat:BuildLookup()
       local alias = emoji.caseSensitive and originalAlias or originalAlias:lower()
       local firstWord = alias:match(FIRST_WORD_PATTERN)
       if firstWord == alias then
-        local target = emoji.caseSensitive and exactWords or words
-        target[alias] = target[alias] or emoji.name
+        local target = emoji.caseSensitive and exactTriggers or aliasTriggers
+        target[alias] = target[alias] or emoji.id
       elseif firstWord then
         local key = firstWord:lower()
         local list = phrases[key] or {}
         phrases[key] = list
-        list[#list + 1] = { text = alias, name = emoji.name, caseSensitive = emoji.caseSensitive }
+        list[#list + 1] = { text = alias, id = emoji.id, name = emoji.name, caseSensitive = emoji.caseSensitive }
       end
       -- An alias which does not start with a word character can never be found and is skipped
     end
@@ -173,18 +190,49 @@ function emojiChat:BuildLookup()
     end)
   end
 
-  self.escapes, self.words, self.exactWords, self.phrases = escapes, words, exactWords, phrases
+  self.aliasTriggers, self.exactTriggers, self.exactIds, self.phrases = aliasTriggers, exactTriggers, exactIds, phrases
+  self.escapes = {}
 end
 
----Finds the emoji written at a word of the text: an alias of several words first, then a name or an alias
----of one word.
+---Looks a token up in the trigger strings.
+---@param token string Token in lower case
+---@param standard boolean true when the standard emoji of Discord are shown
+---@return integer|nil id Emoji id; nil when the token shows no emoji
+function emojiChat:FindTrigger(token, standard)
+  -- A generated trigger goes before an alias, so an alias can never take over the name of another emoji
+  local id = ns.emojiTriggerStrings[token] or self.aliasTriggers[token]
+  if not id then
+    return nil
+  end
+  local sprite = ns.emojiSprites[id]
+  if sprite.standard then
+    return standard and id or nil
+  end
+  -- A case sensitive emoji is found through `exactTriggers` only
+  if self.exactIds[id] or not ns.emoji:IsEnabled(sprite.name) then
+    return nil
+  end
+  return id
+end
+
+---Finds the emoji written at a word of the text. In this order: an alias of several words, a case sensitive
+---name or alias, the word as a token, the word between two colons as a token (`:joy:`), and the word with the
+---colon before it as a token (`:joy`). The last needs a colon which does not follow a word, which keeps
+---"12:100" and "note:fire" as they are.
 ---@param text string
----@param lowerText string The text in lower case, for the emoji which match in any letter case
+---@param lowerText string The text in lower case
 ---@param wordStart integer Position of the first character of the word
 ---@param wordEnd integer Position of the last character of the word
----@return string|nil name Emoji name; nil when the word is not an emoji or the emoji is turned off
----@return integer|nil matchEnd Position of the last character of the match
-function emojiChat:MatchAt(text, lowerText, wordStart, wordEnd)
+---@param position integer The text before this position is used up: a colon before it belongs to the emoji
+---before
+---@param standard boolean true when the standard emoji of Discord are shown
+---@return integer|nil id Emoji id; nil when there is no emoji here
+---@return integer|nil from Position of the first character of the match
+---@return integer|nil to Position of the last character of the match
+function emojiChat:MatchAt(text, lowerText, wordStart, wordEnd, position, standard)
+  local colonBefore = wordStart > position and text:sub(wordStart - 1, wordStart - 1) == ":"
+  local id, matchEnd ---@type integer|nil, integer
+
   local lowerWord = lowerText:sub(wordStart, wordEnd)
   local list = self.phrases[lowerWord]
   if list then
@@ -195,23 +243,45 @@ function emojiChat:MatchAt(text, lowerText, wordStart, wordEnd)
       if source:sub(wordStart, phraseEnd) == phrase.text
         and not text:find(WORD_CHARACTER_PATTERN, phraseEnd + 1)
         and ns.emoji:IsEnabled(phrase.name) then
-        return phrase.name, phraseEnd
+        id, matchEnd = phrase.id, phraseEnd
+        break
       end
     end
   end
+  if not id then
+    matchEnd = wordEnd
+    id = self.exactTriggers[text:sub(wordStart, wordEnd)]
+    if id and not ns.emoji:IsEnabled(ns.emojiSprites[id].name) then
+      id = nil
+    end
+    id = id or self:FindTrigger(lowerWord, standard)
+  end
+  if id then
+    -- Colons on both sides belong to the emoji (":Kek:"); a single colon is punctuation ("Kek: nice")
+    if colonBefore and text:sub(matchEnd + 1, matchEnd + 1) == ":" then
+      return id, wordStart - 1, matchEnd + 1
+    end
+    return id, wordStart, matchEnd
+  end
 
-  local name = self.exactWords[text:sub(wordStart, wordEnd)]
-  if name and ns.emoji:IsEnabled(name) then
-    return name, wordEnd
+  if colonBefore then
+    if text:sub(wordEnd + 1, wordEnd + 1) == ":" then
+      id = self:FindTrigger(lowerText:sub(wordStart - 1, wordEnd + 1), standard)
+      if id then
+        return id, wordStart - 1, wordEnd + 1
+      end
+    end
+    if wordStart <= 2 or not text:find(WORD_CHARACTER_PATTERN, wordStart - 2) then
+      id = self:FindTrigger(lowerText:sub(wordStart - 1, wordEnd), standard)
+      if id then
+        return id, wordStart - 1, wordEnd
+      end
+    end
   end
-  name = self.words[lowerWord]
-  if name and ns.emoji:IsEnabled(name) then
-    return name, wordEnd
-  end
-  return nil, nil
+  return nil, nil, nil
 end
 
----Replaces the emoji names and aliases in text which has no escape sequences.
+---Replaces the emoji triggers in text which has no escape sequences.
 ---@param text string
 ---@return string
 function emojiChat:ReplaceInPlainText(text)
@@ -221,6 +291,7 @@ function emojiChat:ReplaceInPlainText(text)
 
   -- string.lower changes only ASCII letters, so the positions in `lowerText` and `text` are the same
   local lowerText = text:lower()
+  local standard = self:IsStandardEnabled()
   local parts ---@type string[]|nil
   local position = 1 -- the text before it is already in `parts`
   local searchFrom = 1
@@ -229,16 +300,16 @@ function emojiChat:ReplaceInPlainText(text)
     if not wordStart then
       break
     end
-    local name, matchEnd = self:MatchAt(text, lowerText, wordStart, wordEnd)
-    if name then
-      local from, to = wordStart, matchEnd
-      -- Colons on both sides belong to the emoji (":Kek:"); a single colon is punctuation ("Kek: nice")
-      if from > position and text:sub(from - 1, from - 1) == ":" and text:sub(to + 1, to + 1) == ":" then
-        from, to = from - 1, to + 1
+    local id, from, to = self:MatchAt(text, lowerText, wordStart, wordEnd, position, standard)
+    if id then
+      local escape = self.escapes[id]
+      if not escape then
+        escape = ns.emoji:GetEscape(id, self:GetSize())
+        self.escapes[id] = escape
       end
       parts = parts or {}
       parts[#parts + 1] = text:sub(position, from - 1)
-      parts[#parts + 1] = self.escapes[name]
+      parts[#parts + 1] = escape
       position = to + 1
       searchFrom = position
     else
@@ -253,7 +324,7 @@ function emojiChat:ReplaceInPlainText(text)
   return table.concat(parts)
 end
 
----Replaces every word which is an enabled emoji name with the texture of the emoji. Hyperlinks, textures,
+---Replaces every emoji trigger with the texture of the emoji. Hyperlinks, textures,
 ---and colour codes of the message are kept as they are.
 ---@param message string Chat message text
 ---@return string

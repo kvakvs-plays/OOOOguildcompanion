@@ -6,6 +6,7 @@ local addonName, ns = ...
 ---@class OOOOGeneralSettings
 ---@field optAlias boolean True when `/opt` opens the settings window, like `/oooo opt`
 ---@field emojiSize integer Side of an emoji in chat in pixels: 16, 20, 24, 32, or 40
+---@field emojiStandard boolean true when chat shows the standard emoji of Discord written with a colon
 ---@field emojiChannels table<string, boolean> Key of `ns.emojiChat.CHANNELS` -> true when emoji are shown in
 ---that kind of chat
 
@@ -46,7 +47,9 @@ local addonName, ns = ...
 ---@field guildState OOOOGuildState
 ---@field emoji OOOOEmojiModule
 ---@field emojiChat OOOOEmojiChat
----@field emojiIndex table<string, string[]>
+---@field emojiAtlas OOOOEmojiAtlas
+---@field emojiSprites OOOOEmojiSprite[]
+---@field emojiTriggerStrings table<string, integer>
 ---@field emojiAliases table<string, string[]>
 ---@field emojiOptions table<string, OOOOEmojiOptions>
 ---@field optionsWindow OOOOOptionsWindow
@@ -100,6 +103,7 @@ local defaults = {
     general = {
       optAlias = true,
       emojiSize = 32,
+      emojiStandard = true,
       emojiChannels = {
         guild = true,
         party = true,

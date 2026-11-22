@@ -45,6 +45,9 @@ COPY_DIRS = ["Ace3", "Icons", "Src"]
 COPY_FILES = [
     "embeds.xml",
 ]
+# Of these folders only the files directly inside are packaged, not the subfolders. Icons/Emoji has the atlas
+# pages; its subfolders hold one PNG per emoji, the source of the atlas (scripts/import_discord_emoji.py)
+FILES_ONLY_DIRS = ["Icons/Emoji"]
 # In ADDON_ROOT but not a part of the installed addon
 NOT_PACKAGED = ["Art", TOC_TEMPLATE]
 
@@ -97,7 +100,9 @@ class BuildTool:
     def package_files(self) -> Iterator[Tuple[Path, str]]:
         """Yield the source path and the name inside the addon folder of every packaged file."""
         for copy_dir in self.copy_dirs:
-            for root, _dirs, files in os.walk(ADDON_ROOT / copy_dir):
+            for root, dirs, files in os.walk(ADDON_ROOT / copy_dir):
+                if Path(root).relative_to(ADDON_ROOT).as_posix() in FILES_ONLY_DIRS:
+                    dirs.clear()  # os.walk does not enter the subfolders then
                 for file in sorted(files):
                     source = Path(root) / file
                     yield source, source.relative_to(ADDON_ROOT).as_posix()

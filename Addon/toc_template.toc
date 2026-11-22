@@ -22,7 +22,7 @@ Src\Core.lua
 Src\Guild\GuildState.lua
 Src\Window\MainWindow.lua
 
-Src\Emoji\EmojiIndex.lua
+Src\Emoji\EmojiSprites.lua
 Src\Emoji\EmojiAliases.lua
 Src\Emoji\EmojiOptions.lua
 Src\Emoji\Emoji.lua

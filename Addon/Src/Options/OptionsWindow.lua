@@ -56,7 +56,7 @@ local function buildEmojiChannels()
   end
   return {
     type = "group",
-    order = 3,
+    order = 4,
     inline = true,
     name = "Show emoji in channels",
     get = function(info)
@@ -111,6 +111,25 @@ local function buildGeneralTab()
           ns.emojiChat:SetSize(value)
         end,
       },
+      emojiStandard = {
+        type = "toggle",
+        order = 3,
+        width = "full",
+        name = "Show the standard Discord emoji",
+        desc = "Show an emoji of Discord, such as :joy: or :thumbsup:, when its name is written with a colon"
+          .. " before it or between two colons. The name alone, without a colon, is never replaced.",
+        -- The standard emoji are in the atlas only when they were imported; they follow the guild emoji
+        hidden = function()
+          local last = ns.emojiSprites[#ns.emojiSprites]
+          return not (last and last.standard)
+        end,
+        get = function()
+          return ns.emojiChat:IsStandardEnabled()
+        end,
+        set = function(_, value)
+          ns.emojiChat:SetStandardEnabled(value)
+        end,
+      },
       emojiChannels = buildEmojiChannels(),
       mentionsHeader = {
         type = "header",
@@ -162,6 +181,7 @@ local function buildEmojiTab()
   }
 
   for index, emoji in ipairs(ns.emoji:GetAll()) do
+    local texture, left, right, top, bottom = ns.emoji:GetTexture(emoji.id)
     -- A toggle draws its image at a fixed 16 pixels, so the image goes into a description beside it.
     -- The two relative widths add up to less than 1, which keeps one emoji per line at any window width.
     args["image_" .. emoji.name] = {
@@ -169,7 +189,8 @@ local function buildEmojiTab()
       order = index * 2,
       name = emojiLabel(emoji),
       fontSize = "medium",
-      image = emoji.texture,
+      image = texture,
+      imageCoords = { left, right, top, bottom },
       imageWidth = EMOJI_SIZE,
       imageHeight = EMOJI_SIZE,
       width = "relative",
