@@ -8,9 +8,8 @@ local addonName, ns = ...
 ---than letters, digits, and underscores needs the long form of the key: `["some-name"] = { ... }`.
 ---@type table<string, string[]>
 ns.emojiAliases = {
-  gzkush = { "gz kush" },
-  Holy_Leader = { "holyleader" },
-  BIG_LEAGUE = { "bigleague" },
+  -- gzkush = { "gz kush" },
   aightimmaheadout = { "headout" },
   wtfhorse = { "mount" },
+  credit_card = { "card" },
 }

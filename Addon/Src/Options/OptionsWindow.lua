@@ -116,8 +116,8 @@ local function buildGeneralTab()
         order = 3,
         width = "full",
         name = "Show the standard Discord emoji",
-        desc = "Show an emoji of Discord, such as :joy: or :thumbsup:, when its name is written with a colon"
-          .. " before it or between two colons. The name alone, without a colon, is never replaced.",
+        desc = "Show the few standard emoji of Discord that the addon has, such as fire, skull, and beer, when"
+          .. " their name is written as a word.",
         -- The standard emoji are in the atlas only when they were imported; they follow the guild emoji
         hidden = function()
           local last = ns.emojiSprites[#ns.emojiSprites]

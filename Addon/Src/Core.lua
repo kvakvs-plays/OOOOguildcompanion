@@ -6,7 +6,7 @@ local addonName, ns = ...
 ---@class OOOOGeneralSettings
 ---@field optAlias boolean True when `/opt` opens the settings window, like `/oooo opt`
 ---@field emojiSize integer Side of an emoji in chat in pixels: 16, 20, 24, 32, or 40
----@field emojiStandard boolean true when chat shows the standard emoji of Discord written with a colon
+---@field emojiStandard boolean true when chat shows the standard emoji of Discord that the addon has
 ---@field emojiChannels table<string, boolean> Key of `ns.emojiChat.CHANNELS` -> true when emoji are shown in
 ---that kind of chat
 

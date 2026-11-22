@@ -7,10 +7,9 @@ local addonName, ns = ...
 ---@field caseSensitive boolean true when chat must have the exact letter case
 
 ---Shows emoji in the kinds of chat that the user chose (`CHANNELS`). The text is cut into tokens, and a token
----in lower case which is a key of `ns.emojiTriggerStrings` is replaced by the emoji. A token is a word, the
----word with a colon before it, or the word between two colons. The generated trigger strings are the names
----of the guild emoji, and `:name` and `:name:` for the standard emoji of Discord (`:joy:`, `:thumbsup`):
----the names of those are common words, so a bare word never shows one.
+---in lower case which is a key of `ns.emojiTriggerStrings` is replaced by the emoji. A token is a word; two
+---colons around it belong to the emoji (`:fire:`). The generated trigger strings are the names of the guild
+---emoji and of the few standard emoji of Discord that the import script brings (`fire`, `skull`).
 ---
 ---The aliases of EmojiAliases.lua are triggers too. The emoji which EmojiOptions.lua marks as case sensitive
 ---match only in their exact letter case, and an alias of several words is found as a phrase.
@@ -216,9 +215,7 @@ function emojiChat:FindTrigger(token, standard)
 end
 
 ---Finds the emoji written at a word of the text. In this order: an alias of several words, a case sensitive
----name or alias, the word as a token, the word between two colons as a token (`:joy:`), and the word with the
----colon before it as a token (`:joy`). The last needs a colon which does not follow a word, which keeps
----"12:100" and "note:fire" as they are.
+---name or alias, and the word as a token.
 ---@param text string
 ---@param lowerText string The text in lower case
 ---@param wordStart integer Position of the first character of the word
@@ -256,29 +253,14 @@ function emojiChat:MatchAt(text, lowerText, wordStart, wordEnd, position, standa
     end
     id = id or self:FindTrigger(lowerWord, standard)
   end
-  if id then
-    -- Colons on both sides belong to the emoji (":Kek:"); a single colon is punctuation ("Kek: nice")
-    if colonBefore and text:sub(matchEnd + 1, matchEnd + 1) == ":" then
-      return id, wordStart - 1, matchEnd + 1
-    end
-    return id, wordStart, matchEnd
+  if not id then
+    return nil, nil, nil
   end
-
-  if colonBefore then
-    if text:sub(wordEnd + 1, wordEnd + 1) == ":" then
-      id = self:FindTrigger(lowerText:sub(wordStart - 1, wordEnd + 1), standard)
-      if id then
-        return id, wordStart - 1, wordEnd + 1
-      end
-    end
-    if wordStart <= 2 or not text:find(WORD_CHARACTER_PATTERN, wordStart - 2) then
-      id = self:FindTrigger(lowerText:sub(wordStart - 1, wordEnd), standard)
-      if id then
-        return id, wordStart - 1, wordEnd
-      end
-    end
+  -- Colons on both sides belong to the emoji (":Kek:"); a single colon is punctuation ("Kek: nice")
+  if colonBefore and text:sub(matchEnd + 1, matchEnd + 1) == ":" then
+    return id, wordStart - 1, matchEnd + 1
   end
-  return nil, nil, nil
+  return id, wordStart, matchEnd
 end
 
 ---Replaces the emoji triggers in text which has no escape sequences.

@@ -1,5 +1,5 @@
 -- Host test of the emoji in chat (Addon/Src/Emoji/Emoji.lua, EmojiChat.lua): the tokens of a chat line are
--- looked up in the trigger strings. The guild emoji are bare words; the standard emoji of Discord need a colon.
+-- looked up in the trigger strings. The guild emoji and the standard emoji of Discord are bare words alike.
 local T = dofile("Tests/harness.lua")
 
 local ns = {
@@ -23,16 +23,10 @@ local ns = {
     { name = "WAS", page = 1, x = 192, y = 0 },
     { name = "fire", page = 1, x = 0, y = 64, standard = true },
     { name = "joy", page = 1, x = 64, y = 64, standard = true },
-    { name = "x", page = 2, x = 0, y = 0, standard = true },
-    { name = "100", page = 2, x = 64, y = 0, standard = true },
+    { name = "skull", page = 2, x = 0, y = 0, standard = true },
   },
-  emojiTriggerStrings = {
-    gzkush = 1, joy = 2, kek = 3, was = 4,
-    [":fire"] = 5, [":fire:"] = 5, [":flame"] = 5, [":flame:"] = 5,
-    [":joy"] = 6, [":joy:"] = 6,
-    [":x:"] = 7,
-    [":100"] = 8, [":100:"] = 8,
-  },
+  -- The guild emoji "joy" keeps its name: the standard one of that name has no trigger
+  emojiTriggerStrings = { gzkush = 1, joy = 2, kek = 3, was = 4, fire = 5, skull = 7 },
 }
 T.loadAll({ "Addon/Src/Emoji/Emoji.lua", "Addon/Src/Emoji/EmojiChat.lua" }, ns)
 local chat = ns.emojiChat
@@ -43,8 +37,7 @@ local GUILD_JOY = ATLAS .. "1.png:16:16:0:0:256:256:64:128:0:64|t"
 local KEK = ATLAS .. "1.png:16:16:0:0:256:256:128:192:0:64|t"
 local WAS = ATLAS .. "1.png:16:16:0:0:256:256:192:256:0:64|t"
 local FIRE = ATLAS .. "1.png:16:16:0:0:256:256:0:64:64:128|t"
-local X = ATLAS .. "2.png:16:16:0:0:256:256:0:64:0:64|t"
-local HUNDRED = ATLAS .. "2.png:16:16:0:0:256:256:64:128:0:64|t"
+local SKULL = ATLAS .. "2.png:16:16:0:0:256:256:0:64:0:64|t"
 
 ---@param text string
 ---@return string
@@ -74,36 +67,29 @@ T.eq(replace("it WAS him"), "it " .. WAS .. " him", "a case sensitive emoji in i
 T.eq(replace("it was him"), "it was him", "and not in another case")
 
 -- The standard emoji
-T.eq(replace("the fire is hot"), "the fire is hot", "a bare word is no standard emoji")
-T.eq(replace("a :fire: b"), "a " .. FIRE .. " b", "between two colons")
-T.eq(replace("a :fire b"), "a " .. FIRE .. " b", "after one colon")
-T.eq(replace(":FIRE"), FIRE, "in any letter case")
-T.eq(replace(":flame:"), FIRE, "another name of the same emoji")
-T.eq(replace("fire: hot"), "fire: hot", "a colon after the word alone is punctuation")
-T.eq(replace(":fire::fire:"), FIRE .. FIRE, "two in a row")
-T.eq(replace(":fire:fire"), FIRE .. "fire", "the closing colon does not open the next emoji")
-T.eq(replace(":Kek::fire:"), KEK .. FIRE, "after a guild emoji")
-T.eq(replace("note:fire"), "note:fire", "one colon after a word shows nothing")
-T.eq(replace("note:fire:"), "note" .. FIRE, "two colons after a word do")
-T.eq(replace("at 12:100"), "at 12:100", "a number after a colon stays")
-T.eq(replace(":100"), HUNDRED, "a number name after one colon")
-T.eq(replace(":x"), ":x", "a name of one character has no trigger with one colon: it is a smiley")
-T.eq(replace(":x:"), X, "and is shown with both")
-T.eq(replace(":nosuch: :nosuch"), ":nosuch: :nosuch", "an unknown name stays")
+T.eq(replace("the fire is hot"), "the " .. FIRE .. " is hot", "a bare word")
+T.eq(replace("FIRE!"), FIRE .. "!", "in any letter case")
+T.eq(replace("a :fire: b"), "a " .. FIRE .. " b", "and takes its two colons")
+T.eq(replace("a :fire b"), "a :" .. FIRE .. " b", "but not a single one")
+T.eq(replace("fire: hot"), FIRE .. ": hot", "a colon after the word is punctuation")
+T.eq(replace(":fire::skull:"), FIRE .. SKULL, "two in a row")
+T.eq(replace("fireball"), "fireball", "a longer word is no emoji")
+T.eq(replace("note:fire"), "note:" .. FIRE, "a word after a colon")
+T.eq(replace(":flame: :nosuch:"), ":flame: :nosuch:", "a name that is no trigger stays")
 T.eq(replace(":joy:"), GUILD_JOY, "the guild emoji wins over a standard one with its name")
-T.eq(replace("|cff00ff00:fire:|r |Hitem:1|h[:fire:]|h"), "|cff00ff00" .. FIRE .. "|r |Hitem:1|h[:fire:]|h",
+T.eq(replace("|cff00ff00fire|r |Hitem:1|h[fire]|h"), "|cff00ff00" .. FIRE .. "|r |Hitem:1|h[fire]|h",
   "inside a colour, but not inside a link")
 
 -- The settings
 ns.emoji:SetEnabled("Kek", false)
-T.eq(replace("kek lol :fire:"), "kek lol " .. FIRE, "a guild emoji which is turned off, with its alias")
+T.eq(replace("kek lol fire"), "kek lol " .. FIRE, "a guild emoji which is turned off, with its alias")
 ns.emoji:SetEnabled("Kek", true)
 T.eq(chat:IsStandardEnabled(), true, "a missing setting of the standard emoji means on")
 chat:SetStandardEnabled(false)
-T.eq(replace(":fire: kek"), ":fire: " .. KEK, "turned off: only the guild emoji")
+T.eq(replace("fire kek"), "fire " .. KEK, "turned off: only the guild emoji")
 chat:SetStandardEnabled(true)
-T.eq(replace(":fire:"), FIRE, "turned on again")
+T.eq(replace("fire"), FIRE, "turned on again")
 chat:SetSize(32)
-T.eq(replace(":fire:"), ATLAS .. "1.png:32:32:0:0:256:256:0:64:64:128|t", "a new size reaches the emoji")
+T.eq(replace("fire"), ATLAS .. "1.png:32:32:0:0:256:256:0:64:64:128|t", "a new size reaches the emoji")
 
 T.finish()

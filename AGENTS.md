@@ -33,11 +33,10 @@
   PNG files of each imported guild; do not edit them. The script needs a bot
   token in `DISCORD_BOT_TOKEN` (environment or the git-ignored `.env`) and a bot
   that is a member of each guild. Never commit or print the token.
-- `Icons\Emoji\discord\<name>.png` holds the standard (Unicode) emoji of Discord
-  as 64x64 Twemoji PNG files, one per emoji under its first Discord name, and
-  `names.json` with every Discord name. The same script imports them without a
-  token, only with `--also-standard-emoji`. The folder is not there by default:
-  the addon ships the guild emoji only.
+- `Icons\Emoji\discord\<name>.png` holds a few standard (Unicode) emoji of
+  Discord as 64x64 Twemoji PNG files, under their Discord names. They are the
+  names in `STANDARD_EMOJI` of the script, which replaces the folder on every
+  run except `--index-only`. Add a name there to ship another one.
 - These PNG files are only the source: `release_tool.py` does not package the
   subfolders of `Icons\Emoji`. The game loads the atlas
   `Icons\Emoji\Atlas<page>.png` (power-of-two pages of at most 2048x2048, one
@@ -49,10 +48,11 @@
   PNG files without a token. An emoji id changes with every import: never store
   one.
 - Chat is cut into tokens that are looked up in `ns.emojiTriggerStrings`. A
-  guild emoji is triggered by its bare name. A standard emoji is triggered only
-  as `:name:` or `:name`, never as a bare word: names such as `a`, `on`, and
-  `joy` would match ordinary text. That the client draws a part of the atlas
-  through a `|T...|t` escape is not yet checked in the game.
+  guild emoji and a standard emoji alike are triggered by the bare name; two
+  colons around it belong to the emoji. A guild emoji of the same name wins.
+  Every standard name matches ordinary words (`fire`, `heart`), so the list is
+  short and the General tab can turn them all off. That the client draws a part
+  of the atlas through a `|T...|t` escape is not yet checked in the game.
 - The addon's own Lua files live under `Src\` (`Src\Core.lua`, `Src\Emoji\`,
   `Src\Options\`). Put new source files there and add them to
   `toc_template.toc`; libraries and assets stay outside `Src`.

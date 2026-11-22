@@ -6,7 +6,6 @@ Usage (from anywhere):
     python scripts/import_discord_emoji.py                 # the guilds in DEFAULT_GUILD_IDS
     python scripts/import_discord_emoji.py 123 456         # these guilds instead
     python scripts/import_discord_emoji.py --index-only    # download nothing, only build the atlas
-    python scripts/import_discord_emoji.py --also-standard-emoji   # also replace Icons/Emoji/discord
 
 The PNG files, one per emoji, are the source and are not a part of the installed addon. Every
 run builds two outputs from them:
@@ -15,14 +14,13 @@ run builds two outputs from them:
   page starts when one is full.
 - Addon/Src/Emoji/EmojiSprites.lua with `ns.emojiSprites`, the page and the coordinates of every
   emoji by its id, and `ns.emojiTriggerStrings`, the lower case strings that show an emoji in
-  chat -> emoji id. A guild emoji is triggered by its name. A standard emoji is triggered by
-  ":<name>" and ":<name>:", for every name that Discord has for it.
+  chat -> emoji id. Every emoji is triggered by its name as a bare word, a guild emoji and a
+  standard one alike.
 
-The standard emoji of Discord (the Unicode ones, such as :joy:) go into Addon/Icons/Emoji/discord/,
-one PNG per emoji under its first Discord name, with all the names in names.json. They are imported
-only with --also-standard-emoji; once the folder is there, every run packs them. They need no bot
-token: the names come from the npm package discord-emoji and the images from Twemoji, the set that
-Discord draws, both through jsDelivr.
+The standard emoji of Discord (the Unicode ones) in STANDARD_EMOJI go into
+Addon/Icons/Emoji/discord/<name>.png, and every run except --index-only replaces that folder. They
+need no bot token: the names come from the npm package discord-emoji and the images from Twemoji,
+the set that Discord draws, both through jsDelivr.
 
 Needs:
 - A Discord bot token in the DISCORD_BOT_TOKEN environment variable, or as a
@@ -62,15 +60,46 @@ USER_AGENT = "DiscordBot (https://github.com/discord/discord-api-docs, 1.0)"
 # Side of the square texture in pixels; the Discord CDN serves powers of two only
 DEFAULT_SIZE = 64
 
+# The standard emoji of Discord that every import brings, by their Discord names. Each is triggered in
+# chat by its name as a bare word, like a guild emoji, so a name here shows an emoji wherever the word
+# is written: add only names which are rarely meant as plain words. A guild emoji of the same name wins.
+STANDARD_EMOJI = [
+    "skull",
+    "moai",
+    "orangutan",
+    "ogre",
+    "fire",
+    "ghost",
+    "alien",
+    "foot",
+    "nose",
+    "kiss",
+    "rofl",
+    "clown",
+    "tongue",
+    "eyes",
+    "brain",
+    "punch",
+    "wood",
+    "fish",
+    "beer",
+    "heart",
+    "atm",
+    "credit_card",
+    "flag_ba",
+    "joker",
+    "sound",
+    "lock",
+    "scroll",
+]
+
 # Folder of the standard emoji under OUTPUT_ROOT
 STANDARD_DIR_NAME = "discord"
 # Discord's names of the standard emoji: JavaScript objects of "name": "emoji" lines, one per category
 STANDARD_NAMES_URL = "https://cdn.jsdelivr.net/npm/discord-emoji@2.5.3/esm/mod.js"
 # Twemoji images, 72x72, named by the code points of the emoji
 STANDARD_IMAGE_URL = "https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.3/assets/72x72/{code}.png"
-STANDARD_DOWNLOAD_THREADS = 16
-# In the folder of the standard emoji: Discord name -> file name without extension
-STANDARD_NAMES_FILE = "names.json"
+STANDARD_DOWNLOAD_THREADS = 8
 
 # Atlas pages are OUTPUT_ROOT/Atlas<page>.png, from page 1
 ATLAS_PREFIX = "Atlas"
@@ -162,14 +191,11 @@ def import_guild(guild_id: int, token: str, size: int) -> int | None:
     return len(emojis)
 
 
-def standard_emoji() -> tuple[dict[str, str], dict[str, str]]:
-    """Returns the standard emoji of Discord as two tables: file name without extension ->
-    Twemoji file code, and Discord name -> file name. Discord has several names for most emoji
-    (`grinning`, `grinning_face`); the file gets the first, and the second table has them all."""
+def standard_emoji() -> dict[str, str]:
+    """Returns the emoji of STANDARD_EMOJI: Discord name -> Twemoji file code. Raises RuntimeError
+    when Discord has no emoji of a name in the list."""
     source = fetch(STANDARD_NAMES_URL).decode("utf-8")
-    files: dict[str, str] = {}
-    by_code: dict[str, str] = {}
-    names: dict[str, str] = {}
+    codes: dict[str, str] = {}
     for quoted_name, quoted_emoji in re.findall(r'^\s*("(?:[^"\\]|\\.)*"):\s*("(?:[^"\\]|\\.)*"),?\s*$',
                                                 source, re.MULTILINE):
         name, emoji = json.loads(quoted_name).lower(), json.loads(quoted_emoji)
@@ -177,72 +203,54 @@ def standard_emoji() -> tuple[dict[str, str], dict[str, str]]:
         if "\u200d" not in emoji:
             emoji = emoji.replace("\ufe0f", "")
         code = "-".join(f"{ord(char):x}" for char in emoji)
-        if not code:
-            continue
-        if code not in by_code:
-            file_name = re.sub(r"[^a-z0-9_]", "_", name) or "emoji"
-            if file_name in files:
-                file_name = f"{file_name}_{code.replace('-', '_')}"
-            files[file_name] = code
-            by_code[code] = file_name
-        # The addon finds a name as one word of letters, digits, and underscores, so `+1` cannot
-        # be found; such an emoji has another name (`thumbsup`)
-        if re.fullmatch(r"\w+", name):
-            names.setdefault(name, by_code[code])
-    if not files:
-        raise RuntimeError(f"No emoji names found in {STANDARD_NAMES_URL}")
-    return files, names
+        if code:
+            codes.setdefault(name, code)
+    unknown = [name for name in STANDARD_EMOJI if name.lower() not in codes]
+    if unknown:
+        raise RuntimeError(f"Discord has no standard emoji named {', '.join(unknown)} ({STANDARD_NAMES_URL})")
+    return {name.lower(): codes[name.lower()] for name in STANDARD_EMOJI}
 
 
 def import_standard(size: int) -> int | None:
-    """Replaces the folder of the standard emoji. Returns the number of imported emoji, or None
-    when the import failed; the folder is then as it was before."""
+    """Replaces the folder of the standard emoji with those of STANDARD_EMOJI. Returns the number of
+    imported emoji, or None when the import failed; the folder is then as it was before."""
     target_dir = OUTPUT_ROOT / STANDARD_DIR_NAME
     # The folder appears only when it is complete, so a failed import leaves the old one
     work_dir = OUTPUT_ROOT / (STANDARD_DIR_NAME + ".tmp")
     if work_dir.exists():
         shutil.rmtree(work_dir)
 
-    def download(item: tuple[str, str]) -> bool:
+    def download(item: tuple[str, str]) -> None:
         name, code = item
         try:
             (work_dir / f"{name}.png").write_bytes(fetch(STANDARD_IMAGE_URL.format(code=code)))
         except urllib.error.HTTPError as error:
             if error.code != 404:
                 raise
-            return False  # an emoji that this Twemoji version does not draw
-        return True
+            raise RuntimeError(f"Twemoji has no image of {name} ({code})") from error
 
     try:
-        files, names = standard_emoji()
+        files = standard_emoji()
         work_dir.mkdir(parents=True)
         print(f"Standard emoji: downloading {len(files)} images")
         with concurrent.futures.ThreadPoolExecutor(STANDARD_DOWNLOAD_THREADS) as pool:
-            found = list(pool.map(download, files.items()))
-        missing = [name for name, ok in zip(files, found) if not ok]
-        if missing:
-            print(f"  no image for {len(missing)} emoji: {', '.join(missing[:20])}"
-                  + (" ..." if len(missing) > 20 else ""))
-        # One call for the whole folder: a process per file takes minutes on Windows
+            list(pool.map(download, files.items()))
+        # One call for the whole folder: a process per file is slow on Windows
         subprocess.run(
             ["magick", "mogrify", "-background", "none", "-gravity", "center",
              "-resize", f"{size}x{size}", "-extent", f"{size}x{size}", "-strip",
              "-define", "png:color-type=6", "-define", "png:bit-depth=8", str(work_dir / "*.png")],
             check=True)
-    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+    except (OSError, RuntimeError, urllib.error.URLError, subprocess.CalledProcessError) as error:
         print(f"Standard emoji: FAILED, {error}")
         shutil.rmtree(work_dir, ignore_errors=True)
         return None
 
     if target_dir.exists():
         shutil.rmtree(target_dir)
-    names = {name: file for name, file in names.items() if file not in missing}
-    (work_dir / STANDARD_NAMES_FILE).write_text(
-        json.dumps(names, ensure_ascii=False, indent=0) + "\n", encoding="utf-8", newline="\n")
     work_dir.rename(target_dir)
-    count = len(files) - len(missing)
-    print(f"Standard emoji: {count} emoji -> {target_dir}")
-    return count
+    print(f"Standard emoji: {len(files)} emoji -> {target_dir}")
+    return len(files)
 
 
 def collect_sprites() -> tuple[list[dict], dict[str, int]]:
@@ -263,25 +271,12 @@ def collect_sprites() -> tuple[list[dict], dict[str, int]]:
             sprites.append({"name": png.stem, "file": png, "standard": False})
             triggers.setdefault(png.stem.lower(), len(sprites))
 
+    # A guild emoji of the same name keeps the trigger: the standard one is then never shown
     standard_dir = OUTPUT_ROOT / STANDARD_DIR_NAME
-    names_file = standard_dir / STANDARD_NAMES_FILE
-    if names_file.is_file():
-        names: dict[str, str] = json.loads(names_file.read_text(encoding="utf-8"))
-        ids: dict[str, int] = {}
-        # The names are in the order of Discord, which starts with the faces: the emoji in common
-        # use land on the first pages
-        for file_name in dict.fromkeys(names.values()):
-            png = standard_dir / f"{file_name}.png"
-            if png.is_file():
-                sprites.append({"name": file_name, "file": png, "standard": True})
-                ids[file_name] = len(sprites)
-        for name in sorted(names):
-            emoji_id = ids.get(names[name])
-            if emoji_id:
-                # A name of one character needs both colons: ":o" and ":x" are smileys
-                if len(name) > 1:
-                    triggers.setdefault(f":{name}", emoji_id)
-                triggers.setdefault(f":{name}:", emoji_id)
+    if standard_dir.is_dir():
+        for png in sorted(standard_dir.glob("*.png"), key=lambda f: f.stem.lower()):
+            sprites.append({"name": png.stem, "file": png, "standard": True})
+            triggers.setdefault(png.stem.lower(), len(sprites))
     return sprites, triggers
 
 
@@ -361,8 +356,8 @@ def build_atlas(cell: int, atlas_size: int) -> None:
     lines += [
         "}",
         "",
-        "---String in lower case which shows an emoji in chat -> emoji id. A guild emoji has its name here;",
-        "---a standard emoji has `:name` and `:name:` for every name that Discord gives it.",
+        "---Name in lower case which shows an emoji in chat as a bare word -> emoji id, for the guild emoji and",
+        "---the standard emoji of Discord alike.",
         "---@type table<string, integer>",
         "ns.emojiTriggerStrings = {",
     ]
@@ -382,9 +377,6 @@ def main() -> None:
                         help="download nothing; only build the atlas and its Lua file from the files on disk")
     parser.add_argument("--atlas-size", type=int, default=DEFAULT_ATLAS_SIZE, choices=[1024, 2048, 4096],
                         help=f"largest side of an atlas page in pixels (default {DEFAULT_ATLAS_SIZE})")
-    parser.add_argument("--also-standard-emoji", action="store_true",
-                        help=f"import the standard emoji into Icons/Emoji/{STANDARD_DIR_NAME}, replacing the folder; "
-                             "without it they are never downloaded")
     args = parser.parse_args()
 
     if not shutil.which("magick"):
@@ -398,9 +390,7 @@ def main() -> None:
     guild_ids = args.guild_ids or DEFAULT_GUILD_IDS
     counts = [import_guild(guild_id, token, args.size) for guild_id in guild_ids]
     failed = counts.count(None)
-    standard_failed = False
-    if args.also_standard_emoji:
-        standard_failed = import_standard(args.size) is None
+    standard_failed = import_standard(args.size) is None
     build_atlas(args.size, args.atlas_size)
     print(f"Done: {sum(c or 0 for c in counts)} emoji from {len(counts) - failed} guild(s), {failed} failed")
     if failed or standard_failed:

@@ -5,6 +5,23 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
 "## <version> (<date>)", "### <section>", and items that start with a
 **bold heading** followed by the explanation. `Backticks` mark commands. -->
 
+## 2026.11.9 (2026-11-22)
+
+### Emoji
+
+- **New and changed guild emoji.** The emoji of the guild Discord were imported
+  again. New: demonbro, ew, greedy, jesus, jew, nocomment, scared, smart, sus,
+  and umm. Renamed: big_league is now bigleague, and heardutalkinshit is now
+  heardutalkingshit. Gone: __, destrpot, hastepot, holy_leader, and smudgecat.
+- **Some standard emoji.** Chat now also shows a few standard emoji of Discord
+  when you write their name: alien, atm, beer, brain, clown, credit_card, eyes,
+  fire, fish, flag_ba, foot, ghost, heart, joker, kiss, lock, moai, nose, ogre,
+  orangutan, punch, rofl, scroll, skull, sound, tongue, and wood. No colons are
+  needed. "Show the standard Discord emoji" in the settings (`/oooo opt`, tab
+  "General") turns them off.
+- **One texture for all emoji.** The addon draws every emoji from one shared
+  image instead of a file per emoji. Emoji in chat look and work as before.
+
 ## 2026.11.8 (2026-11-21)
 
 ### Gambling
