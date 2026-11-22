@@ -63,6 +63,14 @@ function versionId.parse(id)
     base94.decode(id:sub(TIME_WIDTH + ORIGIN_WIDTH + 1))
 end
 
+---Returns the timestamp of a well-formed id: the server time of its write. It is `parse` without the check
+---of the form and without the other parts, for a pass over many records.
+---@param id string
+---@return integer timestamp
+function versionId.timeOf(id)
+  return base94.decode(id:sub(1, TIME_WIDTH)) --[[@as integer]]
+end
+
 ---Returns the timestamp part of an id for a time. An id is older than that time exactly when it is below
 ---the returned string in a plain `<`, so a cleanup can compare without parsing every id.
 ---@param timestamp integer Seconds, as GetServerTime() gives them

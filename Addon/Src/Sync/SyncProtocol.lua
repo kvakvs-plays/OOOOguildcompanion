@@ -51,6 +51,14 @@ protocol.MAX_NONCE = 2147483647
 protocol.MAX_SCHEMA = 1000000
 ---Longest wait in seconds that a refusal can ask for
 protocol.MAX_RETRY_SECONDS = 3600
+---Most hours in one message with the counts per hour (plan section 4.5); 4 characters each
+protocol.MAX_GAP_HOURS = 96
+---Most ids in one gap request: what the requester holds in the time range that it asks for
+protocol.MAX_GAP_IDS = 1000
+---Characters of one hour in a message with the counts: the count and the checksum, 2 each
+local HOUR_WIDTH = 4
+---Greatest server time that an id can carry: 94^5 - 1
+local MAX_TIME = 7339040223
 
 ---Message type -> the channel on which it travels. A type that arrives on the other channel is dropped.
 ---@type table<string, "GUILD"|"WHISPER">
@@ -63,7 +71,31 @@ protocol.CHANNELS = {
   P = "GUILD", -- push: new records for everybody
   A = "WHISPER", -- here: tells the sender of a hello that this member has the addon; no fields
   K = "WHISPER", -- held: an officer tells a member up to which id it holds the member's writes (plan 14.6)
+  C = "GUILD", -- counts: the records per hour of one table, to find holes that the clock hides (plan 4.5)
+  G = "WHISPER", -- gap request: the ids that the sender holds in a time range; asks for the others
+  F = "WHISPER", -- fill: one batch of the answer to a gap request
 }
+
+---@class OOOOSyncCounts Checked fields of a `C`
+---@field table string
+---@field cut integer Server time: the records with an id from that time on are not counted
+---@field counts integer[] Records per hour; the last entry is the hour of the second before `cut`
+---@field sums integer[] Checksum of the ids per hour, as `syncStore.hourCounts` gives it
+
+---@class OOOOSyncGapRequest Checked fields of a `G`
+---@field table string
+---@field schema integer Payload layout version of the table on the sender's side
+---@field nonce integer Random number that the answers repeat
+---@field from integer Server time, the start of the range
+---@field to integer Server time, the end of the range; both lie in one hour
+---@field have table<string, boolean> Set of the ids that the sender holds in the range
+
+---@class OOOOSyncFill Checked fields of an `F`
+---@field table string
+---@field nonce integer The nonce of the gap request
+---@field batch integer Number of the batch, from 1
+---@field last boolean true in the last batch of the answer
+---@field records OOOOSyncWireRecord[] In ascending id order; payloads are not checked here
 
 ---@class OOOOSyncHeld Checked fields of a `K`
 ---@field table string
@@ -107,6 +139,7 @@ protocol.REASON_BUSY = "busy" -- the peer serves another pull, or may not send n
 protocol.REASON_UNKNOWN = "unknown" -- the peer does not have the table
 protocol.REASON_SCHEMA = "schema" -- the peer has the table with another schema
 protocol.REASON_SOURCE = "source" -- a protected table: only an officer is the source of a pull (plan 14.3)
+protocol.REASON_SPLIT = "split" -- a gap request: the answer is more than one batch; halve the range (plan 4.5)
 
 ---Tells whether a value is an integer in a range.
 ---@param value any
@@ -379,6 +412,104 @@ function checks.K(tableName, origin, id)
     return nil, "bad id"
   end
   return { table = tableName, origin = origin, id = id }
+end
+
+---Writes the counts per hour as the text of a `C`: for each hour the count and the checksum, 2 characters
+---each. A count over `syncStore.MAX_HOUR_COUNT` is written as that.
+---@param counts integer[] From `syncStore.hourCounts`
+---@param sums integer[]
+---@return string text
+function protocol.packCounts(counts, sums)
+  local parts = {}
+  for index = 1, #counts do
+    parts[index] = base94.encode(math.min(counts[index], store.MAX_HOUR_COUNT), 2) .. base94.encode(sums[index], 2)
+  end
+  return table.concat(parts)
+end
+
+---Counts: table, cut time, the counts per hour as one text. A receiver before plan section 4.5 drops it as
+---an unknown type, like the two types below.
+---@return OOOOSyncCounts|nil
+---@return string|nil reason
+function checks.C(tableName, cut, text)
+  if not isTableName(tableName) then
+    return nil, "bad table name"
+  end
+  if not isInteger(cut, 1, MAX_TIME) then
+    return nil, "bad cut time"
+  end
+  if type(text) ~= "string" or #text < HOUR_WIDTH or #text > protocol.MAX_GAP_HOURS * HOUR_WIDTH
+    or #text % HOUR_WIDTH ~= 0 or not base94.isValid(text) then
+    return nil, "bad counts"
+  end
+  local hours = #text / HOUR_WIDTH
+  -- The first hour of the counts must not lie before the time 0
+  if math.floor((cut - 1) / store.HOUR) - hours + 1 < 0 then
+    return nil, "bad cut time"
+  end
+  local counts, sums = {}, {}
+  for index = 1, hours do
+    local position = (index - 1) * HOUR_WIDTH
+    counts[index] = base94.decode(text:sub(position + 1, position + 2))
+    sums[index] = base94.decode(text:sub(position + 3, position + 4))
+  end
+  return { table = tableName, cut = cut, counts = counts, sums = sums }
+end
+
+---Gap request: table, schema, nonce, start and end of the time range, the ids that the sender holds in it
+---as one text. The range lies in one hour, and every id lies in the range.
+---@return OOOOSyncGapRequest|nil
+---@return string|nil reason
+function checks.G(tableName, schema, nonce, from, to, have)
+  if not isTableName(tableName) then
+    return nil, "bad table name"
+  end
+  if not isInteger(schema, 1, protocol.MAX_SCHEMA) then
+    return nil, "bad schema"
+  end
+  if not isInteger(nonce, 1, protocol.MAX_NONCE) then
+    return nil, "bad nonce"
+  end
+  if not isInteger(from, 0, MAX_TIME) or not isInteger(to, 1, MAX_TIME) or from >= to
+    or math.floor(from / store.HOUR) ~= math.floor((to - 1) / store.HOUR) then
+    return nil, "bad range"
+  end
+  if type(have) ~= "string" or #have > protocol.MAX_GAP_IDS * versionId.LENGTH or #have % versionId.LENGTH ~= 0 then
+    return nil, "bad ids"
+  end
+  local low, high = versionId.timePrefix(from), versionId.timePrefix(to)
+  local ids = {}
+  for position = 1, #have, versionId.LENGTH do
+    local id = have:sub(position, position + versionId.LENGTH - 1)
+    if not versionId.isWellFormed(id) or id < low or id >= high or ids[id] then
+      return nil, "bad ids"
+    end
+    ids[id] = true
+  end
+  return { table = tableName, schema = schema, nonce = nonce, from = from, to = to, have = ids }
+end
+
+---Fill: table, nonce, batch number, last flag, records.
+---@return OOOOSyncFill|nil
+---@return string|nil reason
+function checks.F(tableName, nonce, batch, last, packed)
+  if not isTableName(tableName) then
+    return nil, "bad table name"
+  end
+  if not isInteger(nonce, 1, protocol.MAX_NONCE) then
+    return nil, "bad nonce"
+  end
+  if not isInteger(batch, 1, protocol.MAX_BATCH_NUMBER) then
+    return nil, "bad batch number"
+  end
+  if type(last) ~= "boolean" then
+    return nil, "bad last flag"
+  end
+  local records = unpackRecords(packed)
+  if not records then
+    return nil, "bad records"
+  end
+  return { table = tableName, nonce = nonce, batch = batch, last = last, records = records }
 end
 
 ---Makes the pair of functions that write and read messages with a serializer.

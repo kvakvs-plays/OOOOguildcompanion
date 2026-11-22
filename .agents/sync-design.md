@@ -243,6 +243,100 @@ db.global.sync = {
   they are. Two replicas with equal clocks can then hold different numbers of
   old records, which is intended.
 
+### 4.5 Gaps below the clock
+
+Built on 2026-11-22 (`SyncGaps.lua`), after guild chat showed holes between
+members who were both online.
+
+The clock tells what a table has **seen**, not what it **holds**. The
+invariant of 4.2 says that both are the same, and every path of the engine
+keeps it. It still breaks from outside the engine:
+
+- **Saved variables that were not written.** The client writes them at a
+  logout and a `/reload`, not at a crash. The replica then starts with an
+  older file: its own writes since that file are gone, and so is the clock
+  value for them. A pull would bring them back, but one own write before
+  that pull lifts the clock entry of the own origin over them. From then on
+  the table version equals that of the others, and no pull runs.
+- A defect of the engine, or of an older addon version, that stores a clock
+  value without its record.
+
+A table with `gapCheckHours` in its definition (5) therefore also compares
+the records themselves, for the last hours. The table `guildchat` has 48
+(5.3). The check works on the ids of the stored records (`record.v`),
+tombstones too, so it does not need a log table; but the hours must lie
+inside `maxAge`, and a protected table cannot have it (a fill is taken from
+any member).
+
+- **Counts** (`C`, GUILD). A replica counts its records per hour of their
+  ids (`syncStore.hourCounts`): for each hour the count and a checksum of
+  the ids (the sum of their hashes modulo 94^2). The checksum tells two
+  replicas apart that hold the same number of different records. The
+  message carries a cut time and 4 characters per hour, so 48 hours fit
+  into one part of a message; the last hour is the one of the second
+  before the cut, counted up to the cut.
+  - **Settle time.** The cut is 20 minutes ago (`SETTLE_SECONDS`). A
+    younger record can still be on its way by the push, the periodic
+    summary, and the pull that follows it; the check must not race them.
+  - The first counts go out 120 to 300 seconds after discovery, then every
+    1200 to 1800 seconds. A replica that has heard its own counts from a
+    peer since its last message skips its turn, so replicas in one state
+    send one message between them, more or less.
+  - Nothing is sent or compared for a table that may not send, or while a
+    pull of it runs or is about to start: what the clock shows as missing
+    is the work of the pull.
+- **Comparing.** A receiver counts its own records for the hours and the
+  cut of the message. For an hour that differs:
+  - The sender holds as many records or more: the receiver may lack some,
+    and notes a want for that hour.
+  - The sender holds fewer: the sender lacks some. The receiver sends its
+    own counts after a random 2 to 10 seconds, so that the sender sees it
+    and asks; not when another peer sends the same counts first, and at
+    most once in 300 seconds per table.
+- **Gap request** (`G`, WHISPER), 5 to 30 seconds after the counts, one at
+  a time: the time range and the ids that the requester holds in it. The
+  range is the settled part of one hour. A requester that holds more than
+  200 ids there halves the range first, until each part has fewer.
+- **Fill** (`F`, WHISPER). The responder sends the records of the range
+  whose ids the requester did not name, as one batch of about 2 KB.
+  - **Halving.** When they are more than one batch, the responder sends
+    nothing and refuses with `B`, reason `split`. The requester halves the
+    range and asks for both halves, each with its part of the ids, and so
+    on until an answer is one batch (`Session:SplitGapRange`). Every
+    exchange stays short: the responder is free for others in between, and
+    a lost message costs one small request. Only the records of a single
+    second, which cannot be halved, come as several batches.
+  - The ids of the request also show the responder its own holes (an id
+    below its clock that it does not hold). It then asks the requester in
+    turn, for the same hour.
+- **A fill never moves the clock.** A received record is stored only when
+  it lies in the range that was asked for, passes the checks of a pulled
+  record, and its id is at or below the clock value of its origin
+  (`syncStore.fill`, `sync:FillRemote`). A record above the clock is
+  skipped: taking it would lift the clock over writes of its origin that
+  may be missing, which is the defect that the check repairs. So `clock`,
+  `fp`, and the table version are the same before and after, nothing is
+  announced, and every record stands for itself: a bad one stops no other.
+  "OnRecordChanged" fires as for a pulled record.
+- **Limits.** One request is tried at most twice per table, hour, and
+  state of that hour on the other side (count and checksum), per session:
+  a difference that cannot be closed (a record that this replica refuses)
+  is not asked for again and again. A request without any answer is no
+  try; after 3 in a row the peer is left alone for the session. At most
+  200 ranges are halved for one hour and peer (`MAX_SPLITS`). A busy
+  responder (it serves a pull or another gap request, or may not send)
+  refuses with `B` `busy`, and the hour waits 30 seconds.
+- **Older addons.** The protocol version stays 1. An addon from before
+  this section drops `C`, `G`, and `F` as unknown types, without a message
+  to its user, and it never sends counts, so it is never asked. Everything
+  else goes on between old and new as before.
+- **What it cannot repair.** A line that no replica wrote (the witness
+  rule failed, 5.3) is in no table. A hole older than `gapCheckHours` is
+  not looked for.
+- `/oooo sync gaps` sends the counts at once; `/oooo sync status` shows
+  the numbers of the session (counts sent and heard, requests, halved
+  ones, records filled).
+
 ## 5. Table definitions and API
 
 `Src\Sync\SyncTables.lua` holds a registry. A feature module registers its table
@@ -260,6 +354,7 @@ ns.sync:RegisterTable({
                                       -- "officer": only an officer writes; keyKind "free" (5.5)
                                       -- "self": only the character that the key names; keyKind "character" (5.5)
   policy = { when = "nocombat", pushDelay = 300, minInterval = 600 },   -- defaults, user can override
+  gapCheckHours = 48,                 -- optional: compare the records of the last hours themselves (4.5)
 })
 ```
 
@@ -355,6 +450,7 @@ ns.sync:RegisterTable({
   maxRecordBytes = 400,
   writers = "anyone",
   maxAge = KEEP_DAYS * 86400,         -- new field, see below; KEEP_DAYS = 14
+  gapCheckHours = 48,                 -- holes of the last 2 days are found and filled (4.5)
   policy = { when = "nocombat", pushDelay = 60, minInterval = 60 },
 })
 ```
@@ -426,6 +522,12 @@ ns.sync:RegisterTable({
     pull. It never stores a late line with a hole before it.
   - An own line or a witness line raises only the clock entry of the own
     origin, and a replica holds all records of its own origin.
+- **Holes.** The three rules above rest on the clock. A replica that has
+  lost lines below its clock (saved variables that were not written) has
+  no gap that they could see. For that the table compares its lines per
+  hour of the last 48 hours with the other replicas and fills what is
+  missing (4.5). A line is written once, so two replicas hold the same
+  lines of a settled hour, or one of them has a hole.
 - **Secret values.** The sender and the text of a chat event can be secret
   (AGENTS.md). A line with a secret sender or text is not recorded. Whether
   guild chat is secret in combat or in an instance is not known; step 10.2
@@ -840,9 +942,13 @@ writes of an alt wait under their own clock entry until that alt logs in.
 | `Q` pull request | WHISPER | table, schema, nonce, digest | Digest is the clock as one string of 11-char ids. |
 | `D` delta | WHISPER | table, nonce, batch number, last flag, records, clock rest, wants | Records the requester lacks, ascending. |
 | `P` push | GUILD | table, schema, table version, version before, own flag, base, records, clock rest | New records for everybody. |
-| `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal: busy, unknown table, other schema, or `source` (a member and a protected table, 5.5). |
+| `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal of a pull request or a gap request: busy, unknown table, other schema, `source` (a member and a protected table, 5.5), or `split` (a gap request whose answer is more than one batch, 4.5). |
 | `A` here | WHISPER | none | Answer to a hello: the sender has the addon. Tells nothing about tables. |
 | `K` held | WHISPER | table, origin, id | An officer tells a member up to which id it holds the member's writes of a character origin in a self table (7.3). The id is the zero id or an id of that origin. Ignored from a non-officer; older receivers drop it as an unknown type. |
+
+| `C` counts | GUILD | table, cut time, counts | The records per hour of a table with `gapCheckHours`: 4 characters per hour, the count and a checksum of the ids (4.5). Older receivers drop it as an unknown type, like `G` and `F`. |
+| `G` gap request | WHISPER | table, schema, nonce, from, to, ids | A time range inside one hour and the ids that the sender holds in it, as one string. Asks for the others. |
+| `F` fill | WHISPER | table, nonce, batch number, last flag, records | The records of the range that the requester did not name. Stored only below the clock (4.5). |
 
 - A record on the wire is `key, id, payload` (or `key, id` with a tombstone
   marker).
@@ -1074,6 +1180,8 @@ Per table, with defaults from the table definition and overrides in
   | Origins in a digest, a clock rest, or the wants | 2000 (a digest of 22000 bytes) |
   | Batch number of one pull | 100000 |
   | Retry time of a `B` | 3600 s |
+  | Hours in one `C` | 96 |
+  | Ids in one `G` | 1000 (a sender asks with at most 200) |
   | Size of one batch | about 2000 bytes, by the estimate |
 
 - The size of a record is `syncStore.recordSize`: the key, the id, and the

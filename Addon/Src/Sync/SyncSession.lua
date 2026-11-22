@@ -3,7 +3,8 @@ local addonName, ns = ...
 -- The session of the shared database: what a replica does while the character is online. This stage holds
 -- discovery (.agents/00-plan.md, section 7.1): the hello after login, the answers to the hellos of others,
 -- and the list of peers. The pull is in SyncPull.lua, which adds its methods and message handlers to the
--- session of this file. The push is in SyncPush.lua and the local cleanup in SyncCleanup.lua, in the same way.
+-- session of this file. The push is in SyncPush.lua, the local cleanup in SyncCleanup.lua, and the gap check
+-- in SyncGaps.lua, in the same way.
 --
 -- `session.new` builds a session from parts that are passed in, so the host tests run many of them over a
 -- fake network (Tests/sync_discovery.lua). `session.Start` builds the one of the game. Nothing at file scope
@@ -288,6 +289,7 @@ function Session:OnConditionsChanged()
   self:PumpPulls()
   self:SchedulePushes()
   self:SendOwedHeld()
+  self:PumpGaps()
 end
 
 ---Follows the guild state: inside the guild the hello timer starts, outside it everything stops.
@@ -322,6 +324,7 @@ function Session:Stop()
   self:StopPush()
   self:StopCleanup()
   self:StopDelivery()
+  self:StopGaps()
 end
 
 ---Sends the hello with the versions of all tables and starts collecting the answers. While the conditions
@@ -364,6 +367,7 @@ function Session:OnDiscoveryDone()
   self:MarkUnpushed()
   self:ScheduleSummary()
   self:StartDelivery()
+  self:StartGaps()
 end
 
 ---Adds the sender to the peer list, or renews its entry.
@@ -569,6 +573,9 @@ function Session:StatusLines()
       .. (#differing > 0 and ("has newer data in " .. table.concat(differing, ", ")) or "no newer data known")
   end
   for _, line in ipairs(self:PullStatusLines()) do
+    lines[#lines + 1] = line
+  end
+  for _, line in ipairs(self:GapStatusLines()) do
     lines[#lines + 1] = line
   end
   return lines

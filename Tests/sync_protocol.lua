@@ -115,6 +115,32 @@ for label, serializer in pairs(serializers) do
       name("a newer version is reported before its unknown type"))
   end
 
+  -- The types of the gap check (plan section 4.5); their checks are in Tests/sync_gaps.lua. Here: both
+  -- serializers carry them, also with the two characters that AceSerializer escapes.
+  do
+    local counts, sums = {}, {}
+    for index = 1, 48 do
+      counts[index], sums[index] = random(0, 300), random(0, 8835)
+    end
+    local cut = 1795000000
+    local text = codec.encode("C", "guildchat", cut, protocol.packCounts(counts, sums))
+    T.eq({ codec.decode(text) }, { "C", { table = "guildchat", cut = cut, counts = counts, sums = sums } },
+      name("the counts of 48 hours come back"))
+    -- One part of AceComm is 255 bytes: the counts never wait for a second part
+    T.ok(#text <= 255, name("the counts of 48 hours fit into one part of a message: " .. #text))
+    local from = math.floor(cut / 3600) * 3600
+    local one, two = ns.versionId.make(from + 10, "^~^~", 5), ns.versionId.make(from + 20, "aB3$", 0)
+    T.eq({ codec.decode(codec.encode("G", "guildchat", 1, 99, from, from + 3600, one .. two)) },
+      { "G", { table = "guildchat", schema = 1, nonce = 99, from = from, to = from + 3600,
+        have = { [one] = true, [two] = true } } }, name("a gap request comes back"))
+    local records = { { key = one, id = one, payload = { s = "Nota Scam", t = "a ~ and a ^" } } }
+    T.eq({ codec.decode(codec.encode("F", "guildchat", 99, 1, true, protocol.packRecords(records))) },
+      { "F", { table = "guildchat", nonce = 99, batch = 1, last = true, records = records } },
+      name("a fill comes back"))
+    T.eq({ codec.decode(codec.encode("B", "guildchat", 99, protocol.REASON_SPLIT, 0)) },
+      { "B", { table = "guildchat", nonce = 99, reason = "split", retry = 0 } }, name("the refusal split is valid"))
+  end
+
   -- Random input never raises
   do
     for _ = 1, 1000 do

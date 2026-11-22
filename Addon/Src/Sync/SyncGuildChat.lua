@@ -49,6 +49,8 @@ guildChat.TABLE = "guildchat"
 ---Days for which every replica keeps the lines. The same for everybody; it is not a setting, because a
 ---pull request has no lower limit and counts on equal lengths (plan section 5.3).
 guildChat.KEEP_DAYS = 14
+---Hours for which the replicas compare their lines per hour and fill the holes (plan section 4.5)
+guildChat.GAP_CHECK_HOURS = 48
 ---Seconds within which two records with the same sender and text count as one line. It is wide because an
 ---id can be minutes ahead of the real time (plan section 3).
 guildChat.DUPLICATE_WINDOW = 180
@@ -98,6 +100,8 @@ ns.sync:RegisterTable({
   -- A line can be written by a member who is not its sender (the witness, plan section 5.3)
   writers = "anyone",
   maxAge = guildChat.KEEP_DAYS * 86400,
+  -- A line is written once, so two replicas hold the same lines of an hour or one of them has a hole
+  gapCheckHours = guildChat.GAP_CHECK_HOURS,
   -- An online member reads the chat in the game, so the table need not follow it closely: the lines of a
   -- minute go out in one push. A longer wait saved little traffic and made a line that its writer could
   -- see in `/oooo sync chat` look lost on the other accounts (client check of step 10.2).

@@ -390,3 +390,127 @@ function store.wants(tbl, remoteClock)
   end
   return wants
 end
+
+--------------------------------------------------------------------------------
+-- Gaps below the clock: counts per hour, and the fill of a hole (plan section 4.5)
+--------------------------------------------------------------------------------
+
+-- The clock tells what a table has seen, not what it holds. A table that lost records which its clock
+-- covers (saved variables that were not written after a crash, a defect) shows no gap in its clock, and no
+-- pull brings the records back. The functions below look at the records themselves.
+
+---Seconds of one bucket of the counts
+store.HOUR = 3600
+---Greatest count of one hour that a message carries (94^2 - 1); a greater count is sent as this
+store.MAX_HOUR_COUNT = 8835
+---Number of values of the checksum of one hour: 94^2
+local SUM_VALUES = 8836
+
+---Counts the records of a table per hour, by the time of their ids, tombstones too. Each hour also gets a
+---checksum of its ids, so that two tables with equal counts and different records still differ.
+---@param tbl OOOOSyncTable
+---@param firstHour integer Number of the first hour: its start is `firstHour * store.HOUR`
+---@param hours integer Number of hours
+---@param cut integer? Server time; records with an id from that time on are left out. Without it, all records
+---of the hours count
+---@return integer[] counts Records per hour; index 1 is `firstHour`
+---@return integer[] sums Checksum per hour, below 94^2
+function store.hourCounts(tbl, firstHour, hours, cut)
+  local counts, sums = {}, {}
+  for index = 1, hours do
+    counts[index], sums[index] = 0, 0
+  end
+  local last = (firstHour + hours) * store.HOUR
+  -- An id is in the range exactly when it is between the two prefixes in a plain `<` (`versionId.timePrefix`)
+  local low = versionId.timePrefix(firstHour * store.HOUR)
+  local high = versionId.timePrefix(cut and math.min(cut, last) or last)
+  for _, record in pairs(tbl.records) do
+    local id = record.v
+    if id >= low and id < high then
+      local index = math.floor(versionId.timeOf(id) / store.HOUR) - firstHour + 1
+      counts[index] = counts[index] + 1
+      sums[index] = (sums[index] + base94.hash(id)) % SUM_VALUES
+    end
+  end
+  return counts, sums
+end
+
+---Lists the ids of the records whose id lies in a time range, tombstones too.
+---@param tbl OOOOSyncTable
+---@param from integer Server time, the start of the range
+---@param to integer Server time, the end of the range; ids of that second are outside
+---@return string[] ids Sorted
+function store.idsInRange(tbl, from, to)
+  local low, high = versionId.timePrefix(from), versionId.timePrefix(to)
+  local ids = {}
+  for _, record in pairs(tbl.records) do
+    local id = record.v
+    if id >= low and id < high then
+      ids[#ids + 1] = id
+    end
+  end
+  table.sort(ids)
+  return ids
+end
+
+---Selects the records of a time range that another replica lacks: those whose id is not among the ids
+---that it holds. It also counts the ids of the other replica that this table lacks although its clock
+---covers them: holes of this table. An id above the clock is no hole; the pull brings it.
+---@param tbl OOOOSyncTable
+---@param from integer Server time, the start of the range
+---@param to integer Server time, the end of the range
+---@param have table<string, boolean> Set of the ids that the other replica holds in the range
+---@return OOOOSyncWireRecord[] records Sorted by id, ascending
+---@return integer lacking Number of ids in `have` that are holes of this table
+function store.selectMissing(tbl, from, to, have)
+  local low, high = versionId.timePrefix(from), versionId.timePrefix(to)
+  local records = {}
+  ---The ids of `have` that this table holds
+  local held = {}
+  for key, record in pairs(tbl.records) do
+    local id = record.v
+    if id >= low and id < high then
+      if have[id] then
+        held[id] = true
+      else
+        records[#records + 1] = { key = key, id = id, payload = record.d, tombstone = record.x }
+      end
+    end
+  end
+  table.sort(records, function(a, b) return a.id < b.id end)
+  local lacking = 0
+  for id in pairs(have) do
+    if not held[id] and id <= (tbl.clock[versionId.originOf(id)] or versionId.ZERO) then
+      lacking = lacking + 1
+    end
+  end
+  return records, lacking
+end
+
+---Stores a record that fills a hole: a write that the clock of the table covers already. The clock, `maxId`,
+---and `fp` stay as they are, so the table version does not change. A record above the clock is refused: to
+---take it would lift the clock over writes of its origin that may be missing, and the pull is what brings it.
+---@param tbl OOOOSyncTable
+---@param key string
+---@param id string A well-formed version id
+---@param payload any Ignored for a tombstone
+---@param isTombstone boolean? true when the write deleted the record
+---@return boolean stored
+---@return string|nil reason Why not: "ahead" (the id is above the clock) or "held" (the table holds this
+---write or a later one of the key)
+function store.fill(tbl, key, id, payload, isTombstone)
+  local seen = tbl.clock[versionId.originOf(id)]
+  if not seen or id > seen then
+    return false, "ahead"
+  end
+  local record = tbl.records[key]
+  if record and record.v >= id then
+    return false, "held"
+  end
+  if isTombstone then
+    tbl.records[key] = { v = id, x = true }
+  else
+    tbl.records[key] = { v = id, d = payload }
+  end
+  return true
+end

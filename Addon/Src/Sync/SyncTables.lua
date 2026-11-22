@@ -25,6 +25,9 @@ local addonName, ns = ...
 ---@field policy OOOOSyncPolicy|nil Defaults of the send policy; omitted fields take `DEFAULT_POLICY`
 ---@field maxAge number|nil Seconds for which a record is kept, counted from the time of its id; a record that
 ---is older is not stored on receive and is removed by `Expire`. nil: records are kept whatever their age
+---@field gapCheckHours integer|nil Number of the last hours in which the replicas compare their records per
+---hour and fill the holes that the clock does not show (plan section 4.5; SyncGaps.lua). nil: no check. Not
+---for a protected table.
 
 ---@class OOOOSync
 ---@field definitions table<string, OOOOSyncTableDefinition> Table name -> definition
@@ -67,6 +70,8 @@ local KEY_KINDS = { character = true, free = true }
 ---that a key names, writes it, and only what an officer or that character sends is taken (plan section 14.3)
 local WRITERS = { owner = true, anyone = true, officer = true, self = true }
 local WHEN = { nocombat = true, noraid = true, resting = true }
+---Most hours of a gap check: what one message with the counts carries (SyncProtocol.lua)
+local MAX_GAP_HOURS = 96
 ---Send policy of a table that names none (plan section 5)
 local DEFAULT_POLICY = { when = "nocombat", pushDelay = 300, minInterval = 600 }
 
@@ -115,6 +120,20 @@ local function definitionProblem(definition)
   local maxAge = definition.maxAge
   if maxAge ~= nil and (type(maxAge) ~= "number" or maxAge <= 0 or maxAge == math.huge or maxAge ~= maxAge) then
     return "maxAge must be a positive number"
+  end
+  local gapCheckHours = definition.gapCheckHours
+  if gapCheckHours ~= nil then
+    if not isPositiveInteger(gapCheckHours) or gapCheckHours > MAX_GAP_HOURS then
+      return "gapCheckHours must be an integer from 1 to " .. MAX_GAP_HOURS
+    end
+    -- A fill is taken from any member, and nothing vouches for it
+    if definition.writers == "officer" or definition.writers == "self" then
+      return "gapCheckHours is not for a protected table"
+    end
+    -- The hours that are compared must be ones that no replica has begun to remove
+    if maxAge ~= nil and gapCheckHours * store.HOUR >= maxAge then
+      return "gapCheckHours must be shorter than maxAge"
+    end
   end
   local policy = definition.policy
   if policy ~= nil then
@@ -175,6 +194,7 @@ function sync:RegisterTable(definition)
     maxRecordBytes = definition.maxRecordBytes,
     writers = definition.writers,
     maxAge = definition.maxAge,
+    gapCheckHours = definition.gapCheckHours,
     policy = {
       when = policy.when or DEFAULT_POLICY.when,
       pushDelay = policy.pushDelay or DEFAULT_POLICY.pushDelay,
@@ -578,6 +598,30 @@ function sync:Delete(tableName, key)
   return true
 end
 
+---Checks a record that another replica sent, for `ApplyRemote` and `FillRemote`: the time of its id, and its
+---payload against the table definition and its size limit.
+---@param definition OOOOSyncTableDefinition
+---@param record OOOOSyncWireRecord The key and the id have the right form
+---@param now integer Server time
+---@return boolean good
+local function isGoodRemote(definition, record, now)
+  if not versionId.isValid(record.id, now) then
+    return false
+  end
+  if record.tombstone then
+    return true
+  end
+  if record.payload == nil or not isPlainData(record.payload) then
+    return false
+  end
+  -- The payload is untrusted: a `validate` that raises on it counts as a refusal
+  local called, valid = pcall(definition.validate, record.key, record.payload)
+  if not called or not valid then
+    return false
+  end
+  return store.recordSize(record) <= definition.maxRecordBytes
+end
+
 ---Merges records that another replica sent into a table, in their order, and fires "OnRecordChanged" for
 ---every record that changed. Each record is checked: the time of its id, and its payload against the table
 ---definition and its size limit. A bad record is dropped with the later records of its origin (`syncStore.applyBatch`).
@@ -596,21 +640,8 @@ function sync:ApplyRemote(tableName, records, checkFn, sender)
   end
   local now = self.timeFn()
   local changed, dropped = store.applyBatch(tbl, records, function(record)
-    if not versionId.isValid(record.id, now) then
+    if not isGoodRemote(definition, record, now) then
       return false
-    end
-    if not record.tombstone then
-      if record.payload == nil or not isPlainData(record.payload) then
-        return false
-      end
-      -- The payload is untrusted: a `validate` that raises on it counts as a refusal
-      local called, valid = pcall(definition.validate, record.key, record.payload)
-      if not called or not valid then
-        return false
-      end
-      if store.recordSize(record) > definition.maxRecordBytes then
-        return false
-      end
     end
     if checkFn then
       return checkFn(record, definition)
@@ -624,6 +655,45 @@ function sync:ApplyRemote(tableName, records, checkFn, sender)
       bySelf and sync.keyName(key) == sender)
   end
   return changed, dropped
+end
+
+---Stores records that another replica sent to fill holes: writes that the clock of the table covers and
+---that the table does not hold (plan section 4.5). Each record is checked like one of `ApplyRemote`, and it
+---must lie in the time range that was asked for. The clock and the table version never change here: a record
+---above the clock is skipped, because the pull is what brings it (`syncStore.fill`). A record that is not
+---taken stops nothing: every record stands for itself. "OnRecordChanged" fires for every stored record, as
+---for a pull.
+---@param tableName string
+---@param records OOOOSyncWireRecord[] From `syncProtocol`: keys and ids have the right form
+---@param from integer Server time, the start of the range that was asked for
+---@param to integer Server time, the end of the range
+---@param checkFn (fun(record: OOOOSyncWireRecord, definition: OOOOSyncTableDefinition): boolean|"seen")? A
+---further check of the caller; only a record for which it gives true is stored
+---@return string[] filled Keys whose record was stored
+---@return integer skipped Number of records that were not stored
+function sync:FillRemote(tableName, records, from, to, checkFn)
+  local tbl, definition = self:GetTable(tableName)
+  if not tbl or not definition then
+    return {}, #records
+  end
+  local now = self.timeFn()
+  local low, high = versionId.timePrefix(from), versionId.timePrefix(to)
+  local filled, skipped = {}, 0
+  for _, record in ipairs(records) do
+    local id = record.id
+    local good = versionId.isWellFormed(id) and id >= low and id < high and type(record.key) == "string"
+      and isGoodRemote(definition, record, now) and (not checkFn or checkFn(record, definition) == true)
+    if good and store.fill(tbl, record.key, id, record.payload, record.tombstone == true) then
+      filled[#filled + 1] = record.key
+    else
+      skipped = skipped + 1
+    end
+  end
+  for _, key in ipairs(filled) do
+    local record = tbl.records[key]
+    self.callbacks:Fire("OnRecordChanged", tableName, key, (not record.x) and record.d or nil, true)
+  end
+  return filled, skipped
 end
 
 --------------------------------------------------------------------------------

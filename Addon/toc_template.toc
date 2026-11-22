@@ -42,6 +42,7 @@ Src\Sync\SyncPull.lua
 Src\Sync\SyncPush.lua
 Src\Sync\SyncCleanup.lua
 Src\Sync\SyncDelivery.lua
+Src\Sync\SyncGaps.lua
 Src\Sync\SyncOptions.lua
 Src\Sync\SyncGuildChat.lua
 Src\Guild\AddonInventory.lua

@@ -5,6 +5,18 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
 "## <version> (<date>)", "### <section>", and items that start with a
 **bold heading** followed by the explanation. `Backticks` mark commands. -->
 
+## 2026.11.10 (2026-11-22)
+
+### Guild chat
+
+- **Missing lines are found and filled.** The stored guild chat could keep a
+  hole: a line that everybody else had and that never arrived, also when you
+  were online. The addon now compares with the other members how many lines
+  each holds per hour of the last two days, and fetches the lines that it
+  lacks. It does this in the background, about every half hour, and for lines
+  that are at least 20 minutes old. Members with an older version of the addon
+  are not asked; everything else works with them as before.
+
 ## 2026.11.9 (2026-11-22)
 
 ### Emoji

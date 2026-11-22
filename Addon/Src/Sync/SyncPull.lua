@@ -67,9 +67,9 @@ end
 -- Responder
 --------------------------------------------------------------------------------
 
----Answers a pull request with a refusal.
+---Answers a pull request, or a gap request (SyncGaps.lua), with a refusal.
 ---@param sender string
----@param request OOOOSyncPullRequest
+---@param request OOOOSyncPullRequest|OOOOSyncGapRequest
 ---@param reason string A `protocol.REASON_*` value
 ---@param retry number Seconds after which the requester may ask again
 function Session:Refuse(sender, request, reason, retry)

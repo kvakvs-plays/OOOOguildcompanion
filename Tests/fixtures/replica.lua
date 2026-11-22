@@ -23,6 +23,7 @@ local FILES = {
   "Addon/Src/Sync/SyncPush.lua",
   "Addon/Src/Sync/SyncCleanup.lua",
   "Addon/Src/Sync/SyncDelivery.lua",
+  "Addon/Src/Sync/SyncGaps.lua",
   "Addon/Src/Sync/SyncOptions.lua",
   "Addon/Src/Sync/SyncGuildChat.lua",
   "Addon/Src/Chat/Mentions.lua",
@@ -139,6 +140,10 @@ return function(T)
     self.endpoint.onRosterChanged = function()
       self.session:OnRosterChanged()
     end
+    if not Replica.withGaps then
+      -- The field hides the method of the session class
+      self.session.StartGaps = function() end
+    end
     if Replica.withoutPush then
       -- The fields hide the methods of the session class
       local function nothing() end
@@ -155,6 +160,11 @@ return function(T)
   ---Set to true by a test of discovery or of the pull alone: its replicas then push nothing and schedule no
   ---pull for a version that they hear, so every message in the log belongs to what the test looks at.
   Replica.withoutPush = false
+
+  ---Set to true by a test of the gap check (Tests/sync_gaps.lua): its replicas then tell the guild their
+  ---records per hour, as the game does. The other tests leave it off, so that their message logs and peer
+  ---lists hold only what they look at.
+  Replica.withGaps = false
 
   ---The character logs in and the guild check passes: the mention list is read, the transport listens, and
   ---the session starts.
