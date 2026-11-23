@@ -9,6 +9,7 @@ local addonName, ns = ...
 ---@field emojiStandard boolean true when chat shows the standard emoji of Discord that the addon has
 ---@field emojiChannels table<string, boolean> Key of `ns.emojiChat.CHANNELS` -> true when emoji are shown in
 ---that kind of chat
+---@field teamAliases boolean true when chat shows the alias of the team of a character (Teams/TeamChat.lua)
 
 ---@class OOOOSyncSettings
 ---@field tables table<string, OOOOSyncPolicyOverride> Table name -> what the user changed of its send policy
@@ -85,6 +86,12 @@ local addonName, ns = ...
 ---@field gambleBook OOOOGambleBookModule
 ---@field gambleTab OOOOGambleTab
 ---@field gambleNotice OOOOGambleNoticeModule
+---@field teamData OOOOTeamData
+---@field teams OOOOTeamsModule
+---@field teamClerk OOOOTeamClerkModule
+---@field teamChat OOOOTeamChat
+---@field teamRoster OOOOTeamRoster
+---@field teamRosterTab OOOOTeamRosterTab
 ---@field professionProbe OOOOProfessionProbe
 ---@field professionScan OOOOProfessionScanModule
 ---@field professionRecipes OOOOProfessionRecipes
@@ -104,6 +111,7 @@ local defaults = {
       optAlias = true,
       emojiSize = 32,
       emojiStandard = true,
+      teamAliases = true,
       emojiChannels = {
         guild = true,
         party = true,
@@ -228,6 +236,9 @@ function addon:OnEnable()
     ns.gambleBook.Start()
     -- The notices of new bets and of the own dues; its first check runs some seconds after the login
     ns.gambleNotice.Start()
+    -- Before the session: the clerk of an officer must hear the alias requests that the session brings
+    ns.teams.Start()
+    ns.teamClerk.Start()
     ns.syncSession.Start()
   end
   ns.guildState:Start()

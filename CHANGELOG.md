@@ -5,6 +5,25 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
 "## <version> (<date>)", "### <section>", and items that start with a
 **bold heading** followed by the explanation. `Backticks` mark commands. -->
 
+## 2026.11.11 (2026-11-23)
+
+### Teams
+
+- **Chat shows who is behind a character.** The officers group the characters
+  of one player into a team with an alias, a short name. Guild, officer, say,
+  party, and whisper chat show the alias in front of the text, for every
+  character of the team. The General tab of the settings turns it off.
+- **You can choose the alias of your team.** Once an officer has put your
+  character into a team, type `/oooo alias <text>` or use the General tab of
+  the settings. The new alias shows when an online officer's addon has taken
+  it. `/oooo alias` alone shows the alias that you have. The officers can
+  replace an alias that is not acceptable with their own.
+- **Officers have a roster tab.** The new tab with the crown lists the guild
+  roster and makes the teams: select a character, click "Group with another
+  character", and click the other character of the same player. Characters
+  that use the addon on the same account as a member of a team are found
+  automatically and marked with a question mark until an officer assigns them.
+
 ## 2026.11.10 (2026-11-22)
 
 ### Guild chat

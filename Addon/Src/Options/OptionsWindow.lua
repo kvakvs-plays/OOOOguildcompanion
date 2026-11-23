@@ -165,6 +165,52 @@ local function buildGeneralTab()
           ns.db.profile.mentions.notifyOnLogin = value
         end,
       },
+      teamsHeader = {
+        type = "header",
+        order = 20,
+        name = "Teams",
+      },
+      teamAliases = {
+        type = "toggle",
+        order = 21,
+        width = "full",
+        name = "Show the alias of a player in chat",
+        desc = "The officers group the characters of one player into a team with an alias. Guild, officer, say, "
+          .. "party, and whisper chat show it in front of the text: [Nota Tall]: nota: hello.",
+        get = function()
+          return ns.teamChat:IsEnabled()
+        end,
+        set = function(_, value)
+          ns.teamChat:SetEnabled(value)
+        end,
+      },
+      teamAlias = {
+        type = "input",
+        order = 22,
+        width = "full",
+        name = "Alias of your team",
+        desc = "The short name that chat shows for all your characters. It can be changed once an officer has "
+          .. "put this character into a team, and it shows when an online officer's addon has taken it. "
+          .. "The same as /oooo alias <text>.",
+        disabled = function()
+          local model, name = ns.teams.current, ns.syncCharacter.playerName()
+          return not (model and name and model:Index().ofName[name])
+        end,
+        get = function()
+          local model, name = ns.teams.current, ns.syncCharacter.playerName()
+          return model and name and (model:OwnRequest() or model:AliasOf(name)) or ""
+        end,
+        set = function(_, value)
+          local model = ns.teams.current
+          local ok, reason = false, "not ready"
+          if model then
+            ok, reason = model:SubmitAlias(value)
+          end
+          if not ok then
+            ns.print("The alias was not changed: " .. (ns.teamChat.REFUSALS[reason] or tostring(reason)) .. ".")
+          end
+        end,
+      },
     },
   }
 end

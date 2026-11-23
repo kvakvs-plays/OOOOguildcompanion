@@ -23,6 +23,8 @@ local addonName, ns = ...
 ---@field Build fun(container: table) Adds the content of the tab to the container, which has the layout
 ---"Fill": one child
 ---@field Close (fun())|nil Called before the content is released: the tab forgets its widgets
+---@field IsVisible (fun(): boolean)|nil Tells whether the window has the tab; asked when the window opens.
+---Without it the tab is always there.
 
 ---@class OOOOMainWindow
 ---@field tabs OOOOMainWindowTab[] The registered tabs
@@ -30,6 +32,7 @@ local addonName, ns = ...
 ---@field frame table|nil The AceGUI frame; nil until the window is first opened. It is kept for the session.
 ---@field tabGroup table|nil The AceGUI tab group in it
 ---@field current OOOOMainWindowTab|nil The tab whose content is built; nil while the window is closed
+---@field shownTabs string|nil The ids of the tabs that the tab group has, joined
 local main = { tabs = {}, byId = {} }
 ns.mainWindow = main
 
@@ -178,6 +181,34 @@ function main:RegisterTab(tab)
   end)
 end
 
+---Tells whether the window has a tab now.
+---@param id string|nil
+---@return boolean
+function main:IsTabVisible(id)
+  local tab = id and self.byId[id]
+  if not tab then
+    return false
+  end
+  return tab.IsVisible == nil or tab.IsVisible() == true
+end
+
+---Gives the tab group the tabs that are visible now (`IsVisible`). Called when the window opens, because a tab
+---for officers follows the rank of the character, which the roster tells only some time after the login.
+function main:UpdateTabs()
+  local list, joined = {}, {}
+  for _, tab in ipairs(self.tabs) do
+    if self:IsTabVisible(tab.id) then
+      list[#list + 1] = { value = tab.id, text = tab.title }
+      joined[#joined + 1] = tab.id
+    end
+  end
+  local shown = table.concat(joined, ",")
+  if shown ~= self.shownTabs then
+    self.shownTabs = shown
+    self.tabGroup:SetTabs(list)
+  end
+end
+
 ---Releases the content of the shown tab.
 function main:CloseTab()
   local tab = self.current
@@ -246,11 +277,7 @@ function main:Create()
   local tabGroup = AceGUI:Create("TabGroup")
   self.tabGroup = tabGroup
   tabGroup:SetLayout("Fill")
-  local list = {}
-  for index, tab in ipairs(self.tabs) do
-    list[index] = { value = tab.id, text = tab.title }
-  end
-  tabGroup:SetTabs(list)
+  self:UpdateTabs()
   tabGroup:SetCallback("OnGroupSelected", function(_widget, _event, id)
     main:ShowTab(id)
   end)
@@ -274,9 +301,18 @@ function main:Open(tabId)
     return false
   end
   local frame = self.frame or self:Create()
+  self:UpdateTabs()
   frame:Show()
   local saved = ns.db.profile.window.tab
-  local id = self.byId[tabId] and tabId or (self.byId[saved] and saved) or (self.tabs[1] and self.tabs[1].id)
+  local id = (self:IsTabVisible(tabId) and tabId) or (self:IsTabVisible(saved) and saved) or nil
+  if not id then
+    for _, tab in ipairs(self.tabs) do
+      if self:IsTabVisible(tab.id) then
+        id = tab.id
+        break
+      end
+    end
+  end
   if id and not self:IsShown(id) then
     -- Fires "OnGroupSelected", which builds the content
     self.tabGroup:SelectTab(id)

@@ -68,5 +68,12 @@ Src\Gamble\GambleBook.lua
 Src\Gamble\GambleTab.lua
 Src\Gamble\GambleNotice.lua
 
+Src\Teams\TeamData.lua
+Src\Teams\Teams.lua
+Src\Teams\TeamClerk.lua
+Src\Teams\TeamChat.lua
+Src\Teams\TeamRoster.lua
+Src\Teams\TeamRosterTab.lua
+
 Src\Changelog\ChangelogData.lua
 Src\Changelog\ChangelogWindow.lua

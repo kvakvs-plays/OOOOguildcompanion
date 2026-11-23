@@ -9,6 +9,7 @@ local addonName, ns = ...
 ---@class OOOOGuildMember One member in the roster cache
 ---@field online boolean
 ---@field rankIndex integer Rank index of the roster API, from 0 (guild master)
+---@field class string|nil Class token in upper case ("SHAMAN"); nil when the roster did not give one
 
 ---@alias OOOOGuildStateName
 ---| "unknown" # The client has not told the guild name yet
@@ -152,15 +153,20 @@ function guildState:ReadRoster()
   end
   local old, roster, count, changed = self.roster, {}, 0, false
   for index = 1, total do
-    -- The 9th value tells whether the member is online
-    local rawName, _, rankIndex, _, _, _, _, _, online = GetGuildRosterInfo(index)
+    -- The 9th value tells whether the member is online; the 11th is the class token, as in the Mainline UI
+    -- (not checked on the release client: a value of another type is left out)
+    local rawName, _, rankIndex, _, _, _, _, _, online, _, rawClass = GetGuildRosterInfo(index)
     local name = guildState.normalizeName(rawName)
     if name and not issecretvalue(rankIndex) and type(rankIndex) == "number" and not issecretvalue(online)
       and not roster[name] then
       local isOnline = online == true
+      local class = nil ---@type string|nil
+      if not issecretvalue(rawClass) and type(rawClass) == "string" and rawClass:find("^%u+$") then
+        class = rawClass
+      end
       local member = old[name]
-      if not member or member.online ~= isOnline or member.rankIndex ~= rankIndex then
-        member = { online = isOnline, rankIndex = rankIndex }
+      if not member or member.online ~= isOnline or member.rankIndex ~= rankIndex or member.class ~= class then
+        member = { online = isOnline, rankIndex = rankIndex, class = class }
         changed = true
       end
       roster[name] = member
@@ -205,7 +211,7 @@ function guildState:NoteOnline(name)
   if not member or member.online then
     return
   end
-  self.roster[name] = { online = true, rankIndex = member.rankIndex }
+  self.roster[name] = { online = true, rankIndex = member.rankIndex, class = member.class }
   self.callbacks:Fire("OnRosterChanged")
   local now = GetTime()
   if not lastRefresh or now - lastRefresh >= REFRESH_INTERVAL then

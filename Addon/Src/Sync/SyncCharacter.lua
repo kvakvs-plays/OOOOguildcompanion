@@ -117,6 +117,23 @@ local function originsOf(record)
   return origins
 end
 
+---Lists the origins of a character in a stored `character` table: the writer of its record and the origins in
+---its payload. The teams feature takes them as the account ids of the character (Teams/Teams.lua).
+---@param tbl OOOOSyncTable
+---@param name string Character name
+---@return string[] origins Sorted; empty for a character without a record
+function character.origins(tbl, name)
+  local record = tbl.records[name]
+  local list = {}
+  if record and not record.x then
+    for origin in pairs(originsOf(record)) do
+      list[#list + 1] = origin
+    end
+    table.sort(list)
+  end
+  return list
+end
+
 ---Finds the alts of a character in a stored `character` table: the characters that share an origin with
 ---it, directly or through other characters. A deleted character has no alts and is nobody's alt.
 ---@param tbl OOOOSyncTable
