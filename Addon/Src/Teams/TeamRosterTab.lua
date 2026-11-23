@@ -192,9 +192,9 @@ end
 local function rowText(row)
   local text = nameColor(row.online, row.class) .. plain(row.name) .. "|r"
   if row.alias then
-    -- A detected character is not assigned yet: the question mark asks the officer to look
-    text = text .. "  " .. (row.online and ALIAS_COLOR or OFFLINE_COLOR) .. plain(row.alias)
-      .. (row.detected and " ?" or "") .. "|r"
+    -- A detected character is not assigned yet: the mark asks the officer to look
+    text = text .. " " .. (row.online and ALIAS_COLOR or OFFLINE_COLOR) .. "— " .. plain(row.alias)
+      .. (row.detected and " (suggested)" or "") .. "|r"
   end
   return text
 end

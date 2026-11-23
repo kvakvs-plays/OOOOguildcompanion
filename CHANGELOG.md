@@ -7,7 +7,7 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
 
 ## 2026.11.11 (2026-11-23)
 
-### Teams
+### Character Teams
 
 - **Chat shows who is behind a character.** The officers group the characters
   of one player into a team with an alias, a short name. Guild, officer, say,
@@ -22,7 +22,7 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
   roster and makes the teams: select a character, click "Group with another
   character", and click the other character of the same player. Characters
   that use the addon on the same account as a member of a team are found
-  automatically and marked with a question mark until an officer assigns them.
+  automatically and marked "(suggested)" until an officer assigns them.
 
 ## 2026.11.10 (2026-11-22)
 
