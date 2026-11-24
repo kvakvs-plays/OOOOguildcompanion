@@ -5,6 +5,9 @@
 - For more advanced work - Opus 5.5 subagents. Keep tasks limited in scope so
   that they finish in shorter time.
 
+For debugging purposes, addons saved data is available for both testing
+accounts: `F:\SSDGames\World of Warcraft\_forever_\WTF\`
+
 ## Project Context
 
 - This repository is a Lua addon for **World of Warcraft: Forever** (patch
@@ -40,10 +43,10 @@
 - These PNG files are only the source: `release_tool.py` does not package the
   subfolders of `Icons\Emoji`. The game loads the atlas
   `Icons\Emoji\Atlas<page>.png` (power-of-two pages of at most 2048x2048, one
-  empty pixel between the emoji, the guild emoji first) and
-  the generated `Src\Emoji\EmojiSprites.lua`: `ns.emojiSprites` (emoji id ->
-  page and pixel coordinates) and `ns.emojiTriggerStrings` (lower-case string ->
-  emoji id). Every run of the script builds both; do not edit them.
+  empty pixel between the emoji, the guild emoji first) and the generated
+  `Src\Emoji\EmojiSprites.lua`: `ns.emojiSprites` (emoji id -> page and pixel
+  coordinates) and `ns.emojiTriggerStrings` (lower-case string -> emoji id).
+  Every run of the script builds both; do not edit them.
   `python scripts/import_discord_emoji.py --index-only` rebuilds them from the
   PNG files without a token. An emoji id changes with every import: never store
   one.

@@ -570,7 +570,7 @@ anything. Without an officer online a protected table does not spread.
 | `H` hello | GUILD | `{ table -> tableVersion }` | Sent once after login. Asks peers to answer. |
 | `S` summary | GUILD | `{ table -> tableVersion }` | Answer to hello, and notice after a merge. |
 | `Q` pull request | WHISPER | table, schema, nonce, digest | Digest is the clock as one string of 11-char ids. |
-| `D` delta | WHISPER | table, nonce, batch number, last flag, records, clock rest, wants | Records the requester lacks, ascending. |
+| `D` delta | WHISPER | table, nonce, batch number, last flag, records, clock rest, wants, optional number of batches | Records the requester lacks, ascending. The number of batches feeds the progress in the window's status line; an older addon neither sends nor reads it. |
 | `P` push | GUILD | table, schema, table version, version before, own flag, base, records, clock rest | New records for everybody. |
 | `B` busy | WHISPER | table, nonce, reason, retry seconds | Refusal of a pull or gap request: busy, unknown table, other schema, `source` (5.5), or `split` (4.5). |
 | `A` here | WHISPER | none | Answer to a hello: the sender has the addon. |

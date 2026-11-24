@@ -33,6 +33,7 @@ local addonName, ns = ...
 ---@field tabGroup table|nil The AceGUI tab group in it
 ---@field current OOOOMainWindowTab|nil The tab whose content is built; nil while the window is closed
 ---@field shownTabs string|nil The ids of the tabs that the tab group has, joined
+---@field tabStatus string|nil What the shown tab has to say in the status line
 local main = { tabs = {}, byId = {} }
 ns.mainWindow = main
 
@@ -237,11 +238,26 @@ function main:ShowTab(id)
   tab.Build(self.tabGroup)
 end
 
----Shows a text in the status line at the bottom of the window.
+---Sets what the shown tab says in the status line at the bottom of the window.
 ---@param text string
 function main:SetStatus(text)
-  if self.frame then
-    self.frame:SetStatusText(text)
+  self.tabStatus = text
+  self:UpdateStatus()
+end
+
+---Writes the status line: a sync that runs, in front of the text of the tab, so that a long text of the tab
+---cannot cut it off.
+function main:UpdateStatus()
+  if not self.frame then
+    return
+  end
+  local current = ns.syncSession.current
+  local syncText = current and ns.syncSession.progressText(current:Progress())
+  local tabText = self.tabStatus or ""
+  if syncText and tabText ~= "" then
+    self.frame:SetStatusText(syncText .. " - " .. tabText)
+  else
+    self.frame:SetStatusText(syncText or tabText)
   end
 end
 
@@ -302,6 +318,7 @@ function main:Open(tabId)
   end
   local frame = self.frame or self:Create()
   self:UpdateTabs()
+  self:UpdateStatus()
   frame:Show()
   local saved = ns.db.profile.window.tab
   local id = (self:IsTabVisible(tabId) and tabId) or (self:IsTabVisible(saved) and saved) or nil
@@ -332,3 +349,45 @@ end
 ns.slash:SetDefault("open or close the addon window", function()
   main:Toggle()
 end)
+
+---The action of Bindings.xml, and the key that it gets on the first login
+local BINDING_ACTION = "OOOOGC_TOGGLEWINDOW"
+local DEFAULT_KEY = "ALT-O"
+
+-- The label of the action in the key bindings of the game (section "AddOns")
+_G["BINDING_NAME_" .. BINDING_ACTION] = "Show OOOO Window"
+
+---Called by the key binding of Bindings.xml, which runs in the global scope.
+function _G.OOOOguildcompanion_ToggleWindow()
+  main:Toggle()
+end
+
+---Gives the action its default key, once per binding set. A binding of an addon cannot name a default key
+---in Bindings.xml, so the key is set here and saved; after that the choice of the user stands, also when
+---they remove the key. A key that is in use is not taken.
+function main:ApplyDefaultKey()
+  -- SetBinding is refused in combat (a reload in a fight); the next login tries again
+  if InCombatLockdown() then
+    return
+  end
+  local set = GetCurrentBindingSet()
+  -- Set 1 is shared by the account, set 2 belongs to the character
+  local store = set == 1 and ns.db.global or ns.db.char
+  if store.defaultKeySet then
+    return
+  end
+  if GetBindingKey(BINDING_ACTION) then
+    store.defaultKeySet = true
+    return
+  end
+  local used = GetBindingAction(DEFAULT_KEY)
+  if used and used ~= "" then
+    store.defaultKeySet = true
+    ns.print("Alt+O is in use. Choose a key for the addon window in the key bindings, section AddOns.")
+    return
+  end
+  if SetBinding(DEFAULT_KEY, BINDING_ACTION) then
+    SaveBindings(set)
+    store.defaultKeySet = true
+  end
+end

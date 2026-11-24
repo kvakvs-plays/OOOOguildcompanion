@@ -504,6 +504,7 @@ function Session:StartGapRequest(want)
   }
   state.tries[want.triesKey] = (state.tries[want.triesKey] or 0) + 1
   state.request = request
+  self:NotifyProgress()
   return self:SendGapRequest(request)
 end
 
@@ -525,6 +526,7 @@ function Session:SendGapRequest(request)
     nonce, range.from, range.to, table.concat(range.ids)) then
     -- The hour is done, or the peer has gone: the next want follows in a later frame
     state.request = nil
+    self:NotifyProgress()
     self:ScheduleGapPump(0)
     return false
   end
@@ -550,6 +552,7 @@ function Session:ArmGapTimer(request)
       state.stats.timeouts = state.stats.timeouts + 1
       state.tries[want.triesKey] = math.max(0, (state.tries[want.triesKey] or 1) - 1)
       state.silent[want.peer] = (state.silent[want.peer] or 0) + 1
+      self:NotifyProgress()
       self:PumpGaps()
     end
   end)
@@ -640,6 +643,7 @@ function handlers.B(self, sender, busy)
   end
   cancel(request.timer)
   state.request = nil
+  self:NotifyProgress()
   local want = request.want
   if busy.reason == protocol.REASON_BUSY then
     -- Nothing was asked: the try does not count

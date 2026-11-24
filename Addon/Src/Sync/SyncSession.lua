@@ -30,6 +30,11 @@ local addonName, ns = ...
 ---@field order integer Arrival order: 1 for the first peer of this session
 ---@field retryAt table<string, number>|nil Table name -> server time before which the peer is not asked for it
 
+---@class OOOOSyncProgress What this replica is fetching now
+---@field table string|nil Table name; nil while it still looks for the other members
+---@field done integer|nil Batches that have arrived
+---@field total integer|nil Batches of the whole answer; nil when the progress is not known
+
 ---@class OOOOSyncSession
 ---@field parts OOOOSyncSessionParts
 ---@field peers table<string, OOOOSyncPeer> Character name -> peer
@@ -56,6 +61,7 @@ local addonName, ns = ...
 ---@field whisperedAt table<string, number> Character name -> server time of the last whisper to that member
 ---@field presenceOwed table<string, boolean> Set of members whose hello still gets the whisper "here"
 ---@field presenceTimer OOOOSyncTimer|nil Runs until the whispers "here" are sent
+---@field onProgressChanged (fun())|nil Called when what `Progress` gives may have changed
 local Session = {}
 Session.__index = Session
 
@@ -83,6 +89,35 @@ session.PRESENCE_INTERVAL = 15
 session.COLLECT_SECONDS = 10
 ---Seconds after which the collecting starts also when the send queue has not reported the hello as sent
 session.HELLO_SEND_LIMIT = 60
+---Table name -> how the status line of the window calls it; another table is called by its name
+session.TABLE_TITLES = {
+  addon = "addon versions",
+  character = "characters",
+  gamble = "gambling",
+  gamble_player = "bets",
+  guildchat = "guild chat",
+  profession = "professions",
+  team = "teams",
+  team_alias = "team aliases",
+}
+
+---Builds the text of a sync that runs, for the status line of the window.
+---@param progress OOOOSyncProgress|nil What `Session:Progress` gives
+---@return string|nil text nil when no sync runs
+function session.progressText(progress)
+  if not progress then
+    return nil
+  end
+  if not progress.table then
+    return "Syncing: looking for other members..."
+  end
+  local title = session.TABLE_TITLES[progress.table] or progress.table
+  local done, total = progress.done, progress.total
+  if not done or not total or done < 1 then
+    return "Syncing " .. title .. "..."
+  end
+  return "Syncing " .. title .. ": " .. done .. " of " .. total .. " (" .. math.floor(done * 100 / total) .. "%)"
+end
 
 ---Makes a session. It does nothing until `OnGuildStateChanged(true)`.
 ---@param parts OOOOSyncSessionParts
@@ -133,6 +168,32 @@ end
 ---@return number
 function Session:RandomDelay(low, high)
   return low + self.parts.random() * (high - low)
+end
+
+---Tells what this replica is fetching now: the running pull, which knows its progress when its source tells
+---the number of batches; a gap request, whose range can still be halved, so that its progress is not known;
+---or the search for the other members after the hello.
+---@return OOOOSyncProgress|nil progress nil when no sync runs
+function Session:Progress()
+  local active = self.pull
+  if active then
+    return { table = active.table, done = active.nextBatch - 1, total = active.total }
+  end
+  local request = self.gaps and self.gaps.request
+  if request then
+    return { table = request.want.table }
+  end
+  if self.helloSent and not self.discovered then
+    return {}
+  end
+  return nil
+end
+
+---Tells the listener that what `Progress` gives may have changed.
+function Session:NotifyProgress()
+  if self.onProgressChanged then
+    self.onProgressChanged()
+  end
 end
 
 ---Tells whether this replica may send the messages that belong to no table, hello and summary: not in
@@ -325,6 +386,7 @@ function Session:Stop()
   self:StopCleanup()
   self:StopDelivery()
   self:StopGaps()
+  self:NotifyProgress()
 end
 
 ---Sends the hello with the versions of all tables and starts collecting the answers. While the conditions
@@ -357,11 +419,13 @@ function Session:SendHello()
     return
   end
   self.helloSent = true
+  self:NotifyProgress()
 end
 
 ---Called when the answers to the own hello have been collected. The peers that differ are then known.
 function Session:OnDiscoveryDone()
   self.discovered = true
+  self:NotifyProgress()
   self:CleanUp()
   self:PumpPulls()
   self:MarkUnpushed()
@@ -606,6 +670,9 @@ function session.Start()
     }),
   })
   session.current = current
+  current.onProgressChanged = function()
+    ns.mainWindow:UpdateStatus()
+  end
   ns.guildState.RegisterCallback(session, "OnGuildStateChanged", function(_event, inGuild)
     current:OnGuildStateChanged(inGuild)
   end)

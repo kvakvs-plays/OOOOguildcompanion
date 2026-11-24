@@ -143,8 +143,8 @@ do
   b.got = {}
   b:Send("Q", "Nota Scam", "debug", 1, 2, store.digest(tbl))
   net:Advance(10)
-  T.eq(b:Of("D"), { { table = "debug", nonce = 2, batch = 1, last = true, records = {}, rest = {}, wants = {} } },
-    "a requester that has everything gets one empty last batch")
+  T.eq(b:Of("D"), { { table = "debug", nonce = 2, batch = 1, last = true, records = {}, rest = {}, wants = {},
+    total = 1 } }, "a requester that has everything gets one empty last batch")
 
   b.got = {}
   local ahead = versionId.make(now - 10, "XXXX", 0)
@@ -707,6 +707,65 @@ do
     nil, "a format with a doubled percent sign does not match a single one")
   T.eq(comm.offlineNoticeName("Spieler [Nota Scam] ist nicht online.", "Spieler [%s] ist nicht online."), "Nota Scam",
     "the magic characters of a format are taken as text")
+end
+
+-- The progress for the status line of the window: a whole pull from a replica that tells the number of batches
+do
+  local net, a = setup()
+  for index = 1, 300 do
+    a.sync:Put("debug", "key" .. index, "text of record " .. index .. " " .. string.rep("x", index % 40))
+  end
+  local b = Replica.new(net, "Other One", { random = random })
+  local progressText = b.ns.syncSession.progressText
+  local seen = {}
+  b.session.onProgressChanged = function()
+    seen[#seen + 1] = progressText(b.session:Progress()) or "idle"
+  end
+  T.eq(b.session:Progress(), nil, "no sync runs before the login")
+  b:Login()
+  advanceUntil(net, function()
+    return b.session.discovered and not b.session.pull and b.sync:Count("debug") == 300
+  end, 300, "the pull ends")
+
+  T.eq(seen[1], "Syncing: looking for other members...", "the search for the members comes first")
+  local started, lastDone, lastTotal = false, 0, 0
+  for _, text in ipairs(seen) do
+    started = started or text == "Syncing debug..."
+    local done, total, percent = text:match("^Syncing debug: (%d+) of (%d+) %((%d+)%%%)$")
+    if done then
+      T.ok(started, "the table is named before its first batch has arrived")
+      T.eq(tonumber(done), lastDone + 1, "the progress counts the batches")
+      T.eq(tonumber(percent), math.floor(tonumber(done) * 100 / tonumber(total)), "the percentage fits the batches")
+      lastDone, lastTotal = tonumber(done) --[[@as integer]], tonumber(total) --[[@as integer]]
+    end
+  end
+  T.ok(lastDone > 3, "the pull shows its progress")
+  T.eq(lastDone, lastTotal - 1, "the last batch ends the pull, so the progress stops one batch before it")
+  T.eq(seen[#seen], "idle", "the status is gone after the pull")
+  T.eq(b.session:Progress(), nil, "no sync runs after the pull")
+end
+
+-- The progress is not known from an addon that does not tell the number of batches
+do
+  local net, a = setup()
+  local raw = joinRaw(net, "Other One")
+  local text = a.ns.syncSession.progressText
+  T.ok(a.session:StartPull("debug", { name = "Other One" }), "the pull starts")
+  local nonce = a.session.pull.nonce
+  T.eq(text(a.session:Progress()), "Syncing debug...", "before the first batch the progress is not known")
+  raw:Send("D", "Nota Scam", "debug", nonce, 1, false, {})
+  net:Advance(1)
+  T.eq(a.session:Progress().done, 1, "the batch has arrived")
+  T.eq(text(a.session:Progress()), "Syncing debug...", "a batch without the number gives no progress")
+  raw:Send("D", "Nota Scam", "debug", nonce, 2, false, {}, nil, nil, 4)
+  net:Advance(1)
+  T.eq(text(a.session:Progress()), "Syncing debug: 2 of 4 (50%)", "a batch with the number gives the progress")
+  raw:Send("D", "Nota Scam", "debug", nonce, 3, true, {})
+  net:Advance(1)
+  T.eq(a.session:Progress(), nil, "the last batch ends the sync")
+  T.eq(text({ table = "guildchat", done = 29, total = 42 }), "Syncing guild chat: 29 of 42 (69%)",
+    "a table has its title")
+  T.eq(text(nil), nil, "no text when no sync runs")
 end
 
 T.finish()

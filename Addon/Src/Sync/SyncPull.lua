@@ -22,6 +22,7 @@ local addonName, ns = ...
 ---@field peer string Character name of the source
 ---@field nonce integer The nonce of the pull request
 ---@field nextBatch integer Number of the batch that is expected next
+---@field total integer|nil Number of batches of the answer; nil until a batch has told it
 ---@field dropped integer Number of received records that were not applied
 ---@field startVersion string Table version at the start of the pull
 ---@field timer OOOOSyncTimer|nil Ends the pull when no batch comes
@@ -170,7 +171,7 @@ function Session:SendBatch(serving)
       end)
     end
   end, serving.table, serving.nonce, index, isLast, protocol.packRecords(serving.batches[index]),
-    isLast and serving.rest or nil, isLast and serving.wants or nil)
+    isLast and serving.rest or nil, isLast and serving.wants or nil, #serving.batches)
   if not queued then
     self.serving = nil
   end
@@ -345,6 +346,7 @@ function Session:StartPull(tableName, source)
     startVersion = store.tableVersion(tbl),
   }
   self:ArmPullTimer()
+  self:NotifyProgress()
   return true
 end
 
@@ -376,6 +378,7 @@ function Session:ClosePull(retrySeconds)
   if retrySeconds then
     self:DeferPeer(active.peer, active.table, retrySeconds)
   end
+  self:NotifyProgress()
 end
 
 ---The further check of a received record, after those of `sync:ApplyRemote`, for a pull and for a push: the
@@ -423,10 +426,12 @@ function handlers.D(self, sender, delta)
   end)
   active.dropped = active.dropped + dropped
   active.nextBatch = active.nextBatch + 1
+  active.total = delta.total
   if delta.last then
     self:FinishPull(active, delta)
   else
     self:ArmPullTimer()
+    self:NotifyProgress()
   end
 end
 

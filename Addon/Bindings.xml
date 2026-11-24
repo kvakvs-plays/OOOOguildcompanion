@@ -1,0 +1,7 @@
+<!-- The client loads this file by its name; it is not listed in the TOC.
+     The label is BINDING_NAME_OOOOGC_TOGGLEWINDOW and the function is in Src\Window\MainWindow.lua. -->
+<Bindings>
+  <Binding name="OOOOGC_TOGGLEWINDOW" category="ADDONS">
+    OOOOguildcompanion_ToggleWindow()
+  </Binding>
+</Bindings>

@@ -241,6 +241,12 @@ for label, serializer in pairs(serializers) do
     T.eq({ codec.decode(codec.encode("D", "debug", 7, 1, false, {})) },
       { "D", { table = "debug", nonce = 7, batch = 1, last = false, records = {}, rest = {}, wants = {} } },
       name("a delta without records, rest, and wants is valid"))
+    local _, counted = codec.decode(codec.encode("D", "debug", 7, 2, false, {}, nil, nil, 9))
+    T.eq(counted.total, 9, name("a delta can tell the number of batches"))
+    for _, bad in ipairs({ 0, -1, 1.5, "9", false, 100001, 1 }) do
+      T.eq((codec.decode(codec.encode("D", "debug", 7, 2, false, {}, nil, nil, bad))), nil,
+        name("a bad number of batches is refused: " .. tostring(bad)))
+    end
     T.eq({ codec.decode(codec.encode("B", table.unpack(valid.B))) },
       { "B", { table = "debug", nonce = 12345, reason = "busy", retry = 30 } }, name("a refusal comes back"))
     T.eq((codec.decode(codec.encode("B", "debug", 1, "later", 0.5))), "B",

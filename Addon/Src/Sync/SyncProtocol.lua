@@ -116,6 +116,7 @@ protocol.CHANNELS = {
 ---@field records OOOOSyncWireRecord[] In ascending id order; payloads are not checked here
 ---@field rest table<string, string> Origin -> id: clock entries that no record carries; empty before the last batch
 ---@field wants table<string, string> Origin -> the sender's clock value where the requester is ahead
+---@field total integer|nil Number of batches of the whole answer; nil from an addon that does not send it
 
 ---@class OOOOSyncBusy Checked fields of a `B`
 ---@field table string
@@ -301,10 +302,12 @@ function checks.Q(tableName, schema, nonce, digest)
   return { table = tableName, schema = schema, nonce = nonce, clock = clock }
 end
 
----Delta: table, nonce, batch number, last flag, records, clock rest, wants.
+---Delta: table, nonce, batch number, last flag, records, clock rest, wants, and the number of batches. The
+---last field is optional, so the protocol version stays: an older receiver ignores it, and an older sender
+---leaves it out.
 ---@return OOOOSyncDelta|nil
 ---@return string|nil reason
-function checks.D(tableName, nonce, batch, last, packed, rest, wants)
+function checks.D(tableName, nonce, batch, last, packed, rest, wants, total)
   if not isTableName(tableName) then
     return nil, "bad table name"
   end
@@ -330,8 +333,11 @@ function checks.D(tableName, nonce, batch, last, packed, rest, wants)
   if not checkedWants then
     return nil, "bad wants"
   end
+  if total ~= nil and (not isInteger(total, 1, protocol.MAX_BATCH_NUMBER) or total < batch) then
+    return nil, "bad batch total"
+  end
   return { table = tableName, nonce = nonce, batch = batch, last = last, records = records, rest = checkedRest,
-    wants = checkedWants }
+    wants = checkedWants, total = total }
 end
 
 ---Tells whether a value has the form of a table version.

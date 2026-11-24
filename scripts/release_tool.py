@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Iterator, Tuple
 
 # Version bumping rules: Begin each new month with <year>.<month>.0 and increase by 1 with every new bump.
-VERSION = "2026.11.11"  # year.month.build_num
+VERSION = "2026.11.12"  # year.month.build_num
 
 ADDON_NAME = "OOOOguildcompanion"  # Directory, TOC and zip name
 # ADDON_TITLE_CLASSIC = "OO OO Guild Companion Classic"  # Title field in TOC
@@ -43,6 +43,7 @@ CHANGELOG_LUA = "Src/Changelog/ChangelogData.lua"  # Generated from CHANGELOG; r
 # Relative to ADDON_ROOT
 COPY_DIRS = ["Ace3", "Icons", "Src"]
 COPY_FILES = [
+    "Bindings.xml",
     "embeds.xml",
 ]
 # Of these folders only the files directly inside are packaged, not the subfolders. Icons/Emoji has the atlas

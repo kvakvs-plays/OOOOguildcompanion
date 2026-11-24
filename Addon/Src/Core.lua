@@ -37,10 +37,15 @@ local addonName, ns = ...
 ---@field gamble OOOOGambleStore|nil The state of the gambling feature; created by the migration to layout 4
 ---@field debugTable boolean|nil true in the developer mode (`/oooo sync debug on`): the table `debug`, the
 ---Sync page of the settings, and its send settings; off when absent
+---@field defaultKeySet boolean|nil true when the account's key bindings got the default key of the addon window
+
+---@class OOOOCharacterSettings
+---@field defaultKeySet boolean|nil The same for a character that has its own key bindings
 
 ---@class OOOODatabase AceDB-3.0 database object
 ---@field profile OOOOProfile
 ---@field global OOOOGlobalSettings
+---@field char OOOOCharacterSettings
 
 ---@class OOOONamespace
 ---@field addon OOOOAddon
@@ -242,6 +247,8 @@ function addon:OnEnable()
     ns.syncSession.Start()
   end
   ns.guildState:Start()
+  -- Alt+O for the addon window, on the first login only
+  ns.mainWindow:ApplyDefaultKey()
   -- From here its start delay runs: no item name is requested in the first seconds after the login
   ns.professionNames.Start()
   -- Does nothing unless the probe `professions login` was armed

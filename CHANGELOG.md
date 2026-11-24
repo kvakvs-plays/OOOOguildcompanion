@@ -5,6 +5,15 @@ turns it into Addon/Src/Changelog/ChangelogData.lua. Keep the form:
 "## <version> (<date>)", "### <section>", and items that start with a
 **bold heading** followed by the explanation. `Backticks` mark commands. -->
 
+## 2026.11.12 (2026-11-24)
+
+### Addon Window
+
+- **A key opens the addon window.** Alt+O opens and closes it. The key
+  bindings of the game list it as "Show OOOO Window" in the section AddOns,
+  where you can choose another key. If Alt+O is already in use, the addon
+  leaves it alone and tells you once.
+
 ## 2026.11.11 (2026-11-23)
 
 ### Character Teams
